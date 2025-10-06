@@ -18,7 +18,7 @@ oidc = oauth.register(
     server_metadata_url=f"{ISSUER}/.well-known/openid-configuration",
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET or None,  # public client
-    client_kwargs={"scope": "openid profile email"},
+    client_kwargs={"scope": "openid profile email roles"},
     fetch_token=lambda: session.get("token"),
 )
 USERINFO_URL = f"{ISSUER}/protocol/openid-connect/userinfo"
@@ -57,6 +57,14 @@ def login():
 def callback():
     token = oidc.authorize_access_token()
     session["token"] = token
+    try:
+        session["id_claims"] = oidc.parse_id_token(token)
+    except Exception:
+        session["id_claims"] = {}
+    try:
+        session["userinfo"] = oidc.get(USERINFO_URL, token=token).json()
+    except Exception:
+        session["userinfo"] = {}
     return redirect(url_for("me"))
 
 # Logout global (Keycloak + app)
@@ -79,13 +87,24 @@ def logout():
     logout_url = f"{ISSUER}/protocol/openid-connect/logout?{urlencode(params)}"
     return redirect(logout_url)
 
-def _roles_from_token(token):
+def _collect_roles(*sources):
     roles = []
-    if not token:
-        return roles
-    realm_access = token.get("userinfo", {}).get("realm_access") or token.get("access_token", {}).get("realm_access")
-    if isinstance(realm_access, dict):
-        roles.extend(realm_access.get("roles", []))
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        realm_access = source.get("realm_access")
+        if isinstance(realm_access, dict):
+            for role in realm_access.get("roles", []):
+                if role not in roles:
+                    roles.append(role)
+        resource_access = source.get("resource_access")
+        if isinstance(resource_access, dict):
+            for client_access in resource_access.values():
+                if not isinstance(client_access, dict):
+                    continue
+                for role in client_access.get("roles", []):
+                    if role not in roles:
+                        roles.append(role)
     return roles
 
 @app.route("/me")
@@ -93,11 +112,15 @@ def me():
     token = session.get("token")
     if not token:
         return redirect(url_for("login"))
-    userinfo = oidc.get(USERINFO_URL, token=token).json()
-    roles = _roles_from_token({"userinfo": userinfo})
+    userinfo = session.get("userinfo")
+    if not userinfo:
+        userinfo = oidc.get(USERINFO_URL, token=token).json()
+        session["userinfo"] = userinfo
+    id_claims = session.get("id_claims") or {}
+    roles = _collect_roles(id_claims, userinfo)
     return render_template_string(
         TEMPLATE + "<h2>Userinfo</h2><pre>{{ ui|tojson(indent=2) }}</pre>"
-                   "<h2>Roles</h2><pre>{{ roles }}</pre>",
+                   "<h2>Roles</h2><pre>{{ roles|tojson(indent=2) }}</pre>",
         token=token, msg="", ui=userinfo, roles=roles
     )
 
@@ -106,8 +129,12 @@ def admin():
     token = session.get("token")
     if not token:
         return redirect(url_for("login"))
-    userinfo = oidc.get(USERINFO_URL, token=token).json()
-    roles = _roles_from_token({"userinfo": userinfo})
+    userinfo = session.get("userinfo")
+    if not userinfo:
+        userinfo = oidc.get(USERINFO_URL, token=token).json()
+        session["userinfo"] = userinfo
+    id_claims = session.get("id_claims") or {}
+    roles = _collect_roles(id_claims, userinfo)
     if "admin" not in roles:
         return render_template_string(TEMPLATE, token=token, msg="403 Forbidden: admin role required")
     return render_template_string(TEMPLATE, token=token, msg="Welcome admin!")
