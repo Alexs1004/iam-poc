@@ -5,6 +5,7 @@ BLUE="\033[1;34m"
 YELLOW="\033[1;33m"
 GREEN="\033[1;32m"
 PURPLE="\033[1;35m"
+RED="\033[1;31m"
 RESET="\033[0m"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,7 +18,7 @@ KC_URL=${KEYCLOAK_URL:-http://localhost:8081}
 COMMON_FLAGS=("--kc-url" "${KC_URL}" "--admin-user" "admin" "--admin-pass" "admin")
 
 printf "%b\n" "${BLUE}=== Création du realm et du client ===${RESET}"
-"${JML_CMD} "${COMMON_FLAGS[@]}" init --realm demo --client-id flask-app --redirect-uri http://localhost:5000/callback
+${JML_CMD} "${COMMON_FLAGS[@]}" init --realm demo --client-id flask-app --redirect-uri http://localhost:5000/callback
 
 printf "%b\n" "${YELLOW}=== Provision de l'utilisatrice alice (joiner) ===${RESET}"
 ALICE_TEMP=${ALICE_TEMP_PASSWORD:-Passw0rd!}
@@ -30,7 +31,7 @@ ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm demo --username bob --email bob@e
 printf "%b\n" "${PURPLE}=== Promotion d'alice vers le rôle admin (mover) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" mover --realm demo --username alice --from-role analyst --to-role admin
 
-printf "%b\n" "${BLUE}=== Désactivation de bob (leaver) ===${RESET}"
+printf "%b\n" "${RED}=== Désactivation de bob (leaver) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" leaver --realm demo --username bob
 
 printf "%b\n" "${GREEN} Démo terminée${RESET}"
