@@ -5,8 +5,8 @@ services:
     command: start-dev
     # Uncomment the lines below to set admin user and password via environment variables
     # environment:
-      # KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      # KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    #   KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+    #   KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
