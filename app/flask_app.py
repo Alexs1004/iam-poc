@@ -14,7 +14,7 @@ from flask import Flask, redirect, url_for, session, render_template_string, req
 from flask_session import Session
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET", "change-me")
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "change-me")
 app.config["SESSION_TYPE"] = os.environ.get("FLASK_SESSION_TYPE", "filesystem")
 if app.config["SESSION_TYPE"] == "filesystem":
     session_dir = os.environ.get("FLASK_SESSION_DIR") or os.path.join(gettempdir(), "iam_poc_flask_session")
