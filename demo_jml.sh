@@ -13,17 +13,31 @@ cd "${SCRIPT_DIR}"
 
 JML_CMD="python scripts/jml.py"
 
-# Sensitive data from environment
+# Sensitive data supplied via environment (ensure .env is excluded from VCS)
 KC_URL=${KEYCLOAK_URL:?Variable KEYCLOAK_URL required}
+KC_SERVICE_REALM=${KEYCLOAK_SERVICE_REALM:-demo}
+KC_SERVICE_CLIENT_ID=${KEYCLOAK_SERVICE_CLIENT_ID:?Variable KEYCLOAK_SERVICE_CLIENT_ID required}
 KC_ADMIN_USER=${KEYCLOAK_ADMIN_USER:?Variable KEYCLOAK_ADMIN_USER required}
 KC_ADMIN_PASS=${KEYCLOAK_ADMIN_PASS:?Variable KEYCLOAK_ADMIN_PASS required}
-REALM=${KEYCLOAK_REALM:?Variable KEYCLOAK_REALM required}
+REALM=${KEYCLOAK_REALM:-demo}
 CLIENT_ID=${OIDC_CLIENT_ID:?Variable OIDC_CLIENT_ID required}
 REDIRECT_URI=${OIDC_REDIRECT_URI:?Variable OIDC_REDIRECT_URI required}
 ALICE_TEMP=${ALICE_TEMP_PASSWORD:?Variable ALICE_TEMP_PASSWORD required}
 BOB_TEMP=${BOB_TEMP_PASSWORD:?Variable BOB_TEMP_PASSWORD required}
 
-COMMON_FLAGS=("--kc-url" "${KC_URL}" "--admin-user" "${KC_ADMIN_USER}" "--admin-pass" "${KC_ADMIN_PASS}")
+printf "%b\n" "${BLUE}=== Bootstrap du service account (${KC_SERVICE_CLIENT_ID}) ===${RESET}"
+BOOTSTRAP_SECRET=$(${JML_CMD} --kc-url "${KC_URL}" --auth-realm "${KC_SERVICE_REALM}" \
+  --svc-client-id "${KC_SERVICE_CLIENT_ID}" \
+  bootstrap-service-account --realm "${REALM}" \
+  --admin-user "${KC_ADMIN_USER}" --admin-pass "${KC_ADMIN_PASS}" )
+export KEYCLOAK_SERVICE_CLIENT_SECRET="${BOOTSTRAP_SECRET}"
+
+COMMON_FLAGS=(
+  "--kc-url" "${KC_URL}"
+  "--auth-realm" "${KC_SERVICE_REALM}"
+  "--svc-client-id" "${KC_SERVICE_CLIENT_ID}"
+  "--svc-client-secret" "${KEYCLOAK_SERVICE_CLIENT_SECRET}"
+)
 
 printf "%b\n" "${BLUE}=== Création du realm et du client ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" init --realm "${REALM}" --client-id "${CLIENT_ID}" --redirect-uri "${REDIRECT_URI}"

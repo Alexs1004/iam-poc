@@ -15,7 +15,7 @@ This project is a compact **Identity & Access Management (IAM)** lab to showcase
    |                                 |
    | OIDC Auth Code Flow             | OIDC Discovery / Token Introspection
    v                                 v
-                         [Keycloak @ http://localhost:8080]
+                         [Keycloak @ http://localhost:8081]
                               Realm: demo
                               Client: flask-app (public)
                               Roles: admin, analyst
@@ -36,7 +36,7 @@ docker compose up -d
 ```
 
 Keycloak admin (dev mode):
-- URL: http://localhost:8080
+- URL: http://localhost:8081
 - Username: `admin`
 - Password: `admin`
 
@@ -44,23 +44,46 @@ Keycloak admin (dev mode):
 
 ---
 
-## 2) Initialize the realm, client, and roles
+## 2) Bootstrap the automation service account
 ```bash
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r scripts/requirements.txt
-python scripts/jml.py init --kc-url http://localhost:8080 --admin-user admin --admin-pass admin --realm demo --client-id flask-app --redirect-uri http://localhost:5000/callback
+export KEYCLOAK_ADMIN_USER=admin
+export KEYCLOAK_ADMIN_PASS=admin
+export KEYCLOAK_SERVICE_CLIENT_ID=automation-cli
+export KEYCLOAK_SERVICE_REALM=demo
+export KEYCLOAK_SERVICE_CLIENT_SECRET=$(python scripts/jml.py --kc-url http://localhost:8081 \
+  --auth-realm "$KEYCLOAK_SERVICE_REALM" \
+  --svc-client-id "$KEYCLOAK_SERVICE_CLIENT_ID" \
+  bootstrap-service-account --realm demo \
+  --admin-user "$KEYCLOAK_ADMIN_USER" --admin-pass "$KEYCLOAK_ADMIN_PASS")
+```
+
+The bootstrap step will ensure the realm exists, rotate the client secret, and assign only the `realm-management` roles required for automation (`view/manage realm`, `view/manage users`, `view/manage clients`). The command prints the new secret so it can be exported immediately.
+
+---
+
+## 3) Initialize the realm, client, and roles
+```bash
+python scripts/jml.py --kc-url http://localhost:8081 \
+  --auth-realm "$KEYCLOAK_SERVICE_REALM" \
+  --svc-client-id "$KEYCLOAK_SERVICE_CLIENT_ID" \
+  --svc-client-secret "$KEYCLOAK_SERVICE_CLIENT_SECRET" \
+  init --realm demo --client-id flask-app --redirect-uri http://localhost:5000/callback
 ```
 
 This will:
 - Create realm `demo` (idempotent)
 - Create a **public** client `flask-app` (Auth Code + PKCE) with redirect `http://localhost:5000/callback`
 - Create realm roles: `admin`, `analyst`
+- Enforce required actions `CONFIGURE_TOTP` + `UPDATE_PASSWORD`
 
 ---
 
-## 3) Create a user (Joiner) with MFA required
+## 4) Create a user (Joiner) with MFA required
 ```bash
-python scripts/jml.py joiner --realm demo --username alice --email alice@example.com --first Alice --last Example --role analyst --temp-password Passw0rd!
+COMMON_FLAGS="--kc-url http://localhost:8081 --auth-realm $KEYCLOAK_SERVICE_REALM --svc-client-id $KEYCLOAK_SERVICE_CLIENT_ID --svc-client-secret $KEYCLOAK_SERVICE_CLIENT_SECRET"
+python scripts/jml.py $COMMON_FLAGS joiner --realm demo --username alice --email alice@example.com --first Alice --last Example --role analyst --temp-password Passw0rd!
 ```
 
 This will:
@@ -71,21 +94,21 @@ This will:
 
 You can later **move** the user:
 ```bash
-python scripts/jml.py mover --realm demo --username alice --from-role analyst --to-role admin
+python scripts/jml.py $COMMON_FLAGS mover --realm demo --username alice --from-role analyst --to-role admin
 ```
 
 Or **disable** (leaver):
 ```bash
-python scripts/jml.py leaver --realm demo --username alice
+python scripts/jml.py $COMMON_FLAGS leaver --realm demo --username alice
 ```
 
 ---
 
-## 4) Run the Flask OIDC demo app
+## 5) Run the Flask OIDC demo app
 Install app deps and run:
 ```bash
 pip install -r app/requirements.txt
-export KEYCLOAK_ISSUER=http://localhost:8080/realms/demo
+export KEYCLOAK_ISSUER=http://localhost:8081/realms/demo
 export OIDC_CLIENT_ID=flask-app
 export OIDC_CLIENT_SECRET=      # (empty for public client)
 export OIDC_REDIRECT_URI=http://localhost:5000/callback
@@ -100,7 +123,7 @@ What you can demo:
 
 ---
 
-## 5) Demo Script (2–3 minutes)
+## 6) Demo Script (2–3 minutes)
 1. Show `docker compose ps` (Keycloak up).  
 2. Run `joiner` to create `alice`.  
 3. Login at the app, enroll **TOTP** and access `/me`.  
@@ -109,7 +132,7 @@ What you can demo:
 
 ---
 
-## 6) Test Scenarios
+## 7) Test Scenarios
 - Happy path login (with MFA)  
 - Wrong password / expired session  
 - Role change (analyst → admin) affects access  
@@ -117,13 +140,13 @@ What you can demo:
 
 ---
 
-## 7) Notes
+## 8) Notes
 - For brevity, this PoC uses **public** client and **dev** Keycloak settings.  
 - In production you would use **confidential** client, HTTPS, secrets in a **vault**, etc.
 
 ---
 
-## 8) Cleanup
+## 9) Cleanup
 ```bash
 docker compose down -v
 deactivate
