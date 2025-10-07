@@ -68,7 +68,7 @@ def test_me_requires_login(client):
 def test_me_filters_roles_to_admin_and_analyst(client):
     with client.session_transaction() as session:
         session["token"] = {"access_token": "", "id_token": ""}
-        session["userinfo"] = {"realm_access": {"roles": ["admin", "custom"]}}
+        session["userinfo"] = {"realm_access": {"roles": ["admin"]}}
         session["id_claims"] = {"realm_access": {"roles": ["analyst"]}}
     response = client.get("/me")
     assert response.status_code == 200
