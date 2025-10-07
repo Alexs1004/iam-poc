@@ -1,0 +1,78 @@
+import pathlib
+import sys
+
+import pytest
+
+# Add project root to Python path so pytest can import the Flask app package.
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app import app as flask_app
+
+
+# Provide a test client so each test can exercise routes without running a server.
+@pytest.fixture()
+def client():
+    flask_app.config.update(TESTING=True)
+    with flask_app.test_client() as client:
+        with flask_app.app_context():
+            yield client
+
+
+# Unauthenticated requests to /admin must be redirected to the OIDC login flow.
+def test_admin_redirects_to_login_without_session(client):
+    response = client.get("/admin", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+# A signed-in user without the admin role should receive a 403 and security headers.
+def test_admin_requires_admin_role(client):
+    with client.session_transaction() as session:
+        session["token"] = {"access_token": "", "id_token": ""}
+        session["userinfo"] = {"realm_access": {"roles": ["analyst"]}}
+        session["id_claims"] = {"realm_access": {"roles": ["analyst"]}}
+    response = client.get("/admin")
+    assert response.status_code == 403
+    body = response.get_data(as_text=True)
+    assert "403 Forbidden" in body
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+
+
+# Admin role holders should gain access while the security headers stay enforced.
+def test_admin_allows_admin_role_and_sets_security_headers(client):
+    with client.session_transaction() as session:
+        session["token"] = {"access_token": "", "id_token": ""}
+        session["userinfo"] = {"realm_access": {"roles": ["admin", "analyst"]}}
+        session["id_claims"] = {"realm_access": {"roles": ["admin"]}}
+    response = client.get("/admin")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Welcome admin!" in body
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+
+
+# Accessing /me without a session should kick the user back to the login flow.
+def test_me_requires_login(client):
+    response = client.get("/me", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+# The profile view must only display the admin and analyst roles to align with RBAC scope.
+def test_me_filters_roles_to_admin_and_analyst(client):
+    with client.session_transaction() as session:
+        session["token"] = {"access_token": "", "id_token": ""}
+        session["userinfo"] = {"realm_access": {"roles": ["admin", "custom"]}}
+        session["id_claims"] = {"realm_access": {"roles": ["analyst"]}}
+    response = client.get("/me")
+    assert response.status_code == 200
+    payload = response.get_data(as_text=True)
+    assert "\"admin\"" in payload
+    assert "\"analyst\"" in payload
+    assert "custom" not in payload
