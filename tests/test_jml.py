@@ -1,0 +1,102 @@
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+import scripts.jml as jml
+
+
+@pytest.fixture(autouse=True)
+def restore_sys_argv():
+    """Make sure every test sees a clean CLI invocation."""
+    original = sys.argv[:]
+    yield
+    sys.argv = original
+
+
+def test_init_requires_service_client_secret(monkeypatch):
+    """CLI must abort before calling Keycloak if the service secret is absent."""
+    monkeypatch.delenv("KEYCLOAK_SERVICE_CLIENT_SECRET", raising=False)
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("get_service_account_token should not be invoked when secret missing")
+
+    monkeypatch.setattr(jml, "get_service_account_token", fail_if_called)
+
+    sys.argv = [
+        "jml.py",
+        "--kc-url",
+        "http://kc",
+        "--auth-realm",
+        "demo",
+        "--svc-client-id",
+        "svc",
+        "init",
+        "--realm",
+        "demo",
+    ]
+    with pytest.raises(SystemExit):
+        jml.main()
+
+
+def test_init_uses_service_account_token(monkeypatch):
+    """Happy path should fetch a token via client_credentials exactly once."""
+    token_calls = SimpleNamespace(count=0)
+
+    def fake_get_service_account_token(kc_url, realm, client_id, client_secret):
+        token_calls.count += 1
+        assert client_secret == "super-secret"
+        return "token"
+
+    monkeypatch.setattr(jml, "get_service_account_token", fake_get_service_account_token)
+    monkeypatch.setattr(jml, "create_realm", lambda *args, **kwargs: None)
+    monkeypatch.setattr(jml, "create_client", lambda *args, **kwargs: None)
+    monkeypatch.setattr(jml, "create_role", lambda *args, **kwargs: None)
+    monkeypatch.setattr(jml, "ensure_required_action", lambda *args, **kwargs: None)
+
+    sys.argv = [
+        "jml.py",
+        "--kc-url",
+        "http://kc",
+        "--auth-realm",
+        "demo",
+        "--svc-client-id",
+        "svc",
+        "--svc-client-secret",
+        "super-secret",
+        "init",
+        "--realm",
+        "demo",
+    ]
+
+    jml.main()
+    assert token_calls.count == 1
+
+
+def test_bootstrap_returns_secret(monkeypatch, capsys):
+    """Bootstrap sub-command should emit the rotated secret on stdout."""
+    def fake_bootstrap(*args, **kwargs):
+        return "rotated-secret"
+
+    monkeypatch.setattr(jml, "bootstrap_service_account", fake_bootstrap)
+
+    sys.argv = [
+        "jml.py",
+        "--kc-url",
+        "http://kc",
+        "--auth-realm",
+        "demo",
+        "--svc-client-id",
+        "svc",
+        "bootstrap-service-account",
+        "--realm",
+        "demo",
+        "--admin-user",
+        "admin",
+        "--admin-pass",
+        "pwd",
+    ]
+
+    jml.main()
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "rotated-secret"
