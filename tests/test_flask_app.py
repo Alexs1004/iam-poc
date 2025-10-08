@@ -73,6 +73,6 @@ def test_me_filters_roles_to_admin_and_analyst(client):
     response = client.get("/me")
     assert response.status_code == 200
     payload = response.get_data(as_text=True)
-    assert "\"admin\"" in payload
-    assert "\"analyst\"" in payload
-    assert "custom" not in payload
+    assert 'role-chip admin">admin<' in payload
+    assert 'role-chip">analyst<' in payload
+    assert 'role-chip">custom<' not in payload

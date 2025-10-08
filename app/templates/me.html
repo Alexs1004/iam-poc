@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Your profile</h1>
+  <p class="intro">Claims are retrieved server-side from the userinfo endpoint and rendered below.</p>
+  <div class="layout-grid">
+    <div class="card">
+      <h2>Current roles</h2>
+      {% if roles %}
+        <ul class="role-list">
+        {% for role in roles %}
+          <li class="role-chip{% if role == 'admin' %} admin{% endif %}">{{ role }}</li>
+        {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No mapped realm roles.</p>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h2>Userinfo claims</h2>
+      <pre>{{ userinfo_json }}</pre>
+    </div>
+  </div>
+</section>
+{% endblock %}

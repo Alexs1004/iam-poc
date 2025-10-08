@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Identity &amp; Access Demo</h1>
+  <p class="intro">This Flask app authenticates against Keycloak using the Authorization Code flow with PKCE. Tokens remain server-side, and RBAC is enforced before any admin view is shown.</p>
+  <ul class="muted">
+    <li>Log in to enrol MFA (TOTP) and inspect your claims.</li>
+    <li>Promote users to <strong>admin</strong> with the JML automation, then refresh access.</li>
+    <li>Automation uses a least-privilege service account (client credentials).</li>
+  </ul>
+  <div class="cta-row">
+    {% if is_authenticated %}
+      <a class="btn-primary" href="{{ url_for('me') }}">View my profile</a>
+      <a class="btn-secondary" href="{{ url_for('admin') }}">Admin area</a>
+    {% else %}
+      <a class="btn-primary" href="{{ url_for('login') }}">Sign in with Keycloak</a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

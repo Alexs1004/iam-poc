@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel panel-error">
+  <h1>Access denied</h1>
+  <p class="alert">403 Forbidden: {{ required_role }} role required.</p>
+  <p class="muted">Sign in with an account that has the correct role or ask an administrator to update your access.</p>
+</section>
+{% endblock %}

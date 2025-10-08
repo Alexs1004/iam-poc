@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Mini IAM Lab</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+  <header class="top-bar">
+    <div class="brand">Mini IAM Lab</div>
+    <nav class="nav-actions">
+      <a href="{{ url_for('index') }}">Home</a>
+      {% if is_authenticated %}
+        <a href="{{ url_for('me') }}">Profile</a>
+        <a href="{{ url_for('admin') }}">Admin</a>
+        <form action="{{ url_for('login') }}" method="get">
+          <input type="hidden" name="force" value="1">
+          <button type="submit" class="btn-secondary">Login as different user</button>
+        </form>
+        <a class="btn-primary" href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+        <a class="btn-primary" href="{{ url_for('login') }}">Login</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main>
+    {% if flash_message %}
+      <div class="alert">{{ flash_message }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>Developer PoC · Keycloak + Flask</footer>
+</body>
+</html>
