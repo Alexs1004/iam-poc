@@ -102,6 +102,11 @@ Or **disable** (leaver):
 python scripts/jml.py $COMMON_FLAGS leaver --realm demo --username alice
 ```
 
+Need to wipe the realm entirely (danger zone, removes users/clients)?
+```bash
+python scripts/jml.py $COMMON_FLAGS delete-realm --realm demo
+```
+
 ---
 
 ## 5) Run the Flask OIDC demo app

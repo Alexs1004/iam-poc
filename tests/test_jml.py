@@ -73,6 +73,42 @@ def test_init_uses_service_account_token(monkeypatch):
     assert token_calls.count == 1
 
 
+def test_delete_realm_uses_service_account_token(monkeypatch):
+    """Delete command should request a client credential token and call helper once."""
+    token_calls = SimpleNamespace(count=0)
+    delete_calls = SimpleNamespace(args=None)
+
+    def fake_token(kc_url, realm, client_id, client_secret):
+        token_calls.count += 1
+        assert client_secret == "super-secret"
+        return "token"
+
+    def fake_delete(kc_url, token, realm):
+        delete_calls.args = (kc_url, token, realm)
+
+    monkeypatch.setattr(jml, "get_service_account_token", fake_token)
+    monkeypatch.setattr(jml, "delete_realm", fake_delete)
+
+    sys.argv = [
+        "jml.py",
+        "--kc-url",
+        "http://kc",
+        "--auth-realm",
+        "demo",
+        "--svc-client-id",
+        "svc",
+        "--svc-client-secret",
+        "super-secret",
+        "delete-realm",
+        "--realm",
+        "demo",
+    ]
+
+    jml.main()
+    assert token_calls.count == 1
+    assert delete_calls.args == ("http://kc", "token", "demo")
+
+
 def test_bootstrap_returns_secret(monkeypatch, capsys):
     """Bootstrap sub-command should emit the rotated secret on stdout."""
     def fake_bootstrap(*args, **kwargs):

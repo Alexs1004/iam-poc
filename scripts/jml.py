@@ -352,6 +352,29 @@ def disable_user(kc_url: str, token: str, realm: str, username: str) -> None:
     print(f"[leaver] User '{username}' disabled", file=sys.stderr)
 
 
+def delete_realm(kc_url: str, token: str, realm: str) -> None:
+    if realm == "master":
+        print("[reset] Refusing to delete the master realm", file=sys.stderr)
+        return
+    resp = requests.delete(
+        f"{kc_url}/admin/realms/{realm}",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    if resp.status_code == 204:
+        print(f"[reset] Realm '{realm}' deleted", file=sys.stderr)
+        return
+    if resp.status_code == 404:
+        print(f"[reset] Realm '{realm}' not found", file=sys.stderr)
+        return
+    try:
+        details = resp.json()
+    except ValueError:
+        details = resp.text
+    print(f"[reset] Failed to delete realm '{realm}': {details}", file=sys.stderr)
+    resp.raise_for_status()
+
+
 def _ensure_service_account_client(kc_url: str, token: str, realm: str, client_id: str) -> tuple[str, str]:
     client = _get_client(kc_url, token, realm, client_id)
     if not client:
@@ -556,6 +579,9 @@ def main() -> None:
     sl.add_argument("--realm", default="demo")
     sl.add_argument("--username", required=True)
 
+    dr = sub.add_parser("delete-realm", help="Delete a realm (use with caution)")
+    dr.add_argument("--realm", required=True)
+
     args = parser.parse_args()
 
     if not args.cmd:
@@ -615,6 +641,8 @@ def main() -> None:
         change_role(args.kc_url, token, target_realm, args.username, args.from_role, args.to_role)
     elif args.cmd == "leaver":
         disable_user(args.kc_url, token, target_realm, args.username)
+    elif args.cmd == "delete-realm":
+        delete_realm(args.kc_url, token, target_realm)
     else:
         parser.print_help()
 
