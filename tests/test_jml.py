@@ -109,6 +109,20 @@ def test_delete_realm_uses_service_account_token(monkeypatch):
     assert delete_calls.args == ("http://kc", "token", "demo")
 
 
+def test_bootstrap_requires_master_realm(monkeypatch):
+    """Bootstrap must refuse non-master auth realm."""
+    with pytest.raises(SystemExit):
+        jml.bootstrap_service_account(
+            "http://kc",
+            "admin",
+            "pwd",
+            "demo",
+            "svc",
+            "demo",
+            ["manage-users"],
+        )
+
+
 def test_bootstrap_returns_secret(monkeypatch, capsys):
     """Bootstrap sub-command should emit the rotated secret on stdout."""
     def fake_bootstrap(*args, **kwargs):

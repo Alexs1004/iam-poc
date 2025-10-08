@@ -71,6 +71,8 @@ def create_realm(kc_url: str, token: str, realm: str) -> None:
     )
     if resp.status_code in (201, 409):
         print(f"[init] Realm '{realm}' created (or already existed)", file=sys.stderr)
+    elif resp.status_code == 403:
+        raise SystemExit("[init] Missing permission to create realm. Run bootstrap-service-account from master realm first.")
     else:
         print(resp.text)
         resp.raise_for_status()
@@ -509,16 +511,25 @@ def bootstrap_service_account(
     target_realm: str,
     role_names: list[str],
 ) -> str:
-    admin_token = get_admin_token(kc_url, admin_user, admin_pass)
-    create_realm(kc_url, admin_token, target_realm)
-    client_uuid, secret = _ensure_service_account_client(kc_url, admin_token, svc_realm, svc_client_id)
-    _assign_service_account_roles(kc_url, admin_token, svc_realm, client_uuid, role_names)
+    if svc_realm != "master":
+        raise SystemExit("bootstrap-service-account requires --auth-realm master for admin login")
+    try:
+        admin_token = get_admin_token(kc_url, admin_user, admin_pass)
+    except requests.HTTPError as exc:
+        raise SystemExit(f"[bootstrap] Admin authentication failed: {exc}") from exc
+    try:
+        create_realm(kc_url, admin_token, target_realm)
+        client_uuid, secret = _ensure_service_account_client(kc_url, admin_token, target_realm, svc_client_id)
+        _assign_service_account_roles(kc_url, admin_token, target_realm, client_uuid, role_names)
+    except requests.HTTPError as exc:
+        detail = exc.response.text if exc.response is not None else str(exc)
+        raise SystemExit(f"[bootstrap] Failed to configure service account: {detail}") from exc
     return secret
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Keycloak JML helper")
-    parser.add_argument("--kc-url", default="http://localhost:8081", help="Keycloak base URL")
+    parser.add_argument("--kc-url", default="http://localhost:8080", help="Keycloak base URL")
     parser.add_argument(
         "--auth-realm",
         default=os.environ.get("KEYCLOAK_SERVICE_REALM", "master"),
@@ -537,7 +548,7 @@ def main() -> None:
 
     sub = parser.add_subparsers(dest="cmd")
 
-    bootstrap = sub.add_parser("bootstrap-service-account", help="Create the automation client and assign roles")
+    bootstrap = sub.add_parser("bootstrap-service-account", help="One-time setup (requires master admin credentials)")
     bootstrap.add_argument("--realm", default=os.environ.get("KEYCLOAK_REALM", "demo"))
     bootstrap.add_argument("--admin-user", default=os.environ.get("KEYCLOAK_ADMIN_USER", "admin"))
     bootstrap.add_argument("--admin-pass", default=os.environ.get("KEYCLOAK_ADMIN_PASS", "admin"))
@@ -545,11 +556,8 @@ def main() -> None:
         "--roles",
         nargs="*",
         default=[
-            "view-realm",
             "manage-realm",
-            "view-users",
             "manage-users",
-            "view-clients",
             "manage-clients",
         ],
         help="realm-management roles to grant to the service account",

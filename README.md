@@ -15,7 +15,7 @@ This project is a compact **Identity & Access Management (IAM)** lab to showcase
    |                                 |
    | OIDC Auth Code Flow             | OIDC Discovery / Token Introspection
    v                                 v
-                         [Keycloak @ http://localhost:8081]
+                         [Keycloak @ http://localhost:8080]
                               Realm: demo
                               Client: flask-app (public)
                               Roles: admin, analyst
@@ -36,7 +36,7 @@ docker compose up -d
 ```
 
 Keycloak admin (dev mode):
-- URL: http://localhost:8081
+- URL: http://localhost:8080
 - Username: `admin`
 - Password: `admin`
 
@@ -44,28 +44,29 @@ Keycloak admin (dev mode):
 
 ---
 
-## 2) Bootstrap the automation service account
+## 2) Bootstrap the automation service account (one-time)
+Only run this step when preparing the lab. It requires master realm admin credentials and is **not** least-privilege.
 ```bash
 python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r scripts/requirements.txt
 export KEYCLOAK_ADMIN_USER=admin
 export KEYCLOAK_ADMIN_PASS=admin
 export KEYCLOAK_SERVICE_CLIENT_ID=automation-cli
-export KEYCLOAK_SERVICE_REALM=demo
-export KEYCLOAK_SERVICE_CLIENT_SECRET=$(python scripts/jml.py --kc-url http://localhost:8081 \
-  --auth-realm "$KEYCLOAK_SERVICE_REALM" \
+export KEYCLOAK_SERVICE_CLIENT_SECRET=$(python scripts/jml.py --kc-url http://localhost:8080 \
+  --auth-realm master \
   --svc-client-id "$KEYCLOAK_SERVICE_CLIENT_ID" \
   bootstrap-service-account --realm demo \
   --admin-user "$KEYCLOAK_ADMIN_USER" --admin-pass "$KEYCLOAK_ADMIN_PASS")
+# Afterwards keep KEYCLOAK_SERVICE_REALM=demo for daily automation
 ```
 
-The bootstrap step will ensure the realm exists, rotate the client secret, and assign only the `realm-management` roles required for automation (`view/manage realm`, `view/manage users`, `view/manage clients`). The command prints the new secret so it can be exported immediately.
+This bootstrap step ensures the realm exists, rotates the client secret, and grants only `manage-realm`, `manage-users`, and `manage-clients` to the `automation-cli` service account inside realm `demo`.
 
 ---
 
 ## 3) Initialize the realm, client, and roles
 ```bash
-python scripts/jml.py --kc-url http://localhost:8081 \
+python scripts/jml.py --kc-url http://localhost:8080 \
   --auth-realm "$KEYCLOAK_SERVICE_REALM" \
   --svc-client-id "$KEYCLOAK_SERVICE_CLIENT_ID" \
   --svc-client-secret "$KEYCLOAK_SERVICE_CLIENT_SECRET" \
@@ -78,11 +79,13 @@ This will:
 - Create realm roles: `admin`, `analyst`
 - Enforce required actions `CONFIGURE_TOTP` + `UPDATE_PASSWORD`
 
+Tip: running `make demo` will bootstrap the service account automatically when the secret is absent, keeping the value in-memory instead of writing it to `.env`.
+
 ---
 
 ## 4) Create a user (Joiner) with MFA required
 ```bash
-COMMON_FLAGS="--kc-url http://localhost:8081 --auth-realm $KEYCLOAK_SERVICE_REALM --svc-client-id $KEYCLOAK_SERVICE_CLIENT_ID --svc-client-secret $KEYCLOAK_SERVICE_CLIENT_SECRET"
+COMMON_FLAGS="--kc-url http://localhost:8080 --auth-realm $KEYCLOAK_SERVICE_REALM --svc-client-id $KEYCLOAK_SERVICE_CLIENT_ID --svc-client-secret $KEYCLOAK_SERVICE_CLIENT_SECRET"
 python scripts/jml.py $COMMON_FLAGS joiner --realm demo --username alice --email alice@example.com --first Alice --last Example --role analyst --temp-password Passw0rd!
 ```
 
@@ -113,7 +116,7 @@ python scripts/jml.py $COMMON_FLAGS delete-realm --realm demo
 Install app deps and run:
 ```bash
 pip install -r app/requirements.txt
-export KEYCLOAK_ISSUER=http://localhost:8081/realms/demo
+export KEYCLOAK_ISSUER=http://localhost:8080/realms/demo
 export OIDC_CLIENT_ID=flask-app
 export OIDC_CLIENT_SECRET=      # (empty for public client)
 export OIDC_REDIRECT_URI=http://localhost:5000/callback

@@ -38,7 +38,7 @@ Session(app)
 # ─────────────────────────────────────────────────────────────────────────────
 # OIDC Configuration (Keycloak)
 # ─────────────────────────────────────────────────────────────────────────────
-ISSUER = os.environ.get("KEYCLOAK_ISSUER", "http://localhost:8081/realms/demo")
+ISSUER = os.environ.get("KEYCLOAK_ISSUER", "http://localhost:8080/realms/demo")
 CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "flask-app")
 CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")  # Empty for public client
 REDIRECT_URI = os.environ.get("OIDC_REDIRECT_URI", "http://localhost:5000/callback")

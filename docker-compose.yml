@@ -3,28 +3,13 @@ services:
     image: quay.io/keycloak/keycloak:24.0
     container_name: keycloak
     command: start-dev
-    # Uncomment the lines below to set admin user and password via environment variables
-    # environment:
-    #   KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-    #   KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - keycloak_data:/opt/keycloak/data
 
-  # === Keycloak de test (jml_demo) / sandbox ===
-  keycloak-sbx:
-    image: quay.io/keycloak/keycloak:24.0
-    container_name: keycloak-sbx
-    command: start-dev
-    environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-    ports:
-      - "127.0.0.1:8081:8080"   # ← différent du premier
-    volumes:
-      - keycloak_sbx_data:/opt/keycloak/data   # ← volume indépendant
-
 volumes:
   keycloak_data:
-  keycloak_sbx_data:
