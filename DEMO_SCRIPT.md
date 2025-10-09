@@ -1,47 +1,45 @@
-# IAM PoC — Demo Script (2–3 minutes)
+# IAM PoC — Live Demo Script (≈3 minutes)
 
 ## 0) Intro (15s)
-“J’ai construit un mini-lab IAM : Keycloak (Docker) + app Flask en OIDC, **MFA TOTP**, rôles **admin/analyst**, et un script **JML** (joiner/mover/leaver). Tout est documenté et automatisé.”
+“Mini IAM Lab: Keycloak (Docker) + Flask (OIDC Code + PKCE), MFA (TOTP), RBAC `/admin`, automation script (init/joiner/mover/leaver). Everything is local and automated.”
 
 ## 1) Show services (10s)
 ```bash
 docker compose ps
 ```
-> Keycloak is running on http://localhost:8080
+> Keycloak up on `http://localhost:8080`.
 
-## 2) Initialize Realm & Client (20s)
+## 2) Bootstrap / Automation (15s)
 ```bash
-python scripts/jml.py init --kc-url http://localhost:8080 --admin-user admin --admin-pass admin --realm demo --client-id flask-app --redirect-uri http://localhost:5000/callback
+make demo
 ```
-- Creates realm `demo`, client `flask-app`, roles `admin`/`analyst`.
+- Idempotent: bootstraps/rotates service account (if secret missing) and runs `init`, `joiner` (alice/bob), `mover` (alice→admin), `leaver` (bob).
+- Emphasize service account uses only manage-users / manage-clients / manage-realm in realm `demo`.
 
-## 3) Create User (Joiner) (20s)
+## 3) Launch Flask UI (10s)
 ```bash
-python scripts/jml.py joiner --realm demo --username alice --email alice@example.com --first Alice --last Example --role analyst --temp-password Passw0rd!
+python app/flask_app.py
 ```
-- Temp password + **required actions**: TOTP + password update.
+Open [http://localhost:5000](http://localhost:5000).
 
-## 4) Login & MFA (40s)
-- Open `http://localhost:5000`, click **Login**.
-- Sign in as `alice`, Keycloak asks to **configure TOTP** (scan QR / enter code).
-- After login, view `/me` → see **claims** and **roles**.
+## 4) Login & MFA (45s)
+1. “Login” → Keycloak prompts for username/password (`alice` + temp password), then enforces TOTP (scan QR + enter code).
+2. After login redirect to `/me`: show the polished dashboard (role chips, server-side userinfo JSON). Reinforce that tokens stay server-side.
 
-## 5) RBAC: Analyst → Admin (20s)
-```bash
-python scripts/jml.py mover --realm demo --username alice --from-role analyst --to-role admin
-```
-- Refresh app → `/admin` now accessible.
+## 5) RBAC Demo (20s)
+- Navigate to `/admin`: the nav badge shows `admin`; route accessible thanks to server-side decorator.
+- Mention that trying with a non-admin would render the styled 403 page (can show via `bob` if time).
 
-## 6) Leaver (20s)
-```bash
-python scripts/jml.py leaver --realm demo --username alice
-```
-- Try to login again → access denied/disabled.
+## 6) JML lifecycle (20s)
+- In terminal, disable `alice` to show leaver flow:
+  ```bash
+  python scripts/jml.py leaver --realm demo --username alice
+  ```
+- Refresh in browser → session invalidated, `/admin` and `/me` redirect to login.
 
 ## 7) Wrap-up (15s)
-- Security choices: **PKCE**, **MFA**, **server-side session**, **least privilege** (service account planned).
-- If I join, next steps: confidential client + HTTPS, tests & CI, explore **SCIM**.
+- Recap guardrails: PKCE only, MFA required, server-only session, security headers (no back-button leak), automation via least-privilege service account.
+- Next steps if hired: add HTTPS/proxy, SCIM/webhooks, CI for provisioning tests.
 
-## Fallback (if live demo fails)
-- Show screenshots: login, TOTP, `/me`, `/admin` 403 → 200 after role change.
-- Explain flows and decisions (1 minute max).
+### Fallback plan
+- If automation fails live: show screenshots (`static/screenshots/*`) of login/TOTP/profile/admin and walk through the flows verbally (≤60s).

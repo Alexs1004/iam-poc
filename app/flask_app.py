@@ -207,7 +207,9 @@ def _current_user_context():
 
 
 def _security_headers(response):
-    response.headers.setdefault("Cache-Control", "no-store")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     return response

@@ -37,7 +37,7 @@ def test_admin_requires_admin_role(client):
     assert response.status_code == 403
     body = response.get_data(as_text=True)
     assert "403 Forbidden" in body
-    assert response.headers["Cache-Control"] == "no-store"
+    assert "no-store" in response.headers["Cache-Control"]
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
 
@@ -52,7 +52,7 @@ def test_admin_allows_admin_role_and_sets_security_headers(client):
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Welcome admin!" in body
-    assert response.headers["Cache-Control"] == "no-store"
+    assert "no-store" in response.headers["Cache-Control"]
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
 

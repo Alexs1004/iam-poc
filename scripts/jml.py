@@ -220,6 +220,25 @@ def ensure_user_required_actions(kc_url: str, token: str, realm: str, user_id: s
     print(f"[joiner] Required actions set to {user_rep['requiredActions']}", file=sys.stderr)
 
 
+
+
+def _user_has_totp(kc_url: str, token: str, realm: str, user_id: str) -> bool:
+    cred_resp = requests.get(
+        f"{kc_url}/admin/realms/{realm}/users/{user_id}/credentials",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    cred_resp.raise_for_status()
+    return any(cred.get("type") == "otp" for cred in cred_resp.json() or [])
+
+
+def _desired_required_actions(kc_url: str, token: str, realm: str, user_id: str) -> list[str]:
+    actions = {"UPDATE_PASSWORD"}
+    if not _user_has_totp(kc_url, token, realm, user_id):
+        actions.add("CONFIGURE_TOTP")
+    return sorted(actions)
+
+
 def get_user_by_username(kc_url: str, token: str, realm: str, username: str) -> dict | None:
     resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/users",
@@ -257,7 +276,6 @@ def create_user(
             "lastName": last,
             "enabled": True,
             "emailVerified": True,
-            "requiredActions": ["CONFIGURE_TOTP", "UPDATE_PASSWORD"],
         }
         resp = requests.post(
             f"{kc_url}/admin/realms/{realm}/users",
@@ -270,7 +288,7 @@ def create_user(
         user_id = get_user_by_username(kc_url, token, realm, username)["id"]
         print(f"[joiner] User '{username}' created (id={user_id})", file=sys.stderr)
 
-    ensure_user_required_actions(kc_url, token, realm, user_id, ["CONFIGURE_TOTP", "UPDATE_PASSWORD"])
+    ensure_user_required_actions(kc_url, token, realm, user_id, _desired_required_actions(kc_url, token, realm, user_id))
 
     resp = requests.put(
         f"{kc_url}/admin/realms/{realm}/users/{user_id}/reset-password",
