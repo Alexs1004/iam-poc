@@ -18,9 +18,9 @@ Everything is intended for localhost only. Production notes live in the **Securi
 
 ## Quick start (5 commands)
 ```bash
-python -m venv .venv && source .venv/bin/activate          # (Windows: .venv\Scripts\activate)
-pip install -r scripts/requirements.txt -r app/requirements.txt
-make bootstrap-service-account KEYCLOAK_SERVICE_REALM=master # one-time; generates secret for automation-cli
+python3 -m venv .venv && source .venv/bin/activate          # (Windows: .venv\Scripts\activate)
+pip install -r requirements.txt
+make bootstrap-service-account # one-time; generates secret for automation-cli
 make demo                                                   # idempotent init + sample users + mover/leaver
 python app/flask_app.py                                     # start Flask UI (or run via your WSGI setup)
 ```
@@ -76,7 +76,7 @@ Available targets (see `Makefile`):
 
 ## Tests
 ```bash
-venv/bin/python -m pytest            # runs both Flask UI and JML unit tests
+pytest            # runs both Flask UI and JML unit tests
 ```
 Coverage includes RBAC headers, role filtering, bootstrap guardrails, and the new service-account helper.
 

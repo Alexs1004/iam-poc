@@ -1,3 +1,4 @@
+from __future__ import annotations
 import argparse
 import os
 import sys
@@ -568,8 +569,8 @@ def main() -> None:
 
     bootstrap = sub.add_parser("bootstrap-service-account", help="One-time setup (requires master admin credentials)")
     bootstrap.add_argument("--realm", default=os.environ.get("KEYCLOAK_REALM", "demo"))
-    bootstrap.add_argument("--admin-user", default=os.environ.get("KEYCLOAK_ADMIN_USER", "admin"))
-    bootstrap.add_argument("--admin-pass", default=os.environ.get("KEYCLOAK_ADMIN_PASS", "admin"))
+    bootstrap.add_argument("--admin-user", default=os.environ.get("KEYCLOAK_ADMIN", "admin"))
+    bootstrap.add_argument("--admin-pass", default=os.environ.get("KEYCLOAK_ADMIN_PASSWORD", "admin"))
     bootstrap.add_argument(
         "--roles",
         nargs="*",

@@ -16,11 +16,11 @@ require-service-secret:
 
 .PHONY: require-admin-creds
 require-admin-creds:
-	@$(WITH_ENV) test -n "$${KEYCLOAK_ADMIN_USER}" -a -n "$${KEYCLOAK_ADMIN_PASS}" || (echo "Admin credentials missing; export KEYCLOAK_ADMIN_USER and KEYCLOAK_ADMIN_PASS." >&2; exit 1)
+	@$(WITH_ENV) test -n "$${KEYCLOAK_ADMIN}" -a -n "$${KEYCLOAK_ADMIN_PASSWORDWORD}" || (echo "Admin credentials missing; export KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD." >&2; exit 1)
 
 .PHONY: bootstrap-service-account
 bootstrap-service-account: require-admin-creds ## One-time bootstrap (requires master admin; rotates secret)
-	@$(WITH_ENV) $(JML) --kc-url "$${KEYCLOAK_URL}" --auth-realm master --svc-client-id "$${KEYCLOAK_SERVICE_CLIENT_ID}" bootstrap-service-account --realm "$${KEYCLOAK_REALM}" --admin-user $${KEYCLOAK_ADMIN_USER} --admin-pass $${KEYCLOAK_ADMIN_PASS}
+	@$(WITH_ENV) $(JML) --kc-url "$${KEYCLOAK_URL}" --auth-realm master --svc-client-id "$${KEYCLOAK_SERVICE_CLIENT_ID}" bootstrap-service-account --realm "$${KEYCLOAK_REALM}" --admin-user $${KEYCLOAK_ADMIN} --admin-pass $${KEYCLOAK_ADMIN_PASSWORD}
 
 .PHONY: init
 init: require-service-secret ## Provision realm, public client, roles, and required actions
