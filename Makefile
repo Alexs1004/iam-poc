@@ -58,7 +58,7 @@ delete-realm: require-service-secret ## Delete realm (irreversible; skips master
 
 .PHONY: demo
 demo: ## Run the scripted JML demonstration
-	@$(WITH_ENV) ./demo_jml.sh
+	@$(WITH_ENV) ./scripts/demo_jml.sh
 
 .PHONY: pytest
 pytest: ## Run unit tests

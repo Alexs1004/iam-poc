@@ -1,3 +1,5 @@
+"""Utilities for provisioning Keycloak realms and demonstrating JML flows."""
+
 from __future__ import annotations
 import argparse
 import os
@@ -10,10 +12,12 @@ REQUEST_TIMEOUT = 5
 
 
 def _auth_headers(token: str) -> dict:
+    """Build Authorization header payload for Keycloak admin calls."""
     return {"Authorization": f"Bearer {token}"}
 
 
 def get_admin_token(kc_url: str, username: str, password: str, realm: str = "master") -> str:
+    """Obtain an admin token via direct access grant on the specified realm."""
     url = f"{kc_url}/realms/{realm}/protocol/openid-connect/token"
     data = {
         "grant_type": "password",
@@ -27,6 +31,7 @@ def get_admin_token(kc_url: str, username: str, password: str, realm: str = "mas
 
 
 def get_service_account_token(kc_url: str, auth_realm: str, client_id: str, client_secret: str) -> str:
+    """Fetch a service account token using client credentials flow."""
     url = f"{kc_url}/realms/{auth_realm}/protocol/openid-connect/token"
     data = {
         "grant_type": "client_credentials",
@@ -39,6 +44,7 @@ def get_service_account_token(kc_url: str, auth_realm: str, client_id: str, clie
 
 
 def _get_client(kc_url: str, token: str, realm: str, client_id: str) -> dict | None:
+    """Return the client representation matching client_id, if it exists."""
     resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/clients",
         params={"clientId": client_id},
@@ -51,6 +57,7 @@ def _get_client(kc_url: str, token: str, realm: str, client_id: str) -> dict | N
 
 
 def realm_exists(kc_url: str, token: str, realm: str) -> bool:
+    """Check whether the given realm already exists."""
     resp = requests.get(
         f"{kc_url}/admin/realms/{realm}",
         headers=_auth_headers(token),
@@ -60,6 +67,7 @@ def realm_exists(kc_url: str, token: str, realm: str) -> bool:
 
 
 def create_realm(kc_url: str, token: str, realm: str) -> None:
+    """Ensure the target realm exists, creating it if necessary."""
     if realm_exists(kc_url, token, realm):
         print(f"[init] Realm '{realm}' already exists", file=sys.stderr)
         return
@@ -80,6 +88,7 @@ def create_realm(kc_url: str, token: str, realm: str) -> None:
 
 
 def create_client(kc_url: str, token: str, realm: str, client_id: str, redirect_uri: str) -> None:
+    """Create or update the demo public client with desired configuration."""
     resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/clients",
         params={"clientId": client_id},
@@ -148,6 +157,7 @@ def create_client(kc_url: str, token: str, realm: str, client_id: str, redirect_
 
 
 def create_role(kc_url: str, token: str, realm: str, role_name: str) -> None:
+    """Idempotently create a realm-level role."""
     resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/roles/{role_name}",
         headers=_auth_headers(token),
@@ -168,6 +178,7 @@ def create_role(kc_url: str, token: str, realm: str, role_name: str) -> None:
 
 
 def ensure_required_action(kc_url: str, token: str, realm: str, alias: str) -> None:
+    """Enable and mark a required action as default when present."""
     url = f"{kc_url}/admin/realms/{realm}/authentication/required-actions"
     resp = requests.get(url, headers=_auth_headers(token), timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
@@ -202,6 +213,7 @@ def ensure_required_action(kc_url: str, token: str, realm: str, alias: str) -> N
 
 
 def ensure_user_required_actions(kc_url: str, token: str, realm: str, user_id: str, actions: list[str]) -> None:
+    """Apply required actions to a user without overwriting existing ones."""
     url = f"{kc_url}/admin/realms/{realm}/users/{user_id}"
     resp = requests.get(url, headers=_auth_headers(token), timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
@@ -224,6 +236,7 @@ def ensure_user_required_actions(kc_url: str, token: str, realm: str, user_id: s
 
 
 def _user_has_totp(kc_url: str, token: str, realm: str, user_id: str) -> bool:
+    """Return True when the user already registered a TOTP credential."""
     cred_resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/users/{user_id}/credentials",
         headers=_auth_headers(token),
@@ -234,6 +247,7 @@ def _user_has_totp(kc_url: str, token: str, realm: str, user_id: str) -> bool:
 
 
 def _desired_required_actions(kc_url: str, token: str, realm: str, user_id: str) -> list[str]:
+    """Compute required actions for new joiners, prompting for TOTP if needed."""
     actions = {"UPDATE_PASSWORD"}
     if not _user_has_totp(kc_url, token, realm, user_id):
         actions.add("CONFIGURE_TOTP")
@@ -241,6 +255,7 @@ def _desired_required_actions(kc_url: str, token: str, realm: str, user_id: str)
 
 
 def get_user_by_username(kc_url: str, token: str, realm: str, username: str) -> dict | None:
+    """Return the user representation that exactly matches the username."""
     resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/users",
         params={"username": username},
@@ -265,6 +280,7 @@ def create_user(
     temp_password: str,
     role: str,
 ) -> None:
+    """Create a new user and assign the chosen role and bootstrap password."""
     exists = get_user_by_username(kc_url, token, realm, username)
     if exists:
         print(f"[joiner] User '{username}' already exists", file=sys.stderr)
@@ -321,6 +337,7 @@ def create_user(
 
 
 def change_role(kc_url: str, token: str, realm: str, username: str, from_role: str, to_role: str) -> None:
+    """Swap the user's role by revoking one assignment and granting another."""
     user = get_user_by_username(kc_url, token, realm, username)
     if not user:
         print(f"[mover] User '{username}' not found", file=sys.stderr)
@@ -357,6 +374,7 @@ def change_role(kc_url: str, token: str, realm: str, username: str, from_role: s
 
 
 def disable_user(kc_url: str, token: str, realm: str, username: str) -> None:
+    """Disable (leaver) a user account in the specified realm."""
     user = get_user_by_username(kc_url, token, realm, username)
     if not user:
         print(f"[leaver] User '{username}' not found", file=sys.stderr)
@@ -374,6 +392,7 @@ def disable_user(kc_url: str, token: str, realm: str, username: str) -> None:
 
 
 def delete_realm(kc_url: str, token: str, realm: str) -> None:
+    """Delete a non-master realm, handling missing realms gracefully."""
     if realm == "master":
         print("[reset] Refusing to delete the master realm", file=sys.stderr)
         return
@@ -397,6 +416,7 @@ def delete_realm(kc_url: str, token: str, realm: str) -> None:
 
 
 def _ensure_service_account_client(kc_url: str, token: str, realm: str, client_id: str) -> tuple[str, str]:
+    """Create the service account client if needed and rotate its secret."""
     client = _get_client(kc_url, token, realm, client_id)
     if not client:
         payload = {
@@ -466,6 +486,7 @@ def _assign_service_account_roles(
     client_uuid: str,
     role_names: list[str],
 ) -> None:
+    """Grant the service account the required realm-management client roles."""
     svc_user_resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/clients/{client_uuid}/service-account-user",
         headers=_auth_headers(token),
@@ -530,6 +551,7 @@ def bootstrap_service_account(
     target_realm: str,
     role_names: list[str],
 ) -> str:
+    """Provision the automation client and return its freshly rotated secret."""
     if svc_realm != "master":
         raise SystemExit("bootstrap-service-account requires --auth-realm master for admin login")
     try:
@@ -547,6 +569,7 @@ def bootstrap_service_account(
 
 
 def main() -> None:
+    """Command-line entry point used by the Makefile helpers and demo script."""
     parser = argparse.ArgumentParser(description="Keycloak JML helper")
     parser.add_argument("--kc-url", default="http://localhost:8080", help="Keycloak base URL")
     parser.add_argument(
@@ -627,7 +650,7 @@ def main() -> None:
             args.realm,
             args.roles,
         )
-        # Emit the secret on stdout so callers (e.g., demo_jml.sh) can capture it.
+        # Emit the secret on stdout so callers (e.g., scripts/demo_jml.sh) can capture it.
         print(secret)
         return
 

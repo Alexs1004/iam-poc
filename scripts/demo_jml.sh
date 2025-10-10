@@ -9,9 +9,10 @@ RED="\033[1;31m"
 RESET="\033[0m"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "${SCRIPT_DIR}"
+PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
+cd "${PROJECT_ROOT}"
 
-JML_CMD="python scripts/jml.py"
+JML_CMD="python ${SCRIPT_DIR}/jml.py"
 
 # Sensitive data supplied via environment (ensure .env is excluded from VCS)
 KC_URL=${KEYCLOAK_URL:?Variable KEYCLOAK_URL required}
@@ -28,7 +29,7 @@ COMMON_FLAGS=(
   "--kc-url" "${KC_URL}"
   "--auth-realm" "${KC_SERVICE_REALM}"
   "--svc-client-id" "${KC_SERVICE_CLIENT_ID}"
-  "--svc-client-secret" "${KEYCLOAK_SERVICE_CLIENT_SECRET}"
+  "--svc-client-secret" "${KC_SERVICE_CLIENT_SECRET}"
 )
 
 printf "%b\n" "${BLUE}=== Création du realm et du client ===${RESET}"
