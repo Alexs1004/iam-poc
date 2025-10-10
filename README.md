@@ -16,21 +16,32 @@ Developer PoC demonstrating **OIDC Authorization Code + PKCE**, **MFA (TOTP)**, 
 
 Everything is intended for localhost only. Production notes live in the **Security Guardrails** section.
 
-## Quick start (5 commands)
+## Quick start (6 commands)
 ```bash
-python3 -m venv .venv && source .venv/bin/activate          # (Windows: .venv\Scripts\activate)
-pip install -r requirements.txt
+./scripts/run_https.sh                                 # generate cert + start Keycloak, Flask app, reverse proxy
 make bootstrap-service-account # one-time; generates secret for automation-cli
 make demo                                                   # idempotent init + sample users + mover/leaver
-python app/flask_app.py                                     # start Flask UI (or run via your WSGI setup)
 ```
 Notes:
-- `make demo` will bootstrap automatically if `KEYCLOAK_SERVICE_CLIENT_SECRET` is missing (secret stays in memory unless you export it into `.env`).
+- `make bootstrap-service-account` now refreshes the secret in `.env` automatically; re-source your environment after running it.
+- `make demo` relies on the secret stored in `.env`; run the bootstrap target once (or whenever you intentionally rotate the client secret).
+- Once the compose stack is up, access the demo at https://localhost (Chrome/Firefox will prompt to trust the self-signed cert on first visit).
 - Keycloak is bound to `127.0.0.1:8080`; adjust `KEYCLOAK_URL` if you map the container differently.
+- To stop the stack, run `docker compose down` (add `-v` if you want to clear Keycloak's data volume).
+- Docker Compose reads variables from `.env` automatically, so updating that file keeps the containers in sync with the CLI tooling.
+- A local Python virtualenv is optional; keep it only if you want to run pytest or scripts hors Docker.
 
 ## What `make demo` does
 1. Bootstraps/rotates the `automation-cli` confidential client in realm `demo` (service account with `manage-realm`, `manage-users`, `manage-clients`).
-2. Runs `init`, `joiner (alice)`, `joiner (bob)`, `mover (alice→admin)`, `leaver (bob)`.
+2. Runs `init`, `joiner (alice)`, `joiner (bob)`, `mover (alice→admin)`, `leaver (bob)` via `scripts/demo_jml.sh`.
+
+## HTTPS & reverse proxy
+- `scripts/run_https.sh` creates a self-signed certificate (default validity 30 days) and launches the compose stack; rerun with `CERT_DAYS=7 ./scripts/run_https.sh --rotate` to regenerate on demand.
+- `docker-compose.yml` now includes:
+  - `flask-app`: a dedicated Gunicorn worker listening on port 8000.
+  - `reverse-proxy`: Nginx terminating TLS, redirecting HTTP→HTTPS, and forwarding `Host`/`X-Forwarded-*` headers to the Flask app.
+- `proxy/nginx.conf` adds HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, and X-XSS-Protection headers.
+- Flask trusts the forwarded headers through `ProxyFix`, so `url_for` and redirects generate HTTPS links while session cookies stay secure.
 3. Prints a clean sequence you can replay during a 2–3 minute demo.
 
 Available targets (see `Makefile`):
@@ -68,7 +79,7 @@ Available targets (see `Makefile`):
 
 ## Demo walkthrough (suggested)
 1. `make demo` → show CLI output (realm, users, role promotion, leaver).
-2. `python app/flask_app.py` → open `http://localhost:5000`.
+2. `python app/flask_app.py` (optionnel, hors Docker) → open `http://localhost:5000`.
 3. Login as `alice` with temp password, enrol OTP, reach `/me` (observe claims/roles).
 4. Visit `/admin` (should succeed with admin chip). Logout.
 5. Attempt login as `bob` (disabled) or as a non-admin to show 403 page.

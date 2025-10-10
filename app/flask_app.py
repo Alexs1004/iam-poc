@@ -13,6 +13,7 @@ from authlib.integrations.flask_client import OAuth
 from authlib.jose import JsonWebKey, jwt
 from flask import Flask, redirect, url_for, session, render_template, request, make_response
 from flask_session import Session
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Flask Application & Session Configuration
@@ -28,6 +29,9 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_SESSION_COOKIE_SECURE", "false").lower() == "true"
 Session(app)
+
+# Trust X-Forwarded-* headers from the first proxy (nginx) when running behind TLS termination.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[attr-defined]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OIDC Configuration (Keycloak)
