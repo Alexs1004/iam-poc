@@ -28,6 +28,7 @@ bootstrap-service-account: require-admin-creds ## One-time bootstrap (requires m
 	python3 scripts/update_env.py .env KEYCLOAK_SERVICE_CLIENT_SECRET "$$secret"; \
 	echo "[bootstrap] KEYCLOAK_SERVICE_CLIENT_SECRET updated in .env"; \
 	echo "$$secret"
+	@$(WITH_ENV) echo "Export KEYCLOAK_SERVICE_CLIENT_SECRET to use JML commands."
 
 .PHONY: init
 init: require-service-secret ## Provision realm, public client, roles, and required actions
