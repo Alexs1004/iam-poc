@@ -16,7 +16,7 @@ require-service-secret:
 
 .PHONY: require-admin-creds
 require-admin-creds:
-	@$(WITH_ENV) test -n "$${KEYCLOAK_ADMIN}" -a -n "$${KEYCLOAK_ADMIN_PASSWORDWORD}" || (echo "Admin credentials missing; export KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD." >&2; exit 1)
+	@$(WITH_ENV) test -n "$${KEYCLOAK_ADMIN}" -a -n "$${KEYCLOAK_ADMIN_PASSWORD}" || (echo "Admin credentials missing; export KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD." >&2; exit 1)
 
 .PHONY: bootstrap-service-account
 bootstrap-service-account: require-admin-creds ## One-time bootstrap (requires master admin; rotates secret)
