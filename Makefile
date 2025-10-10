@@ -20,7 +20,14 @@ require-admin-creds:
 
 .PHONY: bootstrap-service-account
 bootstrap-service-account: require-admin-creds ## One-time bootstrap (requires master admin; rotates secret)
-	@$(WITH_ENV) $(JML) --kc-url "$${KEYCLOAK_URL}" --auth-realm master --svc-client-id "$${KEYCLOAK_SERVICE_CLIENT_ID}" bootstrap-service-account --realm "$${KEYCLOAK_REALM}" --admin-user $${KEYCLOAK_ADMIN} --admin-pass $${KEYCLOAK_ADMIN_PASSWORD}
+	@secret=$$($(WITH_ENV) $(JML) --kc-url "$${KEYCLOAK_URL}" --auth-realm master --svc-client-id "$${KEYCLOAK_SERVICE_CLIENT_ID}" bootstrap-service-account --realm "$${KEYCLOAK_REALM}" --admin-user $${KEYCLOAK_ADMIN} --admin-pass $${KEYCLOAK_ADMIN_PASSWORD}); \
+	if [ -z "$$secret" ]; then \
+		echo "[bootstrap] No secret returned; .env not updated." >&2; \
+		exit 1; \
+	fi; \
+	python3 scripts/update_env.py .env KEYCLOAK_SERVICE_CLIENT_SECRET "$$secret"; \
+	echo "[bootstrap] KEYCLOAK_SERVICE_CLIENT_SECRET updated in .env"; \
+	echo "$$secret"
 
 .PHONY: init
 init: require-service-secret ## Provision realm, public client, roles, and required actions
