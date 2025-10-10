@@ -76,3 +76,44 @@ def test_me_filters_roles_to_admin_and_analyst(client):
     assert 'role-chip admin">admin<' in payload
     assert 'role-chip">analyst<' in payload
     assert 'role-chip">custom<' not in payload
+
+
+# Session cookies must be HttpOnly, Secure, and SameSite=Lax to prevent XSS and CSRF attacks.
+def test_session_cookie_flags_are_hardened(client):
+    with client.session_transaction() as session:
+        session["token"] = {"access_token": "stub"}
+    response = client.get("/")
+    cookies = "\n".join(response.headers.getlist("Set-Cookie"))
+    assert "HttpOnly" in cookies
+    assert "Secure" in cookies
+    assert "SameSite=Lax" in cookies
+
+
+# State-changing operations without a CSRF token must be blocked with a 400 error.
+def test_csrf_missing_token_blocks_state_changing_request(client):
+    response = client.post("/logout")
+    assert response.status_code == 400
+    assert b"CSRF validation failed" in response.data
+
+
+# Providing a valid CSRF token in the X-CSRF-Token header should allow the request to proceed.
+def test_csrf_header_allows_state_changing_request(client):
+    client.get("/")
+    with client.session_transaction() as session:
+        token = session["_csrf_token"]
+    response = client.post("/logout", headers={"X-CSRF-Token": token})
+    assert response.status_code == 405
+
+
+# Requests from untrusted proxy addresses must be rejected to prevent spoofing attacks.
+def test_untrusted_proxy_remote_rejected(client):
+    response = client.get("/", environ_overrides={"werkzeug.proxy_fix.orig_remote_addr": "203.0.113.10"})
+    assert response.status_code == 400
+    assert b"Untrusted proxy" in response.data
+
+
+# Non-HTTPS forwarded protocols must be rejected to enforce secure communication channels.
+def test_invalid_forwarded_proto_rejected(client):
+    response = client.get("/", headers={"X-Forwarded-Proto": "http"})
+    assert response.status_code == 400
+    assert b"Invalid forwarded protocol" in response.data

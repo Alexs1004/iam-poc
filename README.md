@@ -30,6 +30,7 @@ Notes:
 - To stop the stack, run `docker compose down` (add `-v` if you want to clear Keycloak's data volume).
 - Docker Compose reads variables from `.env` automatically, so updating that file keeps the containers in sync with the CLI tooling.
 - A local Python virtualenv is optional; keep it only if you want to run pytest or scripts hors Docker.
+- Session cookies ship with `Secure`/`HttpOnly`/`SameSite=Lax`; override `TRUSTED_PROXY_IPS` if your reverse proxy sits outside the default RFC1918 range.
 
 ## What `make demo` does
 1. Bootstraps/rotates the `automation-cli` confidential client in realm `demo` (service account with `manage-realm`, `manage-users`, `manage-clients`).
@@ -40,7 +41,7 @@ Notes:
 - `docker-compose.yml` now includes:
   - `flask-app`: a dedicated Gunicorn worker listening on port 8000.
   - `reverse-proxy`: Nginx terminating TLS, redirecting HTTP→HTTPS, and forwarding `Host`/`X-Forwarded-*` headers to the Flask app.
-- `proxy/nginx.conf` adds HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, and X-XSS-Protection headers.
+- `proxy/nginx.conf` adds HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Content-Security-Policy, and X-XSS-Protection headers.
 - Flask trusts the forwarded headers through `ProxyFix`, so `url_for` and redirects generate HTTPS links while session cookies stay secure.
 3. Prints a clean sequence you can replay during a 2–3 minute demo.
 
@@ -69,13 +70,14 @@ Available targets (see `Makefile`):
 
 ## Security guardrails (dev PoC)
 1. **Flow**: Authorization Code + PKCE only; no implicit/hybrid.
-2. **Sessions**: server-side, HttpOnly, SameSite=Lax (and `Secure` optional via env).
-3. **Tokens/Secrets**: never written to logs/DOM/localStorage; `.env` is gitignored.
-4. **Headers**: `Cache-Control`, `Pragma`, `Expires`, `X-Content-Type-Options`, `X-Frame-Options` enforced on sensitive routes.
-5. **Least privilege**: automation uses `automation-cli` (manage-users / manage-clients / manage-realm) scoped to realm `demo`.
-6. **MFA**: `CONFIGURE_TOTP` required on first login; `joiner` re-applies only if the user lacks an OTP credential.
-7. **RBAC**: `/admin` is enforced server-side; UI just reflects effective roles.
-8. **Dev only**: plain HTTP + dev secrets; README reminds that production needs HTTPS, dedicated secrets storage, monitoring, etc.
+2. **Sessions**: server-side, HttpOnly, SameSite=Lax, always `Secure`; CSRF tokens required for POST/PUT/PATCH/DELETE; rotate `FLASK_SECRET_KEY` with `FLASK_SECRET_KEY_FALLBACKS`.
+3. **Trusted proxy**: requests must arrive via the configured proxy IP ranges (`TRUSTED_PROXY_IPS`) with strict `X-Forwarded-*` values.
+4. **Tokens/Secrets**: never written to logs/DOM/localStorage; `.env` is gitignored.
+5. **Headers**: `Cache-Control`, `Pragma`, `Expires`, `X-Content-Type-Options`, `X-Frame-Options` enforced on sensitive routes.
+6. **Least privilege**: automation uses `automation-cli` (manage-users / manage-clients / manage-realm) scoped to realm `demo`.
+7. **MFA**: `CONFIGURE_TOTP` required on first login; `joiner` re-applies only if the user lacks an OTP credential.
+8. **RBAC**: `/admin` is enforced server-side; UI just reflects effective roles.
+9. **Dev only**: plain HTTP + dev secrets; README reminds that production needs HTTPS, dedicated secrets storage, monitoring, etc.
 
 ## Demo walkthrough (suggested)
 1. `make demo` → show CLI output (realm, users, role promotion, leaver).

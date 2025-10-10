@@ -1,5 +1,7 @@
 import base64
 import hashlib
+import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -11,7 +13,17 @@ from urllib.parse import urlencode
 import requests
 from authlib.integrations.flask_client import OAuth
 from authlib.jose import JsonWebKey, jwt
-from flask import Flask, redirect, url_for, session, render_template, request, make_response
+from flask import (
+    Flask,
+    abort,
+    g,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_session import Session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -20,6 +32,13 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # ─────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "change-me")
+fallback_keys = [
+    key.strip()
+    for key in os.environ.get("FLASK_SECRET_KEY_FALLBACKS", "").split(",")
+    if key.strip()
+]
+if fallback_keys:
+    app.config["SECRET_KEY_FALLBACKS"] = fallback_keys
 app.config["SESSION_TYPE"] = os.environ.get("FLASK_SESSION_TYPE", "filesystem")
 if app.config["SESSION_TYPE"] == "filesystem":
     session_dir = os.environ.get("FLASK_SESSION_DIR") or os.path.join(gettempdir(), "iam_poc_flask_session")
@@ -27,11 +46,24 @@ if app.config["SESSION_TYPE"] == "filesystem":
     app.config["SESSION_FILE_DIR"] = session_dir
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_SESSION_COOKIE_SECURE", "false").lower() == "true"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_SESSION_COOKIE_SECURE", "true").lower() == "true"
 Session(app)
 
 # Trust X-Forwarded-* headers from the first proxy (nginx) when running behind TLS termination.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[attr-defined]
+
+TRUSTED_PROXY_CONFIG = os.environ.get("TRUSTED_PROXY_IPS", "127.0.0.1/32,::1/128,172.16.0.0/12")
+TRUSTED_PROXY_NETWORKS = []
+for entry in TRUSTED_PROXY_CONFIG.split(","):
+    entry = entry.strip()
+    if not entry:
+        continue
+    try:
+        TRUSTED_PROXY_NETWORKS.append(ipaddress.ip_network(entry, strict=False))
+    except ValueError:
+        continue
+
+CSRF_SESSION_KEY = "_csrf_token"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # OIDC Configuration (Keycloak)
@@ -110,6 +142,7 @@ def _is_authenticated() -> bool:
 
 def _render_page(template: str, *, status: int = 200, protect: bool = False, **context):
     context.setdefault("flash_message", None)
+    context.setdefault("csrf_token", generate_csrf_token())
     rendered = render_template(
         template,
         is_authenticated=_is_authenticated(),
@@ -210,6 +243,24 @@ def _current_user_context():
     return token, id_claims, userinfo, roles
 
 
+def generate_csrf_token() -> str:
+    token = session.get(CSRF_SESSION_KEY)
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session[CSRF_SESSION_KEY] = token
+    return token
+
+
+def _is_trusted_proxy(ip_value: str | None) -> bool:
+    if not ip_value:
+        return False
+    try:
+        address = ipaddress.ip_address(ip_value)
+    except ValueError:
+        return False
+    return any(address in network for network in TRUSTED_PROXY_NETWORKS)
+
+
 def _security_headers(response):
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
     response.headers["Pragma"] = "no-cache"
@@ -239,6 +290,47 @@ def require_role(required_role):
         return wrapper
 
     return decorator
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CSRF & Proxy Guards
+# ─────────────────────────────────────────────────────────────────────────────
+@app.before_request
+def _enforce_proxy_headers() -> None:
+    original_remote = request.environ.get("werkzeug.proxy_fix.orig_remote_addr")
+    if original_remote and not _is_trusted_proxy(original_remote):
+        abort(400, description="Untrusted proxy")
+
+    forwarded_proto = request.headers.get("X-Forwarded-Proto")
+    if forwarded_proto and forwarded_proto != "https":
+        abort(400, description="Invalid forwarded protocol")
+
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for and "," in forwarded_for:
+        abort(400, description="Multiple forwarded clients not permitted")
+
+    g.csrf_token = generate_csrf_token()
+
+
+@app.before_request
+def _enforce_csrf() -> None:
+    if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return
+    submitted_token = (
+        request.form.get("csrf_token")
+        if not request.is_json
+        else request.headers.get("X-CSRF-Token", "")
+    )
+    if not submitted_token:
+        submitted_token = request.headers.get("X-CSRF-Token", "")
+    session_token = session.get(CSRF_SESSION_KEY, "")
+    if not session_token or not submitted_token or not hmac.compare_digest(session_token, submitted_token):
+        abort(400, description="CSRF validation failed")
+
+
+@app.context_processor
+def inject_csrf_token():
+    return {"csrf_token": g.get("csrf_token") or generate_csrf_token()}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
