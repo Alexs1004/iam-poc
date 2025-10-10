@@ -31,6 +31,14 @@ Notes:
 - Docker Compose reads variables from `.env` automatically, so updating that file keeps the containers in sync with the CLI tooling.
 - A local Python virtualenv is optional; keep it only if you want to run pytest or scripts hors Docker.
 - Session cookies ship with `Secure`/`HttpOnly`/`SameSite=Lax`; override `TRUSTED_PROXY_IPS` if your reverse proxy sits outside the default RFC1918 range.
+- `DEMO_MODE=true` permet une mise en route sans `.env` en injectant des secrets/identifiants de démonstration (`demo-service-secret`, `admin`, `Passw0rd!`, etc.) et affiche un avertissement au démarrage. En production (`DEMO_MODE=false` ou absent), ces variables deviennent obligatoires et l'app refusera de démarrer si elles manquent.
+
+## Mini-checklist « démo saine »
+- `DEMO_MODE=true` requis pour activer tous les fallbacks.
+- Secrets de démo manifestes (`admin/admin`, `demo-service-secret`, `Passw0rd!`) + warning au démarrage.
+- Services exposés uniquement en local (`127.0.0.1` pour Keycloak, Nginx 80/443 sur localhost).
+- ProxyFix + cookies Secure/HttpOnly/SameSite + en-têtes de sécurité actifs.
+- Pour passer en production : copier `.env.demo`, renseigner vos propres secrets, régler `DEMO_MODE=false`, basculer les URLs en `https://`, élargir `TRUSTED_PROXY_IPS`.
 
 ## What `make demo` does
 1. Bootstraps/rotates the `automation-cli` confidential client in realm `demo` (service account with `manage-realm`, `manage-users`, `manage-clients`).
@@ -41,7 +49,7 @@ Notes:
 - `docker-compose.yml` now includes:
   - `flask-app`: a dedicated Gunicorn worker listening on port 8000.
   - `reverse-proxy`: Nginx terminating TLS, redirecting HTTP→HTTPS, and forwarding `Host`/`X-Forwarded-*` headers to the Flask app.
-- `proxy/nginx.conf` adds HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Content-Security-Policy, and X-XSS-Protection headers.
+- `proxy/nginx.conf` adds HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Content-Security-Policy, and X-XSS-Protection headers (services bound to localhost only).
 - Flask trusts the forwarded headers through `ProxyFix`, so `url_for` and redirects generate HTTPS links while session cookies stay secure.
 3. Prints a clean sequence you can replay during a 2–3 minute demo.
 

@@ -22,13 +22,22 @@ services:
         pip install --no-cache-dir -r requirements.txt
         exec gunicorn --bind 0.0.0.0:8000 app.flask_app:app
     environment:
+      DEMO_MODE: ${DEMO_MODE}
       FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
+      FLASK_SECRET_KEY_FALLBACKS: ${FLASK_SECRET_KEY_FALLBACKS}
       FLASK_SESSION_COOKIE_SECURE: "true"
       FLASK_SESSION_TYPE: filesystem
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS}
       KEYCLOAK_ISSUER: http://keycloak:8080/realms/${KEYCLOAK_REALM}
-      OIDC_REDIRECT_URI: https://localhost/callback
-      POST_LOGOUT_REDIRECT_URI: https://localhost/
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI}
       KEYCLOAK_CLIENT_SECRET: ""
+      KEYCLOAK_SERVICE_CLIENT_SECRET: ${KEYCLOAK_SERVICE_CLIENT_SECRET}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      ALICE_TEMP_PASSWORD: ${ALICE_TEMP_PASSWORD}
+      BOB_TEMP_PASSWORD: ${BOB_TEMP_PASSWORD}
     volumes:
       - .:/srv/app
     depends_on:

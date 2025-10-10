@@ -30,8 +30,36 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # ─────────────────────────────────────────────────────────────────────────────
 # Flask Application & Session Configuration
 # ─────────────────────────────────────────────────────────────────────────────
+DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
+
+
+def _ensure_env(name: str, *, demo_default: str | None = None, required: bool = True) -> str:
+    value = os.environ.get(name)
+    if value:
+        return value
+    if DEMO_MODE and demo_default is not None:
+        print(f"[demo-mode] Using generated default for {name}")
+        os.environ[name] = demo_default
+        return demo_default
+    if not required:
+        return ""
+    raise RuntimeError(f"Environment variable {name} is required in production mode.")
+
+
+def _generate_demo_secret() -> str:
+    return secrets.token_urlsafe(48)
+
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "change-me")
+secret_key = os.environ.get("FLASK_SECRET_KEY")
+if not secret_key:
+    if DEMO_MODE:
+        secret_key = _generate_demo_secret()
+        os.environ["FLASK_SECRET_KEY"] = secret_key
+        print("[demo-mode] Generated temporary FLASK_SECRET_KEY")
+    else:
+        raise RuntimeError("FLASK_SECRET_KEY is required when DEMO_MODE is false.")
+app.config["SECRET_KEY"] = secret_key
 fallback_keys = [
     key.strip()
     for key in os.environ.get("FLASK_SECRET_KEY_FALLBACKS", "").split(",")
@@ -46,13 +74,24 @@ if app.config["SESSION_TYPE"] == "filesystem":
     app.config["SESSION_FILE_DIR"] = session_dir
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_SESSION_COOKIE_SECURE", "true").lower() == "true"
+session_secure_flag = os.environ.get("FLASK_SESSION_COOKIE_SECURE")
+if session_secure_flag is None and DEMO_MODE:
+    os.environ["FLASK_SESSION_COOKIE_SECURE"] = "true"
+    session_secure_flag = "true"
+app.config["SESSION_COOKIE_SECURE"] = (session_secure_flag or "true").lower() == "true"
 Session(app)
 
 # Trust X-Forwarded-* headers from the first proxy (nginx) when running behind TLS termination.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # type: ignore[attr-defined]
 
-TRUSTED_PROXY_CONFIG = os.environ.get("TRUSTED_PROXY_IPS", "127.0.0.1/32,::1/128,172.16.0.0/12")
+TRUSTED_PROXY_CONFIG = os.environ.get("TRUSTED_PROXY_IPS")
+if not TRUSTED_PROXY_CONFIG:
+    if DEMO_MODE:
+        TRUSTED_PROXY_CONFIG = "127.0.0.1/32,::1/128"
+        os.environ["TRUSTED_PROXY_IPS"] = TRUSTED_PROXY_CONFIG
+        print("[demo-mode] Defaulted TRUSTED_PROXY_IPS to localhost ranges")
+    else:
+        raise RuntimeError("TRUSTED_PROXY_IPS is required when DEMO_MODE is false.")
 TRUSTED_PROXY_NETWORKS = []
 for entry in TRUSTED_PROXY_CONFIG.split(","):
     entry = entry.strip()
@@ -68,11 +107,45 @@ CSRF_SESSION_KEY = "_csrf_token"
 # ─────────────────────────────────────────────────────────────────────────────
 # OIDC Configuration (Keycloak)
 # ─────────────────────────────────────────────────────────────────────────────
-ISSUER = os.environ.get("KEYCLOAK_ISSUER", "http://localhost:8080/realms/demo")
-CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "flask-app")
+ISSUER = _ensure_env(
+    "KEYCLOAK_ISSUER",
+    demo_default="http://localhost:8080/realms/demo",
+)
+CLIENT_ID = _ensure_env("OIDC_CLIENT_ID", demo_default="flask-app")
 CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
-REDIRECT_URI = os.environ.get("OIDC_REDIRECT_URI", "http://localhost:5000/callback")
-POST_LOGOUT_REDIRECT_URI = os.environ.get("POST_LOGOUT_REDIRECT_URI", "http://localhost:5000/")
+REDIRECT_URI = _ensure_env(
+    "OIDC_REDIRECT_URI",
+    demo_default="http://localhost:5000/callback",
+)
+POST_LOGOUT_REDIRECT_URI = _ensure_env(
+    "POST_LOGOUT_REDIRECT_URI",
+    demo_default="http://localhost:5000/",
+)
+
+SERVICE_CLIENT_SECRET = _ensure_env(
+    "KEYCLOAK_SERVICE_CLIENT_SECRET",
+    demo_default="demo-service-secret",
+)
+ADMIN_USERNAME = _ensure_env("KEYCLOAK_ADMIN", demo_default="admin")
+ADMIN_PASSWORD = _ensure_env("KEYCLOAK_ADMIN_PASSWORD", demo_default="admin")
+ALICE_PASSWORD = _ensure_env("ALICE_TEMP_PASSWORD", demo_default="Passw0rd!")
+BOB_PASSWORD = _ensure_env("BOB_TEMP_PASSWORD", demo_default="Passw0rd!")
+
+DEMO_WARN_VARS = {
+    "KEYCLOAK_SERVICE_CLIENT_SECRET": SERVICE_CLIENT_SECRET,
+    "KEYCLOAK_ADMIN_PASSWORD": ADMIN_PASSWORD,
+    "ALICE_TEMP_PASSWORD": ALICE_PASSWORD,
+    "BOB_TEMP_PASSWORD": BOB_PASSWORD,
+}
+
+MODE_LABEL = "DEMO" if DEMO_MODE else "PRODUCTION"
+print(
+    f"[startup] Mode={MODE_LABEL}; issuer={ISSUER}; redirect_uri={REDIRECT_URI}; trusted_proxies={TRUSTED_PROXY_CONFIG}"
+)
+if DEMO_MODE:
+    print("[startup] WARNING: Demo credentials in use. Do not deploy with these defaults.")
+    for name, value in DEMO_WARN_VARS.items():
+        print(f"[startup]   {name}={value}")
 
 oauth = OAuth(app)
 oidc = oauth.register(

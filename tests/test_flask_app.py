@@ -1,3 +1,4 @@
+import os
 import pathlib
 import sys
 
@@ -7,6 +8,8 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+os.environ.setdefault("DEMO_MODE", "true")
 
 from app import app as flask_app
 
