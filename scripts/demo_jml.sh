@@ -12,7 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 cd "${PROJECT_ROOT}"
 
-JML_CMD="python ${SCRIPT_DIR}/jml.py"
+# Allow overriding the python interpreter via $PYTHON, defaulting to python3.
+PYTHON_BIN=${PYTHON:-python3}
+JML_CMD="${PYTHON_BIN} ${SCRIPT_DIR}/jml.py"
 
 # Sensitive data supplied via environment (ensure .env is excluded from VCS)
 KC_URL=${KEYCLOAK_URL:?Variable KEYCLOAK_URL required}
@@ -22,6 +24,7 @@ KC_SERVICE_CLIENT_SECRET=${KEYCLOAK_SERVICE_CLIENT_SECRET:?Variable KEYCLOAK_SER
 REALM=${KEYCLOAK_REALM:-demo}
 CLIENT_ID=${OIDC_CLIENT_ID:?Variable OIDC_CLIENT_ID required}
 REDIRECT_URI=${OIDC_REDIRECT_URI:?Variable OIDC_REDIRECT_URI required}
+POST_LOGOUT_REDIRECT_URI=${POST_LOGOUT_REDIRECT_URI:?Variable POST_LOGOUT_REDIRECT_URI required}
 ALICE_TEMP=${ALICE_TEMP_PASSWORD:?Variable ALICE_TEMP_PASSWORD required}
 BOB_TEMP=${BOB_TEMP_PASSWORD:?Variable BOB_TEMP_PASSWORD required}
 
@@ -33,7 +36,7 @@ COMMON_FLAGS=(
 )
 
 printf "%b\n" "${BLUE}=== Création du realm et du client ===${RESET}"
-${JML_CMD} "${COMMON_FLAGS[@]}" init --realm "${REALM}" --client-id "${CLIENT_ID}" --redirect-uri "${REDIRECT_URI}"
+${JML_CMD} "${COMMON_FLAGS[@]}" init --realm "${REALM}" --client-id "${CLIENT_ID}" --redirect-uri "${REDIRECT_URI}" --post-logout-redirect-uri "${POST_LOGOUT_REDIRECT_URI}"
 
 printf "%b\n" "${YELLOW}=== Provision de l'utilisatrice alice (joiner) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username alice --email alice@example.com --first Alice --last Demo --role analyst --temp-password "${ALICE_TEMP}"

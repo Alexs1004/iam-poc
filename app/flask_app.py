@@ -27,9 +27,55 @@ from flask import (
 from flask_session import Session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+try:
+    from azure.identity import DefaultAzureCredential  # type: ignore
+    from azure.keyvault.secrets import SecretClient  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    DefaultAzureCredential = None
+    SecretClient = None
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Flask Application & Session Configuration
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _load_secrets_from_azure() -> None:
+    use_kv = os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true"
+    if not use_kv:
+        return
+    if DefaultAzureCredential is None or SecretClient is None:
+        raise RuntimeError("Azure Key Vault integration requested but azure-keyvault-secrets is not installed.")
+    vault_name = os.environ.get("AZURE_KEY_VAULT_NAME")
+    if not vault_name:
+        raise RuntimeError("AZURE_KEY_VAULT_NAME is required when AZURE_USE_KEYVAULT=true.")
+    vault_uri = f"https://{vault_name}.vault.azure.net"
+    credential = DefaultAzureCredential()
+    client = SecretClient(vault_url=vault_uri, credential=credential)
+    mapping = {
+        "FLASK_SECRET_KEY": os.environ.get("AZURE_SECRET_FLASK_SECRET_KEY", "flask-secret-key"),
+        "FLASK_SECRET_KEY_FALLBACKS": os.environ.get("AZURE_SECRET_FLASK_SECRET_KEY_FALLBACKS", ""),
+        "KEYCLOAK_SERVICE_CLIENT_SECRET": os.environ.get(
+            "AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET", "keycloak-service-client-secret"
+        ),
+        "KEYCLOAK_ADMIN_PASSWORD": os.environ.get("AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD", "keycloak-admin-password"),
+        "ALICE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_ALICE_TEMP_PASSWORD", "alice-temp-password"),
+        "BOB_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_BOB_TEMP_PASSWORD", "bob-temp-password"),
+    }
+    for env_name, secret_name in mapping.items():
+        if os.environ.get(env_name):
+            continue
+        secret_name = secret_name.strip()
+        if not secret_name:
+            continue
+        try:
+            secret = client.get_secret(secret_name)
+        except Exception as exc:  # pragma: no cover - depends on Azure response
+            raise RuntimeError(f"Failed to retrieve secret '{secret_name}' from Key Vault: {exc}") from exc
+        os.environ[env_name] = secret.value
+
+
+_load_secrets_from_azure()
+
 DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
 
 
@@ -111,6 +157,9 @@ ISSUER = _ensure_env(
     "KEYCLOAK_ISSUER",
     demo_default="http://localhost:8080/realms/demo",
 )
+SERVER_URL = os.environ.get("KEYCLOAK_SERVER_URL", ISSUER)
+PUBLIC_ISSUER = os.environ.get("KEYCLOAK_PUBLIC_ISSUER", ISSUER)
+END_SESSION_ENDPOINT = f"{PUBLIC_ISSUER.rstrip('/')}/protocol/openid-connect/logout"
 CLIENT_ID = _ensure_env("OIDC_CLIENT_ID", demo_default="flask-app")
 CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
 REDIRECT_URI = _ensure_env(
@@ -124,12 +173,18 @@ POST_LOGOUT_REDIRECT_URI = _ensure_env(
 
 SERVICE_CLIENT_SECRET = _ensure_env(
     "KEYCLOAK_SERVICE_CLIENT_SECRET",
-    demo_default="demo-service-secret",
+    demo_default=os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO", "demo-service-secret"),
 )
-ADMIN_USERNAME = _ensure_env("KEYCLOAK_ADMIN", demo_default="admin")
-ADMIN_PASSWORD = _ensure_env("KEYCLOAK_ADMIN_PASSWORD", demo_default="admin")
-ALICE_PASSWORD = _ensure_env("ALICE_TEMP_PASSWORD", demo_default="Passw0rd!")
-BOB_PASSWORD = _ensure_env("BOB_TEMP_PASSWORD", demo_default="Passw0rd!")
+ADMIN_USERNAME = _ensure_env("KEYCLOAK_ADMIN", demo_default=os.environ.get("KEYCLOAK_ADMIN_DEMO", "admin"))
+ADMIN_PASSWORD = _ensure_env("KEYCLOAK_ADMIN_PASSWORD", demo_default=os.environ.get("KEYCLOAK_ADMIN_PASSWORD_DEMO", "admin"))
+ALICE_PASSWORD = _ensure_env(
+    "ALICE_TEMP_PASSWORD",
+    demo_default=os.environ.get("ALICE_TEMP_PASSWORD_DEMO", "Passw0rd!"),
+)
+BOB_PASSWORD = _ensure_env(
+    "BOB_TEMP_PASSWORD",
+    demo_default=os.environ.get("BOB_TEMP_PASSWORD_DEMO", "Passw0rd!"),
+)
 
 DEMO_WARN_VARS = {
     "KEYCLOAK_SERVICE_CLIENT_SECRET": SERVICE_CLIENT_SECRET,
@@ -150,14 +205,14 @@ if DEMO_MODE:
 oauth = OAuth(app)
 oidc = oauth.register(
     name="keycloak",
-    server_metadata_url=f"{ISSUER}/.well-known/openid-configuration",
+    server_metadata_url=f"{SERVER_URL}/.well-known/openid-configuration",
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET or None,
     client_kwargs={"scope": "openid profile email roles"},
     fetch_token=lambda: session.get("token"),
 )
 
-USERINFO_URL = f"{ISSUER}/protocol/openid-connect/userinfo"
+USERINFO_URL = f"{SERVER_URL}/protocol/openid-connect/userinfo"
 JWKS_CACHE = None
 
 
@@ -238,7 +293,11 @@ def index():
 @app.route("/login")
 def login():
     force = request.args.get("force")
-    extra = {"prompt": "login"} if force else {}
+    extra = {"prompt": "login", "max_age": "0"} if force else {}
+    if force:
+        session.pop("token", None)
+        session.pop("userinfo", None)
+        session.pop("id_claims", None)
     code_verifier = _generate_code_verifier()
     session["pkce_code_verifier"] = code_verifier
     code_challenge = _build_code_challenge(code_verifier)
@@ -278,7 +337,7 @@ def logout():
         params["id_token_hint"] = id_token
     else:
         params["client_id"] = CLIENT_ID
-    logout_url = f"{ISSUER}/protocol/openid-connect/logout?{urlencode(params)}"
+    logout_url = f"{END_SESSION_ENDPOINT}?{urlencode(params)}"
     return redirect(logout_url)
 
 

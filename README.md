@@ -31,14 +31,21 @@ Notes:
 - Docker Compose reads variables from `.env` automatically, so updating that file keeps the containers in sync with the CLI tooling.
 - A local Python virtualenv is optional; keep it only if you want to run pytest or scripts hors Docker.
 - Session cookies ship with `Secure`/`HttpOnly`/`SameSite=Lax`; override `TRUSTED_PROXY_IPS` if your reverse proxy sits outside the default RFC1918 range.
-- `DEMO_MODE=true` permet une mise en route sans `.env` en injectant des secrets/identifiants de démonstration (`demo-service-secret`, `admin`, `Passw0rd!`, etc.) et affiche un avertissement au démarrage. En production (`DEMO_MODE=false` ou absent), ces variables deviennent obligatoires et l'app refusera de démarrer si elles manquent.
+- `DEMO_MODE=true` permet une mise en route sans `.env` en injectant des secrets/identifiants de démonstration fournis via variables d'environnement (`KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO`, `KEYCLOAK_ADMIN_PASSWORD_DEMO`, etc.) et affiche un avertissement au démarrage. En production (`DEMO_MODE=false` ou absent), ces variables deviennent obligatoires et l'app refusera de démarrer si elles manquent.
 
 ## Mini-checklist « démo saine »
 - `DEMO_MODE=true` requis pour activer tous les fallbacks.
-- Secrets de démo manifestes (`admin/admin`, `demo-service-secret`, `Passw0rd!`) + warning au démarrage.
+- Secrets de démo manifestes (stockés dans des variables `*_DEMO`) + warning au démarrage.
 - Services exposés uniquement en local (`127.0.0.1` pour Keycloak, Nginx 80/443 sur localhost).
 - ProxyFix + cookies Secure/HttpOnly/SameSite + en-têtes de sécurité actifs.
 - Pour passer en production : copier `.env.demo`, renseigner vos propres secrets, régler `DEMO_MODE=false`, basculer les URLs en `https://`, élargir `TRUSTED_PROXY_IPS`.
+
+## Azure Key Vault integration
+- Positionner `AZURE_USE_KEYVAULT=true` et `AZURE_KEY_VAULT_NAME=<votre_coffre>` pour charger automatiquement les secrets.
+- Mappez chaque secret via `AZURE_SECRET_*` (voir `.env.demo`). Seuls les secrets absents de l’environnement sont récupérés afin de rester en moindre privilège.
+- L’application utilise `DefaultAzureCredential`; affectez une identité managée ou un principal de service avec le rôle **Key Vault Secrets User** sur le coffre concerné.
+- Aucune valeur sensible n’est journalisée, uniquement des messages de succès/erreur.
+- Mettez en place la rotation côté Key Vault (policy de rotation) et redémarrez les services pour consommer les nouvelles versions.
 
 ## What `make demo` does
 1. Bootstraps/rotates the `automation-cli` confidential client in realm `demo` (service account with `manage-realm`, `manage-users`, `manage-clients`).

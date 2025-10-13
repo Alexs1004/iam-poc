@@ -5,6 +5,7 @@ import argparse
 import os
 import sys
 import time
+from urllib.parse import urlparse
 
 import requests
 
@@ -87,7 +88,22 @@ def create_realm(kc_url: str, token: str, realm: str) -> None:
         resp.raise_for_status()
 
 
-def create_client(kc_url: str, token: str, realm: str, client_id: str, redirect_uri: str) -> None:
+def _origin_from_url(url: str) -> str:
+    """Extract the scheme+host[:port] origin from the provided URL."""
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError(f"Invalid URL '{url}' – expected absolute URI")
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def create_client(
+    kc_url: str,
+    token: str,
+    realm: str,
+    client_id: str,
+    redirect_uri: str,
+    post_logout_redirect_uri: str,
+) -> None:
     """Create or update the demo public client with desired configuration."""
     resp = requests.get(
         f"{kc_url}/admin/realms/{realm}/clients",
@@ -97,9 +113,12 @@ def create_client(kc_url: str, token: str, realm: str, client_id: str, redirect_
     )
     resp.raise_for_status()
     existing = resp.json()
-    desired_logout = "http://localhost:5000/"
+    desired_logout = post_logout_redirect_uri
     desired_redirects = [redirect_uri]
-    desired_web_origins = ["http://localhost:5000"]
+    try:
+        desired_web_origins = [_origin_from_url(redirect_uri)]
+    except ValueError as exc:
+        raise SystemExit(f"[init] {exc}") from exc
     if existing:
         client = existing[0]
         client_uuid = client.get("id")
@@ -609,6 +628,7 @@ def main() -> None:
     sp.add_argument("--realm", default="demo")
     sp.add_argument("--client-id", default="flask-app")
     sp.add_argument("--redirect-uri", default="http://localhost:5000/callback")
+    sp.add_argument("--post-logout-redirect-uri", default="http://localhost:5000/")
 
     sj = sub.add_parser("joiner")
     sj.add_argument("--realm", default="demo")
@@ -617,7 +637,7 @@ def main() -> None:
     sj.add_argument("--first", required=True)
     sj.add_argument("--last", required=True)
     sj.add_argument("--role", default="analyst")
-    sj.add_argument("--temp-password", default="Passw0rd!")
+    sj.add_argument("--temp-password", default=os.environ.get("ALICE_TEMP_PASSWORD_DEMO", "Passw0rd!"))
 
     sm = sub.add_parser("mover")
     sm.add_argument("--realm", default="demo")
@@ -670,7 +690,14 @@ def main() -> None:
 
     if args.cmd == "init":
         create_realm(args.kc_url, token, target_realm)
-        create_client(args.kc_url, token, target_realm, args.client_id, args.redirect_uri)
+        create_client(
+            args.kc_url,
+            token,
+            target_realm,
+            args.client_id,
+            args.redirect_uri,
+            args.post_logout_redirect_uri,
+        )
         for role in ["admin", "analyst"]:
             create_role(args.kc_url, token, target_realm, role)
         ensure_required_action(args.kc_url, token, target_realm, "CONFIGURE_TOTP")

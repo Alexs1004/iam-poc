@@ -6,6 +6,10 @@ services:
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_STRICT: false
+      KC_PROXY: edge
+      KC_HOSTNAME_PORT: 8080
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -23,23 +27,37 @@ services:
         exec gunicorn --bind 0.0.0.0:8000 app.flask_app:app
     environment:
       DEMO_MODE: ${DEMO_MODE}
-      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
       FLASK_SECRET_KEY_FALLBACKS: ${FLASK_SECRET_KEY_FALLBACKS}
       FLASK_SESSION_COOKIE_SECURE: "true"
       FLASK_SESSION_TYPE: filesystem
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS}
-      KEYCLOAK_ISSUER: http://keycloak:8080/realms/${KEYCLOAK_REALM}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
+      KEYCLOAK_SERVER_URL: http://keycloak:8080/realms/${KEYCLOAK_REALM}
+      KEYCLOAK_PUBLIC_ISSUER: ${KEYCLOAK_PUBLIC_ISSUER}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
       POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI}
-      KEYCLOAK_CLIENT_SECRET: ""
+      AZURE_USE_KEYVAULT: "false"
+      AZURE_KEY_VAULT_NAME: "demo-key-vault-alex"
+      AZURE_SECRET_FLASK_SECRET_KEY: "flask-secret-key"
+      AZURE_SECRET_FLASK_SECRET_KEY_FALLBACKS: ""
+      AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET: "keycloak-service-client-secret"
+      AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD: "keycloak-admin-password"
+      AZURE_SECRET_ALICE_TEMP_PASSWORD: "alice-temp-password"
+      AZURE_SECRET_BOB_TEMP_PASSWORD: "bob-temp-password"
       KEYCLOAK_SERVICE_CLIENT_SECRET: ${KEYCLOAK_SERVICE_CLIENT_SECRET}
+      KEYCLOAK_SERVICE_CLIENT_ID: ${KEYCLOAK_SERVICE_CLIENT_ID}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       ALICE_TEMP_PASSWORD: ${ALICE_TEMP_PASSWORD}
       BOB_TEMP_PASSWORD: ${BOB_TEMP_PASSWORD}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
+
+
     volumes:
       - .:/srv/app
+      - ~/.azure:/root/.azure:ro
     depends_on:
       - keycloak
     expose:

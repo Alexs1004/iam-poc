@@ -1,6 +1,8 @@
 SHELL := /bin/bash
 
-JML := python scripts/jml.py
+# Use python3 explicitly so we work on systems where only python3 is installed.
+PYTHON ?= python3
+JML := $(PYTHON) scripts/jml.py
 
 
 COMMON_FLAGS = --kc-url $${KEYCLOAK_URL} --auth-realm $${KEYCLOAK_SERVICE_REALM} --svc-client-id $${KEYCLOAK_SERVICE_CLIENT_ID} --svc-client-secret $${KEYCLOAK_SERVICE_CLIENT_SECRET}
@@ -32,7 +34,7 @@ bootstrap-service-account: require-admin-creds ## One-time bootstrap (requires m
 
 .PHONY: init
 init: require-service-secret ## Provision realm, public client, roles, and required actions
-	@$(WITH_ENV) $(JML) $(COMMON_FLAGS) init --realm $${KEYCLOAK_REALM} --client-id $${OIDC_CLIENT_ID} --redirect-uri $${OIDC_REDIRECT_URI}
+	@$(WITH_ENV) $(JML) $(COMMON_FLAGS) init --realm $${KEYCLOAK_REALM} --client-id $${OIDC_CLIENT_ID} --redirect-uri $${OIDC_REDIRECT_URI} --post-logout-redirect-uri $${POST_LOGOUT_REDIRECT_URI}
 
 .PHONY: joiner-alice
 joiner-alice: require-service-secret ## Create analyst user alice with temporary password and MFA requirements
