@@ -29,10 +29,16 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 try:
     from azure.identity import DefaultAzureCredential  # type: ignore
+    from azure.keyvault.certificates import CertificateClient  # type: ignore
+    from azure.keyvault.keys import KeyClient  # type: ignore
     from azure.keyvault.secrets import SecretClient  # type: ignore
+    from azure.core.exceptions import ResourceNotFoundError  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
     DefaultAzureCredential = None
     SecretClient = None
+    KeyClient = None
+    CertificateClient = None
+    ResourceNotFoundError = Exception
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Flask Application & Session Configuration
@@ -50,8 +56,8 @@ def _load_secrets_from_azure() -> None:
         raise RuntimeError("AZURE_KEY_VAULT_NAME is required when AZURE_USE_KEYVAULT=true.")
     vault_uri = f"https://{vault_name}.vault.azure.net"
     credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=vault_uri, credential=credential)
-    mapping = {
+    secret_client = SecretClient(vault_url=vault_uri, credential=credential)
+    secret_mapping = {
         "FLASK_SECRET_KEY": os.environ.get("AZURE_SECRET_FLASK_SECRET_KEY", "flask-secret-key"),
         "FLASK_SECRET_KEY_FALLBACKS": os.environ.get("AZURE_SECRET_FLASK_SECRET_KEY_FALLBACKS", ""),
         "KEYCLOAK_SERVICE_CLIENT_SECRET": os.environ.get(
@@ -61,14 +67,45 @@ def _load_secrets_from_azure() -> None:
         "ALICE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_ALICE_TEMP_PASSWORD", "alice-temp-password"),
         "BOB_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_BOB_TEMP_PASSWORD", "bob-temp-password"),
     }
-    for env_name, secret_name in mapping.items():
+    key_mapping = {
+        "FLASK_SECRET_KEY": os.environ.get("AZURE_KEY_FLASK_SECRET_KEY", "").strip(),
+    }
+    key_client = None
+    if any(value for value in key_mapping.values()):
+        if KeyClient is None:
+            raise RuntimeError("AZURE_KEY_* variables defined but azure-keyvault-keys is not installed.")
+        key_client = KeyClient(vault_url=vault_uri, credential=credential)
+    if key_client:
+        for env_name, key_name in key_mapping.items():
+            if os.environ.get(env_name):
+                continue
+            key_name = key_name.strip()
+            if not key_name:
+                continue
+            try:
+                key_bundle = key_client.get_key(key_name)
+            except ResourceNotFoundError:
+                continue
+            except Exception as exc:  # pragma: no cover - depends on Azure response
+                raise RuntimeError(f"Failed to retrieve key '{key_name}' from Key Vault: {exc}") from exc
+            key_material = getattr(key_bundle, "key", None)
+            key_value = getattr(key_material, "k", None) if key_material else None
+            if not key_value:
+                continue
+            padding = "=" * (-len(key_value) % 4)
+            try:
+                decoded = base64.urlsafe_b64decode(f"{key_value}{padding}".encode("ascii"))
+            except Exception as exc:  # pragma: no cover - depends on key format
+                raise RuntimeError(f"Failed to decode key '{key_name}' from Key Vault: {exc}") from exc
+            os.environ[env_name] = base64.urlsafe_b64encode(decoded).decode("ascii")
+    for env_name, secret_name in secret_mapping.items():
         if os.environ.get(env_name):
             continue
         secret_name = secret_name.strip()
         if not secret_name:
             continue
         try:
-            secret = client.get_secret(secret_name)
+            secret = secret_client.get_secret(secret_name)
         except Exception as exc:  # pragma: no cover - depends on Azure response
             raise RuntimeError(f"Failed to retrieve secret '{secret_name}' from Key Vault: {exc}") from exc
         os.environ[env_name] = secret.value

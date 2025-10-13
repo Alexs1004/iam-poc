@@ -21,16 +21,30 @@ require-admin-creds:
 	@$(WITH_ENV) test -n "$${KEYCLOAK_ADMIN}" -a -n "$${KEYCLOAK_ADMIN_PASSWORD}" || (echo "Admin credentials missing; export KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD." >&2; exit 1)
 
 .PHONY: bootstrap-service-account
-bootstrap-service-account: require-admin-creds ## One-time bootstrap (requires master admin; rotates secret)
-	@secret=$$($(WITH_ENV) $(JML) --kc-url "$${KEYCLOAK_URL}" --auth-realm master --svc-client-id "$${KEYCLOAK_SERVICE_CLIENT_ID}" bootstrap-service-account --realm "$${KEYCLOAK_REALM}" --admin-user $${KEYCLOAK_ADMIN} --admin-pass $${KEYCLOAK_ADMIN_PASSWORD}); \
+bootstrap-service-account: ## One-time bootstrap (requires master admin; rotates secret)
+	@set -a; source .env; set +a; \
+	if [ -z "$$KEYCLOAK_ADMIN" ]; then \
+		echo "[bootstrap] KEYCLOAK_ADMIN is not set in .env"; \
+		exit 1; \
+	fi; \
+	if [ -z "$$AZURE_KEY_VAULT_NAME" ] || [ -z "$$AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD" ]; then \
+		echo "[bootstrap] Azure Key Vault configuration missing in .env"; \
+		exit 1; \
+	fi; \
+	ADMIN_PASS=$$(az keyvault secret show --vault-name "$$AZURE_KEY_VAULT_NAME" --name "$$AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD" --query value -o tsv) || exit 1; \
+	if [ -z "$$ADMIN_PASS" ]; then \
+		echo "[bootstrap] Failed to retrieve admin password from Key Vault"; \
+		exit 1; \
+	fi; \
+	secret=$$($(JML) --kc-url "$$KEYCLOAK_URL" --auth-realm master --svc-client-id "$$KEYCLOAK_SERVICE_CLIENT_ID" bootstrap-service-account --realm "$$KEYCLOAK_REALM" --admin-user "$$KEYCLOAK_ADMIN" --admin-pass "$$ADMIN_PASS"); \
 	if [ -z "$$secret" ]; then \
 		echo "[bootstrap] No secret returned; .env not updated." >&2; \
 		exit 1; \
 	fi; \
 	python3 scripts/update_env.py .env KEYCLOAK_SERVICE_CLIENT_SECRET "$$secret"; \
 	echo "[bootstrap] KEYCLOAK_SERVICE_CLIENT_SECRET updated in .env"; \
-	echo "$$secret"
-	@$(WITH_ENV) echo "Export KEYCLOAK_SERVICE_CLIENT_SECRET to use JML commands."
+	echo "$$secret"; \
+	echo "Export KEYCLOAK_SERVICE_CLIENT_SECRET to use JML commands."
 
 .PHONY: init
 init: require-service-secret ## Provision realm, public client, roles, and required actions
@@ -59,7 +73,8 @@ delete-realm: require-service-secret ## Delete realm (irreversible; skips master
 	@$(WITH_ENV) $(JML) $(COMMON_FLAGS) delete-realm --realm $${KEYCLOAK_REALM}
 
 .PHONY: demo
-demo: ## Run the scripted JML demonstration
+demo: ## Run the scripted JML demonstration (starts stack + automation)
+	@./scripts/run_https.sh
 	@$(WITH_ENV) ./scripts/demo_jml.sh
 
 .PHONY: pytest

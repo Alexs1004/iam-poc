@@ -17,6 +17,42 @@ PYTHON_BIN=${PYTHON:-python3}
 JML_CMD="${PYTHON_BIN} ${SCRIPT_DIR}/jml.py"
 
 # Sensitive data supplied via environment (ensure .env is excluded from VCS)
+if [[ -z "${ALICE_TEMP_PASSWORD:-}" || -z "${BOB_TEMP_PASSWORD:-}" ]]; then
+  if [[ "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
+    if ! command -v az >/dev/null 2>&1; then
+      echo "[demo] Azure CLI is required to fetch secrets from Key Vault when environment variables are unset." >&2
+      exit 1
+    fi
+    fetch_secret() {
+      local secret_name="$1"
+      if [[ -z "${secret_name}" ]]; then
+        echo ""
+        return 0
+      fi
+      az keyvault secret show \
+        --vault-name "${AZURE_KEY_VAULT_NAME}" \
+        --name "${secret_name}" \
+        --query value \
+        -o tsv
+    }
+    if [[ -z "${ALICE_TEMP_PASSWORD:-}" ]]; then
+      ALICE_TEMP_PASSWORD="$(fetch_secret "${AZURE_SECRET_ALICE_TEMP_PASSWORD}")"
+    fi
+    if [[ -z "${BOB_TEMP_PASSWORD:-}" ]]; then
+      BOB_TEMP_PASSWORD="$(fetch_secret "${AZURE_SECRET_BOB_TEMP_PASSWORD}")"
+    fi
+  fi
+fi
+
+if [[ -z "${ALICE_TEMP_PASSWORD:-}" ]]; then
+  echo "[demo] ALICE_TEMP_PASSWORD is required; set it in the environment or store it in Key Vault." >&2
+  exit 1
+fi
+if [[ -z "${BOB_TEMP_PASSWORD:-}" ]]; then
+  echo "[demo] BOB_TEMP_PASSWORD is required; set it in the environment or store it in Key Vault." >&2
+  exit 1
+fi
+
 KC_URL=${KEYCLOAK_URL:?Variable KEYCLOAK_URL required}
 KC_SERVICE_REALM=${KEYCLOAK_SERVICE_REALM:-demo}
 KC_SERVICE_CLIENT_ID=${KEYCLOAK_SERVICE_CLIENT_ID:?Variable KEYCLOAK_SERVICE_CLIENT_ID required}

@@ -41,18 +41,22 @@ Notes:
 - Pour passer en production : copier `.env.demo`, renseigner vos propres secrets, régler `DEMO_MODE=false`, basculer les URLs en `https://`, élargir `TRUSTED_PROXY_IPS`.
 
 ## Azure Key Vault integration
-- Positionner `AZURE_USE_KEYVAULT=true` et `AZURE_KEY_VAULT_NAME=<votre_coffre>` pour charger automatiquement les secrets.
-- Mappez chaque secret via `AZURE_SECRET_*` (voir `.env.demo`). Seuls les secrets absents de l’environnement sont récupérés afin de rester en moindre privilège.
-- L’application utilise `DefaultAzureCredential`; affectez une identité managée ou un principal de service avec le rôle **Key Vault Secrets User** sur le coffre concerné.
+- Positionner `AZURE_USE_KEYVAULT=true` et `AZURE_KEY_VAULT_NAME=<votre_coffre>` pour charger automatiquement la configuration sensible.
+- Le chargement respecte les trois catégories Key Vault :
+  - **Secrets** : mots de passe, tokens et identifiants d’applications (`AZURE_SECRET_*` → `KEYCLOAK_*`, `ALICE_TEMP_PASSWORD`, etc.).
+  - **Keys** : clés de chiffrement/signes (`AZURE_KEY_*`, par ex. `AZURE_KEY_FLASK_SECRET_KEY` si vous stockez la clé Flask côté “Keys”).
+  - **Certificates** : certificats SSL/TLS (`AZURE_CERTIFICATE_PROXY_TLS` permet à `scripts/run_https.sh` de récupérer le certificat du reverse proxy).
+- `scripts/run_https.sh` télécharge les secrets/clefs/certificats nécessaires avant de lancer `docker compose`, de sorte que les conteneurs n’exposent jamais les valeurs en clair sur disque.
+- L’application utilise `DefaultAzureCredential`; affectez une identité managée ou un principal de service avec les rôles **Key Vault Secrets User**, **Key Vault Certificates Officer** et, le cas échéant, **Key Vault Crypto User**.
 - Aucune valeur sensible n’est journalisée, uniquement des messages de succès/erreur.
-- Mettez en place la rotation côté Key Vault (policy de rotation) et redémarrez les services pour consommer les nouvelles versions.
+- Mettez en place la rotation côté Key Vault (policy de rotation) et relancez le stack (`./scripts/run_https.sh --rotate`) pour consommer les nouvelles versions.
 
 ## What `make demo` does
 1. Bootstraps/rotates the `automation-cli` confidential client in realm `demo` (service account with `manage-realm`, `manage-users`, `manage-clients`).
 2. Runs `init`, `joiner (alice)`, `joiner (bob)`, `mover (alice→admin)`, `leaver (bob)` via `scripts/demo_jml.sh`.
 
 ## HTTPS & reverse proxy
-- `scripts/run_https.sh` creates a self-signed certificate (default validity 30 days) and launches the compose stack; rerun with `CERT_DAYS=7 ./scripts/run_https.sh --rotate` to regenerate on demand.
+- `scripts/run_https.sh` télécharge automatiquement un certificat Key Vault (`AZURE_CERTIFICATE_PROXY_TLS`) ou, à défaut, génère une paire auto-signée (validité 30 jours, `CERT_DAYS` ajustable ou `--rotate` pour regénérer).
 - `docker-compose.yml` now includes:
   - `flask-app`: a dedicated Gunicorn worker listening on port 8000.
   - `reverse-proxy`: Nginx terminating TLS, redirecting HTTP→HTTPS, and forwarding `Host`/`X-Forwarded-*` headers to the Flask app.
