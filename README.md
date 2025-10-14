@@ -29,7 +29,9 @@ make quickstart   # run_https.sh + bootstrap-service-account + demo
 make bootstrap-service-account # one-time; generates secret for automation-cli
 make demo                                                   # idempotent init + sample users + mover/leaver
 ```
-Notes:
+Notes (premier clone) :
+- Commence par copier le fichier d’exemple : `cp .env.demo .env` (les valeurs par défaut suffisent pour la démo, `DEMO_MODE=true` injectera les secrets nécessaires).
+Notes supplémentaires :
 - `make bootstrap-service-account` rafraîchit le secret dans Key Vault ; relance `./scripts/run_https.sh` ou `make rotate-secret` pour que Flask relise la nouvelle valeur.
 - `make demo` repose sur ce secret ; exécute la cible bootstrap au moins une fois (ou à chaque rotation volontaire).
 - Once the compose stack is up, access the demo at https://localhost (Chrome/Firefox will prompt to trust the self-signed cert on first visit).
@@ -121,8 +123,8 @@ Available targets (see `Makefile`):
 6. Use `make joiner-bob` + `make mover-alice` live if you want to demonstrate automation on the fly.
 
 ## Tests
-```bash
-pytest            # runs both Flask UI and JML unit tests
+-```bash
+make pytest       # creates venv if needed and runs both Flask UI and JML tests
 ```
 Coverage includes RBAC headers, role filtering, bootstrap guardrails, and the new service-account helper.
 
@@ -142,6 +144,8 @@ rm -f .runtime/secrets/keycloak-admin-password  # supprime le mot de passe tél�
 - `make check-azure` → teste `DefaultAzureCredential` depuis Flask.
 - `make clean-secrets` → nettoie `.runtime/secrets` et `.runtime/azure`.
 - `make open` → ouvre https://localhost dans le navigateur par défaut.
+- `make demo-mode` → force `DEMO_MODE=true`, exécute `make fresh-demo`, puis restaure le `.env` (utile pour valider les fallbacks de démo).
+- `./scripts/reset_demo_mode.sh` → bascule temporairement `DEMO_MODE` à vrai, lance `make fresh-demo`, puis restaure `DEMO_MODE=false` (pratique pour vérifier les fallbacks sans toucher à `.env`).
 
 ## Next steps (if you take it further)
 - Serve Flask behind HTTPS (gunicorn + nginx) and enforce `SESSION_COOKIE_SECURE`.

@@ -126,6 +126,15 @@ clean-secrets: ## Remove local runtime secrets and azure cache
 	@rm -rf .runtime/secrets .runtime/azure
 	@echo "[clean] Removed .runtime/secrets and .runtime/azure"
 
+.PHONY: demo-mode
+demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la valeur
+	@cp .env .env.backup_demo || true
+	@sed -i 's/^DEMO_MODE=.*/DEMO_MODE=true/' .env
+	@$(MAKE) fresh-demo
+	@mv .env.backup_demo .env
+	@sed -i 's/^DEMO_MODE=.*/DEMO_MODE=false/' .env
+	@echo "[demo-mode] fresh-demo exécuté en mode démo, configuration restaurée."
+
 .PHONY: quickstart
 quickstart: ## Run stack + bootstrap + demo in one go
 	@./scripts/run_https.sh
@@ -177,4 +186,6 @@ open: ## Open https://localhost in default browser
 
 .PHONY: pytest
 pytest: ## Run unit tests
-	@$(WITH_ENV) python3 -m pytest
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest
