@@ -1,79 +1,102 @@
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0
+    image: quay.io/keycloak/keycloak:24.0.5
     container_name: keycloak
-    command: start-dev
+    entrypoint: ["/opt/keycloak/bin/keycloak_entrypoint.sh"]
+    user: "1000"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -lc
+        - "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 && head -n1 <&3 | grep -q '200'"
+      interval: 15s
+      timeout: 5s
+      retries: 20
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_HOSTNAME: localhost
       KC_HOSTNAME_STRICT: false
       KC_PROXY: edge
-      KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_PORT: 443
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - keycloak_data:/opt/keycloak/data
+      - ./.runtime/secrets:/run/secrets:ro
+      - ./scripts/keycloak_entrypoint.sh:/opt/keycloak/bin/keycloak_entrypoint.sh:ro
 
   flask-app:
-    image: python:3.12-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.flask
+    image: iam-poc-flask
     container_name: flask-app
     working_dir: /srv/app
-    command:
-      - bash
-      - -lc
-      - |
-        pip install --no-cache-dir -r requirements.txt
-        exec gunicorn --bind 0.0.0.0:8000 app.flask_app:app
     environment:
       DEMO_MODE: ${DEMO_MODE}
+      AZURE_USE_KEYVAULT: ${AZURE_USE_KEYVAULT}
+      AZURE_KEY_VAULT_NAME: ${AZURE_KEY_VAULT_NAME}
+      AZURE_SECRET_FLASK_SECRET_KEY: ${AZURE_SECRET_FLASK_SECRET_KEY}
+      AZURE_SECRET_FLASK_SECRET_KEY_FALLBACKS: ${AZURE_SECRET_FLASK_SECRET_KEY_FALLBACKS}
+      AZURE_KEY_FLASK_SECRET_KEY: ${AZURE_KEY_FLASK_SECRET_KEY}
+      AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET: ${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}
+      AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD: ${AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD}
+      AZURE_SECRET_ALICE_TEMP_PASSWORD: ${AZURE_SECRET_ALICE_TEMP_PASSWORD}
+      AZURE_SECRET_BOB_TEMP_PASSWORD: ${AZURE_SECRET_BOB_TEMP_PASSWORD}
+      AZURE_CERTIFICATE_PROXY_TLS: ${AZURE_CERTIFICATE_PROXY_TLS}
+      AZURE_CONFIG_DIR: /root/.azure
       FLASK_SECRET_KEY_FALLBACKS: ${FLASK_SECRET_KEY_FALLBACKS}
       FLASK_SESSION_COOKIE_SECURE: "true"
       FLASK_SESSION_TYPE: filesystem
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER}
       KEYCLOAK_SERVER_URL: http://keycloak:8080/realms/${KEYCLOAK_REALM}
       KEYCLOAK_PUBLIC_ISSUER: ${KEYCLOAK_PUBLIC_ISSUER}
+      KEYCLOAK_SERVICE_CLIENT_ID: ${KEYCLOAK_SERVICE_CLIENT_ID}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
       POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI}
-      AZURE_USE_KEYVAULT: "false"
-      AZURE_KEY_VAULT_NAME: "demo-key-vault-alex"
-      AZURE_SECRET_FLASK_SECRET_KEY: "flask-secret-key"
-      AZURE_SECRET_FLASK_SECRET_KEY_FALLBACKS: ""
-      AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET: "keycloak-service-client-secret"
-      AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD: "keycloak-admin-password"
-      AZURE_SECRET_ALICE_TEMP_PASSWORD: "alice-temp-password"
-      AZURE_SECRET_BOB_TEMP_PASSWORD: "bob-temp-password"
-      KEYCLOAK_SERVICE_CLIENT_SECRET: ${KEYCLOAK_SERVICE_CLIENT_SECRET}
-      KEYCLOAK_SERVICE_CLIENT_ID: ${KEYCLOAK_SERVICE_CLIENT_ID}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      ALICE_TEMP_PASSWORD: ${ALICE_TEMP_PASSWORD}
-      BOB_TEMP_PASSWORD: ${BOB_TEMP_PASSWORD}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
-      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY}
-
-
     volumes:
       - .:/srv/app
-      - ~/.azure:/root/.azure:ro
+      - ./.runtime/azure:/root/.azure:rw
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request, sys; urllib.request.urlopen('http://localhost:8000/health');"
+      interval: 15s
+      timeout: 5s
+      retries: 10
     depends_on:
-      - keycloak
+      keycloak:
+        condition: service_healthy
     expose:
       - "8000"
 
   reverse-proxy:
     image: nginx:1.27-alpine
     container_name: reverse-proxy
+    restart: unless-stopped
     depends_on:
-      - flask-app
+      flask-app:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./certs:/etc/nginx/certs:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--no-check-certificate", "https://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
 
 volumes:
   keycloak_data:

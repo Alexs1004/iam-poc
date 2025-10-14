@@ -346,6 +346,11 @@ def login():
     )
 
 
+@app.route("/health")
+def health_check():
+    return ("ok", 200, {"Content-Type": "text/plain"})
+
+
 @app.route("/callback")
 def callback():
     code_verifier = session.pop("pkce_code_verifier", None)

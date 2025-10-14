@@ -6,7 +6,37 @@ JML := $(PYTHON) scripts/jml.py
 
 
 COMMON_FLAGS = --kc-url $${KEYCLOAK_URL} --auth-realm $${KEYCLOAK_SERVICE_REALM} --svc-client-id $${KEYCLOAK_SERVICE_CLIENT_ID} --svc-client-secret $${KEYCLOAK_SERVICE_CLIENT_SECRET}
-WITH_ENV := set -a; source .env; set +a;
+WITH_ENV := set -a; source .env; set +a; \
+	if [[ "$${AZURE_USE_KEYVAULT,,}" == "true" ]]; then \
+		if ! command -v az >/dev/null 2>&1; then \
+			echo "[make] Azure CLI is required when AZURE_USE_KEYVAULT=true." >&2; \
+			exit 1; \
+		fi; \
+		fetch_secret() { \
+			local name="$$1"; \
+			if [[ -z "$$name" ]]; then \
+				echo ""; \
+				return 0; \
+			fi; \
+			az keyvault secret show --vault-name "$${AZURE_KEY_VAULT_NAME}" --name "$$name" --query value -o tsv 2>/dev/null || echo ""; \
+		}; \
+		if [[ -z "$${KEYCLOAK_SERVICE_CLIENT_SECRET}" ]]; then \
+			KEYCLOAK_SERVICE_CLIENT_SECRET="$$(fetch_secret "$${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}")"; \
+			export KEYCLOAK_SERVICE_CLIENT_SECRET; \
+		fi; \
+		if [[ -z "$${KEYCLOAK_ADMIN_PASSWORD}" ]]; then \
+			KEYCLOAK_ADMIN_PASSWORD="$$(fetch_secret "$${AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD}")"; \
+			export KEYCLOAK_ADMIN_PASSWORD; \
+		fi; \
+		if [[ -z "$${ALICE_TEMP_PASSWORD}" ]]; then \
+			ALICE_TEMP_PASSWORD="$$(fetch_secret "$${AZURE_SECRET_ALICE_TEMP_PASSWORD}")"; \
+			export ALICE_TEMP_PASSWORD; \
+		fi; \
+		if [[ -z "$${BOB_TEMP_PASSWORD}" ]]; then \
+			BOB_TEMP_PASSWORD="$$(fetch_secret "$${AZURE_SECRET_BOB_TEMP_PASSWORD}")"; \
+			export BOB_TEMP_PASSWORD; \
+		fi; \
+	fi;
 
 .PHONY: help
 help:
@@ -14,11 +44,11 @@ help:
 
 .PHONY: require-service-secret
 require-service-secret:
-	@$(WITH_ENV) test -n "$${KEYCLOAK_SERVICE_CLIENT_SECRET}" || (echo "KEYCLOAK_SERVICE_CLIENT_SECRET not set. Run 'make bootstrap-service-account' and export the secret." >&2; exit 1)
+	@$(WITH_ENV) test -n "$${KEYCLOAK_SERVICE_CLIENT_SECRET}" || (echo "KEYCLOAK_SERVICE_CLIENT_SECRET missing. Run 'make bootstrap-service-account' to rotate it in Key Vault." >&2; exit 1)
 
 .PHONY: require-admin-creds
 require-admin-creds:
-	@$(WITH_ENV) test -n "$${KEYCLOAK_ADMIN}" -a -n "$${KEYCLOAK_ADMIN_PASSWORD}" || (echo "Admin credentials missing; export KEYCLOAK_ADMIN and KEYCLOAK_ADMIN_PASSWORD." >&2; exit 1)
+	@$(WITH_ENV) test -n "$${KEYCLOAK_ADMIN}" -a -n "$${KEYCLOAK_ADMIN_PASSWORD}" || (echo "Admin credentials missing; ensure KEYCLOAK_ADMIN is set and the Key Vault secret $${AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD} exists." >&2; exit 1)
 
 .PHONY: bootstrap-service-account
 bootstrap-service-account: ## One-time bootstrap (requires master admin; rotates secret)
@@ -41,10 +71,16 @@ bootstrap-service-account: ## One-time bootstrap (requires master admin; rotates
 		echo "[bootstrap] No secret returned; .env not updated." >&2; \
 		exit 1; \
 	fi; \
-	python3 scripts/update_env.py .env KEYCLOAK_SERVICE_CLIENT_SECRET "$$secret"; \
-	echo "[bootstrap] KEYCLOAK_SERVICE_CLIENT_SECRET updated in .env"; \
-	echo "$$secret"; \
-	echo "Export KEYCLOAK_SERVICE_CLIENT_SECRET to use JML commands."
+	if [[ -z "$$AZURE_KEY_VAULT_NAME" ]] || [[ -z "$$AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET" ]]; then \
+		echo "[bootstrap] Missing Key Vault mapping for service client secret; aborting." >&2; \
+		exit 1; \
+	fi; \
+	if ! az keyvault secret set --vault-name "$$AZURE_KEY_VAULT_NAME" --name "$$AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET" --value "$$secret" >/dev/null; then \
+		echo "[bootstrap] Failed to store KEYCLOAK_SERVICE_CLIENT_SECRET in Key Vault." >&2; \
+		exit 1; \
+	fi; \
+	echo "[bootstrap] KEYCLOAK_SERVICE_CLIENT_SECRET rotated in Azure Key Vault." ; \
+	echo "Re-run ./scripts/run_https.sh to refresh containers with the new secret."
 
 .PHONY: init
 init: require-service-secret ## Provision realm, public client, roles, and required actions

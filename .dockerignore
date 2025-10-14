@@ -1,0 +1,14 @@
+.git
+.github
+.runtime
+.venv
+env
+venv
+__pycache__
+*.py[cod]
+certs
+proxy/nginx.conf
+.idea
+.vscode
+*.log
+*.zip
