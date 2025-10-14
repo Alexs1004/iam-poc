@@ -16,15 +16,22 @@ Developer PoC demonstrating **OIDC Authorization Code + PKCE**, **MFA (TOTP)**, 
 
 Everything is intended for localhost only. Production notes live in the **Security Guardrails** section.
 
-## Quick start (6 commands)
+## Quick start (deux approches)
+
+### Option A — `make quickstart`
+```bash
+make quickstart   # run_https.sh + bootstrap-service-account + demo
+```
+
+### Option B — pas à pas
 ```bash
 ./scripts/run_https.sh                                 # generate cert + start Keycloak, Flask app, reverse proxy
 make bootstrap-service-account # one-time; generates secret for automation-cli
 make demo                                                   # idempotent init + sample users + mover/leaver
 ```
 Notes:
-- `make bootstrap-service-account` now refreshes the secret in `.env` automatically; re-source your environment after running it.
-- `make demo` relies on the secret stored in `.env`; run the bootstrap target once (or whenever you intentionally rotate the client secret).
+- `make bootstrap-service-account` rafraîchit le secret dans Key Vault ; relance `./scripts/run_https.sh` ou `make rotate-secret` pour que Flask relise la nouvelle valeur.
+- `make demo` repose sur ce secret ; exécute la cible bootstrap au moins une fois (ou à chaque rotation volontaire).
 - Once the compose stack is up, access the demo at https://localhost (Chrome/Firefox will prompt to trust the self-signed cert on first visit).
 - Keycloak is bound to `127.0.0.1:8080`; adjust `KEYCLOAK_URL` if you map the container differently.
 - To stop the stack, run `docker compose down` (add `-v` if you want to clear Keycloak's data volume).
@@ -46,12 +53,12 @@ Notes:
   - **Secrets** : `flask-secret-key`, `keycloak-service-client-secret`, `keycloak-admin-password`, `alice-temp-password`, `bob-temp-password`.
   - **Keys** (facultatif) : une clé symétrique exportable si vous souhaitez gérer `FLASK_SECRET_KEY` via la catégorie “Keys” (référence `AZURE_KEY_FLASK_SECRET_KEY`).
   - **Certificates** (facultatif) : un certificat TLS exportable si vous renseignez `AZURE_CERTIFICATE_PROXY_TLS`; sinon le script génère une auto-signature locale.
-- Pré-requis côté CLI : `az login` dans le tenant qui héberge le coffre et attribution des rôles **Key Vault Secrets User** (et éventuellement **Key Vault Certificates Officer / Crypto User** selon les objets utilisés). Le script vérifie que la session CLI est active (`az account show`) avant de démarrer; relancez `az login` si nécessaire.
-- `scripts/run_https.sh` synchronise `~/.azure` vers `.runtime/azure` (monté en lecture seule), ce qui permet à `DefaultAzureCredential` de réutiliser votre session `az login` sans stocker de secrets dans `.env`. Si aucune session n’est disponible dans le conteneur, le script déclenche automatiquement `az login --use-device-code` (suivez l’URL affichée une seule fois).
+- Pré-requis côté CLI : `az login` dans le tenant qui héberge le coffre et attribution des rôles **Key Vault Secrets User** (et éventuellement **Key Vault Certificates Officer / Crypto User** selon les objets utilisés). `make doctor` permet de vérifier rapidement que tout est OK.
+- `scripts/run_https.sh` synchronise `~/.azure` vers `.runtime/azure` (monté en lecture seule), ce qui permet à `DefaultAzureCredential` de réutiliser votre session `az login` sans stocker de secrets dans `.env`. Si aucune session n’est disponible **dans le conteneur**, le script lance automatiquement `az login --use-device-code`, positionne la souscription courante puis vérifie qu’un `az account get-access-token` aboutit.
 - Le script reconstruit automatiquement l’image Flask (`Dockerfile.flask`) lorsqu’il détecte un changement sur `requirements.txt` ou le Dockerfile.
 - L’image Flask (build `Dockerfile.flask`) embarque `azure-cli` et les dépendances Python ; relancez `docker compose build flask-app` après toute modification de `requirements.txt` ou du Dockerfile.
 - `make bootstrap-service-account` ré-exécute la rotation du client `automation-cli` et pousse automatiquement le secret mis à jour dans Key Vault (aucune modification dans `.env`).
-- `scripts/run_https.sh` récupère uniquement le mot de passe admin (via un secret Docker éphémère) et laisse Flask/Keycloak charger leurs secrets en interne via `DefaultAzureCredential`. Aucun secret n’est stocké dans `.env`, ni injecté en clair dans les conteneurs.
+- `scripts/run_https.sh` récupère uniquement le mot de passe admin (via un secret Docker éphémère) et laisse Flask/Keycloak charger leurs secrets en interne via `DefaultAzureCredential`. Le fichier `.runtime/secrets/keycloak-admin-password` est supprimé automatiquement une fois Keycloak déclaré healthy ; aucun secret n’est stocké dans `.env`, ni injecté en clair dans les conteneurs.
 - Pour rafraîchir l’environnement : `./scripts/run_https.sh --rotate` régénère le certificat auto-signé et recharge les secrets (après rotation côté Key Vault).
 - Vérification rapide : `docker compose logs -f flask-app` doit afficher `[startup]` sans trace d’erreur Key Vault; un échec stoppe immédiatement l’application.
 
@@ -59,6 +66,7 @@ Notes:
 1. Lance `scripts/run_https.sh` pour télécharger les secrets nécessaires, injecter le mot de passe admin Keycloak via un secret Docker éphémère et démarrer le stack (`reverse-proxy`, `flask-app`, `keycloak`).
 2. Exécute `scripts/demo_jml.sh` (avec les secrets chargés depuis Key Vault) pour dérouler `init`, `joiner (alice)`, `joiner (bob)`, `mover (alice→admin)`, `leaver (bob)`.
 3. Surveille automatiquement les logs Flask : si Key Vault échoue, le service s’arrête et `make demo` se termine en erreur.
+4. Vérifie l’accès Azure si besoin : `docker compose exec flask-app python -c "from azure.identity import DefaultAzureCredential; print(DefaultAzureCredential().get_token('https://management.azure.com/.default').token[:20])"`
 4. Vérifier l’accès Azure si besoin : `docker compose exec flask-app python -c "from azure.identity import DefaultAzureCredential; print(DefaultAzureCredential().get_token('https://management.azure.com/.default').token[:20])"`
 
 ## HTTPS & reverse proxy
@@ -124,6 +132,16 @@ docker compose down -v
 rm -rf .venv  # optional
 rm -f .runtime/secrets/keycloak-admin-password  # supprime le mot de passe téléchargé localement
 ```
+
+## Useful `make` targets
+- `make doctor` → vérifie `az login`, l’accès Key Vault et la version de docker compose.
+- `make quickstart` → lance `run_https.sh`, `bootstrap-service-account` puis `make demo`.
+- `make fresh-demo` → reset complet (down -v + clean-secrets) puis `make quickstart`.
+- `make rotate-secret` → refait `bootstrap-service-account` et redémarre uniquement le conteneur Flask.
+- `make up / down / ps / logs / restart` → alias quotidiens pour piloter les conteneurs.
+- `make check-azure` → teste `DefaultAzureCredential` depuis Flask.
+- `make clean-secrets` → nettoie `.runtime/secrets` et `.runtime/azure`.
+- `make open` → ouvre https://localhost dans le navigateur par défaut.
 
 ## Next steps (if you take it further)
 - Serve Flask behind HTTPS (gunicorn + nginx) and enforce `SESSION_COOKIE_SECURE`.

@@ -113,6 +113,68 @@ demo: ## Run the scripted JML demonstration (starts stack + automation)
 	@./scripts/run_https.sh
 	@$(WITH_ENV) ./scripts/demo_jml.sh
 
+.PHONY: restart-stack
+restart-stack: ## Recreate certificates, rebuild image if needed, and restart containers
+	@./scripts/run_https.sh
+
+.PHONY: check-azure
+check-azure: ## Test DefaultAzureCredential token acquisition inside the Flask container
+	@docker compose exec flask-app python3 -c "from azure.identity import DefaultAzureCredential; print(DefaultAzureCredential().get_token('https://management.azure.com/.default').token[:20])"
+
+.PHONY: clean-secrets
+clean-secrets: ## Remove local runtime secrets and azure cache
+	@rm -rf .runtime/secrets .runtime/azure
+	@echo "[clean] Removed .runtime/secrets and .runtime/azure"
+
+.PHONY: quickstart
+quickstart: ## Run stack + bootstrap + demo in one go
+	@./scripts/run_https.sh
+	@$(MAKE) bootstrap-service-account
+	@$(MAKE) demo
+
+.PHONY: fresh-demo
+fresh-demo: ## Reset everything then run quickstart
+	@docker compose down -v || true
+	@$(MAKE) clean-secrets
+	@$(MAKE) quickstart
+
+.PHONY: up
+up: ## Start services (requires run_https.sh for cert/secrets)
+	@./scripts/run_https.sh
+
+.PHONY: down
+down: ## Stop services and remove containers
+	@docker compose down
+
+.PHONY: ps
+ps: ## Display service status
+	@docker compose ps
+
+.PHONY: logs
+logs: ## Tail logs for all services
+	@docker compose logs -f
+
+.PHONY: restart
+restart: ## Restart all services
+	@$(MAKE) down
+	@$(MAKE) up
+
+.PHONY: rotate-secret
+rotate-secret: ## Rotate Keycloak service client secret and restart Flask only
+	@$(MAKE) bootstrap-service-account
+	@docker compose restart flask-app
+
+.PHONY: doctor
+doctor: ## Check az login, Key Vault access and docker compose version
+	@az account show >/dev/null || (echo "[doctor] Run 'az login' first." >&2; exit 1)
+	@az keyvault secret list --vault-name $${AZURE_KEY_VAULT_NAME:?Set AZURE_KEY_VAULT_NAME} >/dev/null || (echo "[doctor] Cannot list secrets; check Key Vault permissions." >&2; exit 1)
+	@docker compose version >/dev/null || (echo "[doctor] docker compose not available." >&2; exit 1)
+	@echo "[doctor] Environment looks good."
+
+.PHONY: open
+open: ## Open https://localhost in default browser
+	@xdg-open https://localhost >/dev/null 2>&1 || open https://localhost
+
 .PHONY: pytest
 pytest: ## Run unit tests
 	@$(WITH_ENV) python3 -m pytest

@@ -184,3 +184,13 @@ if [[ "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
 fi
 
 docker compose up -d reverse-proxy flask-app keycloak
+
+echo "[https] Waiting for Keycloak to report healthy before cleaning secrets..."
+if docker compose ps --services --filter "status=running" | grep -q "^keycloak$"; then
+  until docker compose ps keycloak --format json | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('Status',''))" 2>/dev/null | grep -q "healthy"; do
+    sleep 2
+  done
+fi
+
+echo "[https] Keycloak healthy; removing local admin secret copy."
+rm -f "${KEYCLOAK_SECRET_FILE}"

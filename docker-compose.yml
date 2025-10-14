@@ -60,7 +60,7 @@ services:
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
       POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI}
-    volumes:
+    volumes: # in production mount must be deleted to use image content only
       - .:/srv/app
       - ./.runtime/azure:/root/.azure:rw
     restart: unless-stopped
