@@ -2,10 +2,10 @@
 {% block content %}
 <section class="panel">
   <h1>Identity &amp; Access Demo</h1>
-  <p class="intro">This Flask app authenticates against Keycloak using the Authorization Code flow with PKCE. Tokens remain server-side, and RBAC is enforced before any admin view is shown.</p>
+  <p class="intro">This Flask app authenticates against Keycloak using the Authorization Code flow with PKCE. Tokens remain server-side, and RBAC is enforced before any realm admin view is shown.</p>
   <ul class="muted">
     <li>Log in to enrol MFA (TOTP) and inspect your claims.</li>
-    <li>Promote users to <strong>admin</strong> with the JML automation, then refresh access.</li>
+    <li>Use the JML automation to promote Alice to <strong>iam-operator</strong> and grant Joe the <strong>realm-management/realm-admin</strong> client role.</li>
     <li>Automation uses a least-privilege service account (client credentials).</li>
   </ul>
   <div class="cta-row">
@@ -14,6 +14,7 @@
       <a class="btn-secondary" href="{{ url_for('admin') }}">Admin area</a>
     {% else %}
       <a class="btn-primary" href="{{ url_for('login') }}">Sign in with Keycloak</a>
+      <a href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
     {% endif %}
   </div>
 </section>

@@ -247,12 +247,24 @@ BOB_PASSWORD = _ensure_env(
     demo_default=os.environ.get("BOB_TEMP_PASSWORD_DEMO", "Passw0rd!"),
 )
 
+REALM_ADMIN_ROLE = os.environ.get("REALM_ADMIN_ROLE", "realm-admin").strip().lower()
+IAM_OPERATOR_ROLE = os.environ.get("IAM_OPERATOR_ROLE", "iam-operator").strip().lower()
+REALM_ADMIN_CLIENT_ID = os.environ.get("REALM_ADMIN_CLIENT_ID", "realm-management").strip()
+REALM_ADMIN_CLIENT_ROLE = os.environ.get("REALM_ADMIN_CLIENT_ROLE", REALM_ADMIN_ROLE or "realm-admin").strip().lower()
+JOE_PASSWORD = _ensure_env(
+    "JOE_TEMP_PASSWORD",
+    demo_default=os.environ.get("JOE_TEMP_PASSWORD_DEMO", "Passw0rd!"),
+    required=False,
+)
+
 DEMO_WARN_VARS = {
     "KEYCLOAK_SERVICE_CLIENT_SECRET": SERVICE_CLIENT_SECRET,
     "KEYCLOAK_ADMIN_PASSWORD": ADMIN_PASSWORD,
     "ALICE_TEMP_PASSWORD": ALICE_PASSWORD,
     "BOB_TEMP_PASSWORD": BOB_PASSWORD,
 }
+if JOE_PASSWORD:
+    DEMO_WARN_VARS["JOE_TEMP_PASSWORD"] = JOE_PASSWORD
 
 DEMO_USER_DIRECTORY = {
     "alice": {
@@ -262,6 +274,7 @@ DEMO_USER_DIRECTORY = {
         "last": "Demo",
         "display_name": "Alice Demo",
         "default_role": "analyst",
+        "client_roles": [],
     },
     "bob": {
         "username": "bob",
@@ -270,16 +283,36 @@ DEMO_USER_DIRECTORY = {
         "last": "Demo",
         "display_name": "Bob Demo",
         "default_role": "analyst",
+        "client_roles": [],
+    },
+    "joe": {
+        "username": "joe",
+        "email": os.environ.get("JOE_EMAIL", "joe@example.com"),
+        "first": "Joe",
+        "last": "Demo",
+        "display_name": "Joe Demo",
+        "default_role": IAM_OPERATOR_ROLE or "iam-operator",
+        "client_roles": [REALM_ADMIN_CLIENT_ROLE or REALM_ADMIN_ROLE or "realm-admin"],
     },
 }
 
+_default_assignable_roles = ["analyst"]
+if IAM_OPERATOR_ROLE and IAM_OPERATOR_ROLE not in _default_assignable_roles:
+    _default_assignable_roles.append(IAM_OPERATOR_ROLE)
+_default_assignable_roles = list(dict.fromkeys(filter(None, _default_assignable_roles)))
+
 ASSIGNABLE_ROLES = [
     role.strip().lower()
-    for role in os.environ.get("KEYCLOAK_ASSIGNABLE_ROLES", "analyst,admin").split(",")
+    for role in os.environ.get(
+        "KEYCLOAK_ASSIGNABLE_ROLES",
+        ",".join(_default_assignable_roles),
+    ).split(",")
     if role.strip()
 ]
 if not ASSIGNABLE_ROLES:
-    ASSIGNABLE_ROLES = ["analyst", "admin"]
+    ASSIGNABLE_ROLES = list(_default_assignable_roles)
+
+SENSITIVE_ROLES = {role for role in {REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE, REALM_ADMIN_CLIENT_ROLE} if role}
 
 MODE_LABEL = "DEMO" if DEMO_MODE else "PRODUCTION"
 print(
@@ -360,6 +393,26 @@ def _user_has_role(role: str) -> bool:
         return False
     _, _, _, roles = _current_user_context()
     return role in roles
+
+
+def _has_operator_privileges() -> bool:
+    return _user_has_role(IAM_OPERATOR_ROLE)
+
+
+def _current_username() -> str:
+    _, id_claims, userinfo, _ = _current_user_context()
+    for source in (userinfo or {}, id_claims or {}):
+        if not isinstance(source, dict):
+            continue
+        for key in ("preferred_username", "email", "name"):
+            value = source.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return ""
+
+
+def _requires_operator_for_roles(roles: list[str] | tuple[str, ...]) -> bool:
+    return any(role and role.lower() in SENSITIVE_ROLES for role in roles)
 
 
 def _render_page(template: str, *, status: int = 200, protect: bool = False, **context):
@@ -503,9 +556,15 @@ def _user_roles(kc_token: str, user_id: str) -> list[str]:
     return sorted({role.get("name") for role in resp.json() or [] if role.get("name")})
 
 
+setattr(app, "_get_service_token", _get_service_token)
+setattr(app, "_user_roles", _user_roles)
+
 def _demo_status_stub() -> list[dict]:
     stub_statuses: list[dict] = []
     for info in DEMO_USER_DIRECTORY.values():
+        default_role = info.get("default_role", "analyst")
+        client_roles = [role for role in info.get("client_roles", []) if role]
+        all_roles = [role for role in [default_role] if role] + client_roles
         stub_statuses.append(
             {
                 "id": info["username"],
@@ -514,15 +573,24 @@ def _demo_status_stub() -> list[dict]:
                 "email": info["email"],
                 "exists": True,
                 "enabled": info["username"] != "bob",
-                "roles": ["admin"] if info["username"] == "alice" else ["analyst"],
+                "roles": list(dict.fromkeys(all_roles)),
                 "required_actions": [],
-                "totp_enrolled": info["username"] == "alice",
+                "totp_enrolled": info["username"] in {"alice", "joe"},
             }
         )
     return stub_statuses
 
 
 def _fetch_user_statuses(kc_token: str) -> list[dict]:
+    client_uuid = ""
+    client_role_name = REALM_ADMIN_CLIENT_ROLE or REALM_ADMIN_ROLE
+    if REALM_ADMIN_CLIENT_ID and client_role_name:
+        try:
+            client = jml._get_client(KEYCLOAK_BASE_URL, kc_token, KEYCLOAK_REALM, REALM_ADMIN_CLIENT_ID)
+            client_uuid = client.get("id") if client else ""
+        except requests.HTTPError as exc:
+            detail = exc.response.text if getattr(exc, "response", None) is not None else str(exc)
+            raise RuntimeError(f"Failed to resolve client '{REALM_ADMIN_CLIENT_ID}': {detail}") from exc
     resp = requests.get(
         f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users",
         params={"max": int(os.environ.get("KEYCLOAK_ADMIN_USER_LIMIT", "50"))},
@@ -555,6 +623,16 @@ def _fetch_user_statuses(kc_token: str) -> list[dict]:
             status["totp_enrolled"] = jml._user_has_totp(
                 KEYCLOAK_BASE_URL, kc_token, KEYCLOAK_REALM, user_id
             )
+            if client_uuid and client_role_name:
+                client_roles_resp = requests.get(
+                    f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/role-mappings/clients/{client_uuid}",
+                    headers=jml._auth_headers(kc_token),
+                    timeout=jml.REQUEST_TIMEOUT,
+                )
+                client_roles_resp.raise_for_status()
+                if any(role.get("name") == client_role_name for role in client_roles_resp.json() or []):
+                    if client_role_name not in status["roles"]:
+                        status["roles"].append(client_role_name)
         except requests.HTTPError as exc:
             detail = exc.response.text if getattr(exc, "response", None) is not None else str(exc)
             raise RuntimeError(f"Failed to load details for user '{status['username']}': {detail}") from exc
@@ -687,12 +765,14 @@ def _enforce_csrf() -> None:
 @app.context_processor
 def inject_global_context():
     token = g.get("csrf_token") or generate_csrf_token()
-    is_admin_user = _user_has_role("admin")
-    console_url = KEYCLOAK_CONSOLE_URL if is_admin_user else None
+    is_admin_user = _user_has_role(REALM_ADMIN_ROLE)
+    console_url = KEYCLOAK_CONSOLE_URL
     return {
         "csrf_token": token,
         "is_admin_user": is_admin_user,
         "keycloak_console_url": console_url,
+        "realm_admin_role": REALM_ADMIN_ROLE,
+        "iam_operator_role": IAM_OPERATOR_ROLE,
     }
 
 
@@ -704,7 +784,11 @@ def me():
     if not _is_authenticated():
         return redirect(url_for("login"))
     _, _, userinfo, roles = _current_user_context()
-    filtered_roles = [role for role in roles if role in {"admin", "analyst"}]
+    visible_roles = {"analyst"}
+    for candidate in (REALM_ADMIN_ROLE, REALM_ADMIN_CLIENT_ROLE, IAM_OPERATOR_ROLE):
+        if candidate:
+            visible_roles.add(candidate)
+    filtered_roles = [role for role in roles if role in visible_roles]
     userinfo_json = json.dumps(userinfo or {}, indent=2, ensure_ascii=False)
     return _render_page(
         "me.html",
@@ -716,7 +800,7 @@ def me():
 
 
 @app.route("/admin")
-@require_role("admin")
+@require_role(REALM_ADMIN_ROLE)
 def admin():
     try:
         user_statuses, assignable_roles = _load_admin_context()
@@ -736,7 +820,7 @@ def admin():
 
 
 @app.post("/admin/joiner")
-@require_role("admin")
+@require_role(REALM_ADMIN_ROLE)
 def admin_joiner():
     username = _normalize_username(request.form.get("username", ""))
     first = request.form.get("first_name", "").strip()
@@ -751,6 +835,9 @@ def admin_joiner():
         return redirect(url_for("admin"))
     if not _role_is_assignable(role):
         flash(f"Role '{role}' is not assignable.", "error")
+        return redirect(url_for("admin"))
+    if _requires_operator_for_roles([role]) and not _has_operator_privileges():
+        flash("IAM operator privileges are required to assign realm-admin-level roles.", "error")
         return redirect(url_for("admin"))
     if not temp_password:
         temp_password = _generate_temp_password()
@@ -777,7 +864,7 @@ def admin_joiner():
 
 
 @app.post("/admin/mover")
-@require_role("admin")
+@require_role(REALM_ADMIN_ROLE)
 def admin_mover():
     username = request.form.get("username", "").strip()
     source_role = request.form.get("source_role", "").strip()
@@ -793,8 +880,33 @@ def admin_mover():
         flash("One of the selected roles is not managed by this console.", "error")
         return redirect(url_for("admin"))
 
+    current_username = _current_username().lower()
+    if current_username and username.lower() == current_username:
+        flash("You cannot change your own role from this console.", "error")
+        return redirect(url_for("admin"))
+
     try:
         token = _get_service_token()
+        target_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    except Exception as exc:
+        flash(f"Failed to update roles for '{username}': {exc}", "error")
+        return redirect(url_for("admin"))
+
+    if not target_user:
+        flash(f"User '{username}' not found in realm '{KEYCLOAK_REALM}'.", "error")
+        return redirect(url_for("admin"))
+
+    try:
+        target_roles = _user_roles(token, target_user["id"])
+    except Exception as exc:
+        flash(f"Unable to read roles for '{username}': {exc}", "error")
+        return redirect(url_for("admin"))
+
+    if (_requires_operator_for_roles(target_roles) or _requires_operator_for_roles([source_role, target_role])) and not _has_operator_privileges():
+        flash("IAM operator privileges are required to modify realm-admin-level access.", "error")
+        return redirect(url_for("admin"))
+
+    try:
         jml.change_role(
             KEYCLOAK_BASE_URL,
             token,
@@ -811,14 +923,40 @@ def admin_mover():
 
 
 @app.post("/admin/leaver")
-@require_role("admin")
+@require_role(REALM_ADMIN_ROLE)
 def admin_leaver():
     username = request.form.get("username", "").strip()
     if not username:
         flash("Select a user to disable.", "error")
         return redirect(url_for("admin"))
+
+    current_username = _current_username().lower()
+    if current_username and username.lower() == current_username:
+        flash("You cannot disable your own account from this console.", "error")
+        return redirect(url_for("admin"))
+
     try:
         token = _get_service_token()
+        target_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    except Exception as exc:
+        flash(f"Failed to disable '{username}': {exc}", "error")
+        return redirect(url_for("admin"))
+
+    if not target_user:
+        flash(f"User '{username}' not found in realm '{KEYCLOAK_REALM}'.", "error")
+        return redirect(url_for("admin"))
+
+    try:
+        target_roles = _user_roles(token, target_user["id"])
+    except Exception as exc:
+        flash(f"Unable to read roles for '{username}': {exc}", "error")
+        return redirect(url_for("admin"))
+
+    if _requires_operator_for_roles(target_roles) and not _has_operator_privileges():
+        flash("IAM operator privileges are required to disable realm-admin-level accounts.", "error")
+        return redirect(url_for("admin"))
+
+    try:
         jml.disable_user(
             KEYCLOAK_BASE_URL,
             token,

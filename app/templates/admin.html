@@ -158,7 +158,7 @@
               <td class="role-cell">
                 {% if user.roles %}
                   {% for role in user.roles %}
-                    <span class="role-chip{% if role == 'admin' %} admin{% endif %}">{{ role }}</span>
+                    <span class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</span>
                   {% endfor %}
                 {% else %}
                   <span class="muted">—</span>

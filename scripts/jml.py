@@ -368,6 +368,85 @@ def create_user(
         resp.raise_for_status()
 
 
+def grant_client_role(
+    kc_url: str,
+    token: str,
+    realm: str,
+    username: str,
+    client_id: str,
+    role_name: str,
+    *,
+    allow_admin_fallback: bool = True,
+) -> None:
+    """Assign a client-level role (e.g. realm-management/realm-admin) to a user."""
+    user = get_user_by_username(kc_url, token, realm, username)
+    if not user:
+        print(f"[client-role] User '{username}' not found", file=sys.stderr)
+        sys.exit(1)
+    client = _get_client(kc_url, token, realm, client_id)
+    if not client:
+        print(f"[client-role] Client '{client_id}' not found in realm '{realm}'", file=sys.stderr)
+        sys.exit(1)
+    client_uuid = client.get("id")
+    if not client_uuid:
+        print(f"[client-role] Unable to resolve client UUID for '{client_id}'", file=sys.stderr)
+        sys.exit(1)
+    role_resp = requests.get(
+        f"{kc_url}/admin/realms/{realm}/clients/{client_uuid}/roles/{role_name}",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    if role_resp.status_code == 404:
+        print(f"[client-role] Role '{role_name}' not found on client '{client_id}'", file=sys.stderr)
+        sys.exit(1)
+    role_resp.raise_for_status()
+    role_repr = role_resp.json()
+    role_payload = [{"id": role_repr["id"], "name": role_repr["name"]}]
+
+    def _assign(headers: dict) -> tuple[bool, requests.Response | None]:
+        resp = requests.post(
+            f"{kc_url}/admin/realms/{realm}/users/{user['id']}/role-mappings/clients/{client_uuid}",
+            json=role_payload,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code in (204, 201, 409):
+            # 409 indicates the role was already assigned; treat as success.
+            print(
+                f"[client-role] Assigned '{role_name}' from '{client_id}' to '{username}'",
+                file=sys.stderr,
+            )
+            return True, resp
+        if resp.status_code not in (401, 403):
+            if resp.text:
+                print(resp.text, file=sys.stderr)
+            resp.raise_for_status()
+        return False, resp
+
+    success, response = _assign(_auth_headers(token))
+    if success:
+        return
+    if not allow_admin_fallback:
+        error_detail = response.text if response is not None else "missing privilege"
+        raise RuntimeError(
+            f"[client-role] Service account lacks permission to assign '{role_name}': {error_detail}"
+        )
+    admin_user = os.environ.get("KEYCLOAK_ADMIN", "admin")
+    admin_pass = os.environ.get("KEYCLOAK_ADMIN_PASSWORD")
+    if not admin_pass:
+        raise RuntimeError(
+            "[client-role] Unable to assign client role; set KEYCLOAK_ADMIN_PASSWORD for admin fallback."
+        )
+    admin_token = get_admin_token(kc_url, admin_user, admin_pass)
+    success, fallback_resp = _assign(_auth_headers(admin_token))
+    if success:
+        return
+    detail = fallback_resp.text if fallback_resp is not None else "unknown error"
+    raise RuntimeError(
+        f"[client-role] Failed to assign '{role_name}' from '{client_id}' even with admin credentials: {detail}"
+    )
+
+
 def change_role(kc_url: str, token: str, realm: str, username: str, from_role: str, to_role: str) -> None:
     """Swap the user's role by revoking one assignment and granting another."""
     user = get_user_by_username(kc_url, token, realm, username)
@@ -660,6 +739,12 @@ def main() -> None:
     sj.add_argument("--role", default="analyst")
     sj.add_argument("--temp-password", default=os.environ.get("ALICE_TEMP_PASSWORD_DEMO", "Passw0rd!"))
 
+    scr = sub.add_parser("client-role", help="Assign a client-level role to a user")
+    scr.add_argument("--realm", default="demo")
+    scr.add_argument("--username", required=True)
+    scr.add_argument("--client-id", required=True)
+    scr.add_argument("--role", required=True)
+
     sm = sub.add_parser("mover")
     sm.add_argument("--realm", default="demo")
     sm.add_argument("--username", required=True)
@@ -719,7 +804,7 @@ def main() -> None:
             args.redirect_uri,
             args.post_logout_redirect_uri,
         )
-        for role in ["admin", "analyst"]:
+        for role in ["analyst", "iam-operator"]:
             create_role(args.kc_url, token, target_realm, role)
         ensure_required_action(args.kc_url, token, target_realm, "CONFIGURE_TOTP")
         ensure_required_action(args.kc_url, token, target_realm, "UPDATE_PASSWORD")
@@ -733,6 +818,15 @@ def main() -> None:
             args.first,
             args.last,
             args.temp_password,
+            args.role,
+        )
+    elif args.cmd == "client-role":
+        grant_client_role(
+            args.kc_url,
+            token,
+            target_realm,
+            args.username,
+            args.client_id,
             args.role,
         )
     elif args.cmd == "mover":

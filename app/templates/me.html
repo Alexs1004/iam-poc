@@ -9,7 +9,7 @@
       {% if roles %}
         <ul class="role-list">
         {% for role in roles %}
-          <li class="role-chip{% if role == 'admin' %} admin{% endif %}">{{ role }}</li>
+          <li class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</li>
         {% endfor %}
         </ul>
       {% else %}
