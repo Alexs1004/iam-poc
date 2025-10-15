@@ -129,6 +129,25 @@ a.btn-primary:hover {
   box-shadow: var(--shadow-md);
 }
 
+.btn-console {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  padding: 0.65rem 1.25rem;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-console:hover {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
 /* Main content */
 main {
   flex: 1;

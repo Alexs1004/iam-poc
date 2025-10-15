@@ -55,6 +55,7 @@ def test_admin_allows_admin_role_and_sets_security_headers(client):
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Welcome admin!" in body
+    assert "Open Keycloak Console" in body
     assert "no-store" in response.headers["Cache-Control"]
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"

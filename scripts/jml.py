@@ -495,6 +495,14 @@ def _ensure_service_account_client(kc_url: str, token: str, realm: str, client_i
     if not secret:
         raise RuntimeError("Failed to retrieve service account secret")
     print("[bootstrap] Client secret rotated; update your environment variables.", file=sys.stderr)
+    try:
+        get_service_account_token(kc_url, realm, client.get("clientId", client_id), secret)
+    except requests.HTTPError as exc:  # pragma: no cover - depends on HTTP response content
+        detail = exc.response.text if getattr(exc, "response", None) is not None else str(exc)
+        raise RuntimeError(f"Failed to validate rotated service account secret: {detail}") from exc
+    except Exception as exc:  # pragma: no cover - network/runtime edge cases
+        raise RuntimeError(f"Failed to validate rotated service account secret: {exc}") from exc
+    print("[bootstrap] Verified rotated client secret by acquiring access token.", file=sys.stderr)
     return client_uuid, secret
 
 

@@ -5,6 +5,12 @@
   <p class="intro"><span class="role-chip admin">admin</span> Welcome admin! Access granted for this protected route.</p>
   <div class="card">
     <p class="muted">This page demonstrates server-side authorization using the <code>@require_role</code> decorator. Tokens never reach the browser.</p>
+    {% if keycloak_console_url %}
+      <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
+        Open Keycloak Console
+        <span aria-hidden="true">↗</span>
+      </a>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

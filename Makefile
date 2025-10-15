@@ -36,6 +36,10 @@ WITH_ENV := set -a; source .env; set +a; \
 			BOB_TEMP_PASSWORD="$$(fetch_secret "$${AZURE_SECRET_BOB_TEMP_PASSWORD}")"; \
 			export BOB_TEMP_PASSWORD; \
 		fi; \
+		if [[ -z "$${AUDIT_LOG_SIGNING_KEY}" ]]; then \
+			AUDIT_LOG_SIGNING_KEY="$$(fetch_secret "$${AZURE_SECRET_AUDIT_LOG_SIGNING_KEY}")"; \
+			export AUDIT_LOG_SIGNING_KEY; \
+		fi; \
 	fi;
 
 .PHONY: help
@@ -66,6 +70,18 @@ bootstrap-service-account: ## One-time bootstrap (requires master admin; rotates
 		echo "[bootstrap] Failed to retrieve admin password from Key Vault"; \
 		exit 1; \
 	fi; \
+	if [ -z "$$AUDIT_LOG_SIGNING_KEY" ]; then \
+		if [ -z "$$AZURE_SECRET_AUDIT_LOG_SIGNING_KEY" ]; then \
+			echo "[bootstrap] AZURE_SECRET_AUDIT_LOG_SIGNING_KEY must reference the audit HMAC secret in Key Vault." >&2; \
+			exit 1; \
+		fi; \
+		AUDIT_LOG_SIGNING_KEY=$$(az keyvault secret show --vault-name "$$AZURE_KEY_VAULT_NAME" --name "$$AZURE_SECRET_AUDIT_LOG_SIGNING_KEY" --query value -o tsv) || exit 1; \
+		if [ -z "$$AUDIT_LOG_SIGNING_KEY" ]; then \
+			echo "[bootstrap] Failed to retrieve AUDIT_LOG_SIGNING_KEY from Key Vault." >&2; \
+			exit 1; \
+		fi; \
+		export AUDIT_LOG_SIGNING_KEY; \
+	fi; \
 	secret=$$($(JML) --kc-url "$$KEYCLOAK_URL" --auth-realm master --svc-client-id "$$KEYCLOAK_SERVICE_CLIENT_ID" bootstrap-service-account --realm "$$KEYCLOAK_REALM" --admin-user "$$KEYCLOAK_ADMIN" --admin-pass "$$ADMIN_PASS"); \
 	if [ -z "$$secret" ]; then \
 		echo "[bootstrap] No secret returned; .env not updated." >&2; \
@@ -75,11 +91,35 @@ bootstrap-service-account: ## One-time bootstrap (requires master admin; rotates
 		echo "[bootstrap] Missing Key Vault mapping for service client secret; aborting." >&2; \
 		exit 1; \
 	fi; \
-	if ! az keyvault secret set --vault-name "$$AZURE_KEY_VAULT_NAME" --name "$$AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET" --value "$$secret" >/dev/null; then \
+	if ! rotation_json=$$(az keyvault secret set --vault-name "$$AZURE_KEY_VAULT_NAME" --name "$$AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET" --value "$$secret" --query "{id:id,version:properties.version}" -o json --only-show-errors); then \
 		echo "[bootstrap] Failed to store KEYCLOAK_SERVICE_CLIENT_SECRET in Key Vault." >&2; \
 		exit 1; \
 	fi; \
-	echo "[bootstrap] KEYCLOAK_SERVICE_CLIENT_SECRET rotated in Azure Key Vault." ; \
+	secret_id=$$(printf '%s' "$$rotation_json" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('id',''))"); \
+	secret_version=$$(printf '%s' "$$rotation_json" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('version',''))"); \
+	if [ -z "$$secret_id" ] || [ -z "$$secret_version" ]; then \
+		echo "[bootstrap] Unable to parse secret identifier from Key Vault response." >&2; \
+		exit 1; \
+	fi; \
+	operator=$$(az account show --query "user.name" -o tsv 2>/dev/null); \
+	if [ -z "$$operator" ]; then \
+		operator=$$(az account show --query "user.userPrincipalName" -o tsv 2>/dev/null); \
+	fi; \
+	if [ -z "$$operator" ]; then \
+		operator=$$(az account show --query "name" -o tsv 2>/dev/null || echo "unknown"); \
+	fi; \
+	timestamp=$$(date -u '+%Y-%m-%dT%H:%M:%SZ'); \
+	audit_dir=".runtime/audit"; \
+	mkdir -p "$$audit_dir"; \
+	chmod 700 "$$audit_dir"; \
+	audit_message="timestamp=$$timestamp operator=$$operator secret_id=$$secret_id version=$$secret_version"; \
+	signature=$$(AUDIT_LOG_MESSAGE="$$audit_message" python3 -c 'import os,hmac,hashlib,sys; key=os.environ["AUDIT_LOG_SIGNING_KEY"].encode(); msg=os.environ["AUDIT_LOG_MESSAGE"].encode(); print(hmac.new(key, msg, hashlib.sha256).hexdigest())'); \
+	audit_file="$$audit_dir/secret-rotation.log"; \
+	touch "$$audit_file"; \
+	chmod 600 "$$audit_file"; \
+	printf '%s signature=%s\n' "$$audit_message" "$$signature" >> "$$audit_file"; \
+	echo "[bootstrap] KEYCLOAK_SERVICE_CLIENT_SECRET rotated in Azure Key Vault (version $$secret_version)." ; \
+	echo "[bootstrap] Audit entry recorded for operator '$$operator'." ; \
 	echo "Re-run ./scripts/run_https.sh to refresh containers with the new secret."
 
 .PHONY: init

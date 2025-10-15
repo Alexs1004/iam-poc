@@ -208,6 +208,16 @@ POST_LOGOUT_REDIRECT_URI = _ensure_env(
     demo_default="http://localhost:5000/",
 )
 
+def _default_console_url(public_issuer: str) -> str:
+    issuer = public_issuer.rstrip("/")
+    if "/realms/" in issuer:
+        base, _, realm = issuer.partition("/realms/")
+        realm = realm.split("/")[0]
+        return f"{base.rstrip('/')}/admin/master/console/#/realms/{realm}"
+    return f"{issuer}/admin/master/console/"
+
+KEYCLOAK_CONSOLE_URL = os.environ.get("KEYCLOAK_CONSOLE_URL", _default_console_url(PUBLIC_ISSUER))
+
 SERVICE_CLIENT_SECRET = _ensure_env(
     "KEYCLOAK_SERVICE_CLIENT_SECRET",
     demo_default=os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO", "demo-service-secret"),
@@ -303,6 +313,12 @@ def _decode_access_token(access_token: str) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 def _is_authenticated() -> bool:
     return bool(session.get("token"))
+
+def _user_has_role(role: str) -> bool:
+    if not _is_authenticated():
+        return False
+    _, _, _, roles = _current_user_context()
+    return role in roles
 
 
 def _render_page(template: str, *, status: int = 200, protect: bool = False, **context):
@@ -503,8 +519,15 @@ def _enforce_csrf() -> None:
 
 
 @app.context_processor
-def inject_csrf_token():
-    return {"csrf_token": g.get("csrf_token") or generate_csrf_token()}
+def inject_global_context():
+    token = g.get("csrf_token") or generate_csrf_token()
+    is_admin_user = _user_has_role("admin")
+    console_url = KEYCLOAK_CONSOLE_URL if is_admin_user else None
+    return {
+        "csrf_token": token,
+        "is_admin_user": is_admin_user,
+        "keycloak_console_url": console_url,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
