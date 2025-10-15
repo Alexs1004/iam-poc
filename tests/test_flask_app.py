@@ -3,6 +3,7 @@ import pathlib
 import sys
 
 import pytest
+import scripts.jml as jml
 
 # Add project root to Python path so pytest can import the Flask app package.
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -12,6 +13,17 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("DEMO_MODE", "true")
 
 from app import app as flask_app
+def _authenticate_as_admin(client):
+    with client.session_transaction() as session:
+        session["token"] = {"access_token": "", "id_token": ""}
+        session["userinfo"] = {"realm_access": {"roles": ["admin", "analyst"]}}
+        session["id_claims"] = {"realm_access": {"roles": ["admin"]}}
+
+
+def _get_csrf_token(client):
+    client.get("/admin")
+    with client.session_transaction() as session:
+        return session["_csrf_token"]
 
 
 # Provide a test client so each test can exercise routes without running a server.
@@ -47,18 +59,117 @@ def test_admin_requires_admin_role(client):
 
 # Admin role holders should gain access while the security headers stay enforced.
 def test_admin_allows_admin_role_and_sets_security_headers(client):
-    with client.session_transaction() as session:
-        session["token"] = {"access_token": "", "id_token": ""}
-        session["userinfo"] = {"realm_access": {"roles": ["admin", "analyst"]}}
-        session["id_claims"] = {"realm_access": {"roles": ["admin"]}}
+    _authenticate_as_admin(client)
     response = client.get("/admin")
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Welcome admin!" in body
+    assert "Joiner / Mover / Leaver control center" in body
+    assert "Provision user (Joiner)" in body
     assert "Open Keycloak Console" in body
     assert "no-store" in response.headers["Cache-Control"]
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
+
+
+def test_admin_joiner_invokes_create_user(monkeypatch, client):
+    _authenticate_as_admin(client)
+    csrf_token = _get_csrf_token(client)
+
+    monkeypatch.setattr(flask_app, "_get_service_token", lambda: "token")
+
+    captured = {}
+
+    def fake_create_user(kc_url, token, realm, username, email, first, last, temp_password, role, require_totp=True):
+        captured["args"] = {
+            "kc_url": kc_url,
+            "token": token,
+            "realm": realm,
+            "username": username,
+            "email": email,
+            "first": first,
+            "last": last,
+            "temp_password": temp_password,
+            "role": role,
+            "require_totp": require_totp,
+        }
+
+    monkeypatch.setattr(jml, "create_user", fake_create_user)
+
+    response = client.post(
+        "/admin/joiner",
+        data={
+            "csrf_token": csrf_token,
+            "first_name": "Test",
+            "last_name": "User",
+            "email": "test@example.com",
+            "username": "test.user",
+            "role": "analyst",
+            "temp_password": "Temp!123",
+            "require_totp": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert captured["args"]["username"] == "test.user"
+    assert captured["args"]["role"] == "analyst"
+    assert captured["args"]["require_totp"] is True
+
+
+def test_admin_mover_invokes_change_role(monkeypatch, client):
+    _authenticate_as_admin(client)
+    csrf_token = _get_csrf_token(client)
+
+    monkeypatch.setattr(flask_app, "_get_service_token", lambda: "token")
+
+    recorded = {}
+
+    def fake_change_role(kc_url, token, realm, username, from_role, to_role):
+        recorded["args"] = (kc_url, token, realm, username, from_role, to_role)
+
+    monkeypatch.setattr(jml, "change_role", fake_change_role)
+
+    response = client.post(
+        "/admin/mover",
+        data={
+            "csrf_token": csrf_token,
+            "username": "alice",
+            "source_role": "analyst",
+            "target_role": "admin",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert recorded["args"][3] == "alice"
+    assert recorded["args"][4] == "analyst"
+    assert recorded["args"][5] == "admin"
+
+
+def test_admin_leaver_invokes_disable_user(monkeypatch, client):
+    _authenticate_as_admin(client)
+    csrf_token = _get_csrf_token(client)
+
+    monkeypatch.setattr(flask_app, "_get_service_token", lambda: "token")
+
+    recorded = {}
+
+    def fake_disable_user(kc_url, token, realm, username):
+        recorded["args"] = (kc_url, token, realm, username)
+
+    monkeypatch.setattr(jml, "disable_user", fake_disable_user)
+
+    response = client.post(
+        "/admin/leaver",
+        data={
+            "csrf_token": csrf_token,
+            "username": "bob",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert recorded["args"][3] == "bob"
 
 
 # Accessing /me without a session should kick the user back to the login flow.

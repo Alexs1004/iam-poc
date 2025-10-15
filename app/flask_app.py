@@ -16,7 +16,9 @@ from authlib.jose import JsonWebKey, jwt
 from flask import (
     Flask,
     abort,
+    flash,
     g,
+    get_flashed_messages,
     make_response,
     redirect,
     render_template,
@@ -26,6 +28,7 @@ from flask import (
 )
 from flask_session import Session
 from werkzeug.middleware.proxy_fix import ProxyFix
+from scripts import jml
 
 try:
     from azure.identity import DefaultAzureCredential  # type: ignore
@@ -208,6 +211,17 @@ POST_LOGOUT_REDIRECT_URI = _ensure_env(
     demo_default="http://localhost:5000/",
 )
 
+KEYCLOAK_REALM = _ensure_env("KEYCLOAK_REALM", demo_default="demo")
+KEYCLOAK_SERVICE_REALM = os.environ.get("KEYCLOAK_SERVICE_REALM", KEYCLOAK_REALM)
+KEYCLOAK_SERVICE_CLIENT_ID = _ensure_env("KEYCLOAK_SERVICE_CLIENT_ID", demo_default="automation-cli")
+
+KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_URL", "")
+if not KEYCLOAK_BASE_URL:
+    if "/realms/" in SERVER_URL:
+        KEYCLOAK_BASE_URL = SERVER_URL.split("/realms/")[0]
+    else:
+        KEYCLOAK_BASE_URL = SERVER_URL.rstrip("/")
+
 def _default_console_url(public_issuer: str) -> str:
     issuer = public_issuer.rstrip("/")
     if "/realms/" in issuer:
@@ -239,6 +253,33 @@ DEMO_WARN_VARS = {
     "ALICE_TEMP_PASSWORD": ALICE_PASSWORD,
     "BOB_TEMP_PASSWORD": BOB_PASSWORD,
 }
+
+DEMO_USER_DIRECTORY = {
+    "alice": {
+        "username": "alice",
+        "email": os.environ.get("ALICE_EMAIL", "alice@example.com"),
+        "first": "Alice",
+        "last": "Demo",
+        "display_name": "Alice Demo",
+        "default_role": "analyst",
+    },
+    "bob": {
+        "username": "bob",
+        "email": os.environ.get("BOB_EMAIL", "bob@example.com"),
+        "first": "Bob",
+        "last": "Demo",
+        "display_name": "Bob Demo",
+        "default_role": "analyst",
+    },
+}
+
+ASSIGNABLE_ROLES = [
+    role.strip().lower()
+    for role in os.environ.get("KEYCLOAK_ASSIGNABLE_ROLES", "analyst,admin").split(",")
+    if role.strip()
+]
+if not ASSIGNABLE_ROLES:
+    ASSIGNABLE_ROLES = ["analyst", "admin"]
 
 MODE_LABEL = "DEMO" if DEMO_MODE else "PRODUCTION"
 print(
@@ -323,6 +364,10 @@ def _user_has_role(role: str) -> bool:
 
 def _render_page(template: str, *, status: int = 200, protect: bool = False, **context):
     context.setdefault("flash_message", None)
+    context.setdefault("flash_messages", [])
+    messages = get_flashed_messages(with_categories=True)
+    if messages:
+        context["flash_messages"] = messages
     context.setdefault("csrf_token", generate_csrf_token())
     rendered = render_template(
         template,
@@ -431,6 +476,127 @@ def _current_user_context():
     access_claims = _decode_access_token(token.get("access_token"))
     roles = _collect_roles(id_claims, userinfo, access_claims)
     return token, id_claims, userinfo, roles
+
+
+def _get_service_token() -> str:
+    try:
+        return jml.get_service_account_token(
+            KEYCLOAK_BASE_URL,
+            KEYCLOAK_SERVICE_REALM,
+            KEYCLOAK_SERVICE_CLIENT_ID,
+            SERVICE_CLIENT_SECRET,
+        )
+    except requests.HTTPError as exc:
+        detail = exc.response.text if getattr(exc, "response", None) is not None else str(exc)
+        raise RuntimeError(f"Failed to obtain service account token: {detail}") from exc
+    except Exception as exc:  # pragma: no cover - unexpected runtime issues
+        raise RuntimeError(f"Failed to obtain service account token: {exc}") from exc
+
+
+def _user_roles(kc_token: str, user_id: str) -> list[str]:
+    resp = requests.get(
+        f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/role-mappings/realm",
+        headers=jml._auth_headers(kc_token),
+        timeout=jml.REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return sorted({role.get("name") for role in resp.json() or [] if role.get("name")})
+
+
+def _demo_status_stub() -> list[dict]:
+    stub_statuses: list[dict] = []
+    for info in DEMO_USER_DIRECTORY.values():
+        stub_statuses.append(
+            {
+                "id": info["username"],
+                "username": info["username"],
+                "display_name": info["display_name"],
+                "email": info["email"],
+                "exists": True,
+                "enabled": info["username"] != "bob",
+                "roles": ["admin"] if info["username"] == "alice" else ["analyst"],
+                "required_actions": [],
+                "totp_enrolled": info["username"] == "alice",
+            }
+        )
+    return stub_statuses
+
+
+def _fetch_user_statuses(kc_token: str) -> list[dict]:
+    resp = requests.get(
+        f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users",
+        params={"max": int(os.environ.get("KEYCLOAK_ADMIN_USER_LIMIT", "50"))},
+        headers=jml._auth_headers(kc_token),
+        timeout=jml.REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    users = resp.json() or []
+    statuses: list[dict] = []
+    for user in users:
+        user_id = user.get("id")
+        if not user_id:
+            continue
+        display_name = " ".join(
+            part for part in [user.get("firstName", ""), user.get("lastName", "")] if part
+        ).strip() or user.get("username", "")
+        status = {
+            "id": user_id,
+            "username": user.get("username", ""),
+            "display_name": display_name,
+            "email": user.get("email") or "",
+            "exists": True,
+            "enabled": user.get("enabled", False),
+            "roles": [],
+            "required_actions": user.get("requiredActions") or [],
+            "totp_enrolled": False,
+        }
+        try:
+            status["roles"] = _user_roles(kc_token, user_id)
+            status["totp_enrolled"] = jml._user_has_totp(
+                KEYCLOAK_BASE_URL, kc_token, KEYCLOAK_REALM, user_id
+            )
+        except requests.HTTPError as exc:
+            detail = exc.response.text if getattr(exc, "response", None) is not None else str(exc)
+            raise RuntimeError(f"Failed to load details for user '{status['username']}': {detail}") from exc
+        statuses.append(status)
+    statuses.sort(key=lambda item: (item["display_name"] or item["username"]).lower())
+    return statuses
+
+
+def _fetch_assignable_roles(kc_token: str) -> list[str]:
+    resp = requests.get(
+        f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/roles",
+        headers=jml._auth_headers(kc_token),
+        timeout=jml.REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    available = [role.get("name") for role in resp.json() or [] if role.get("name")]
+    if not available:
+        return ASSIGNABLE_ROLES
+    filtered = [role for role in available if role.lower() in ASSIGNABLE_ROLES]
+    return sorted(filtered or available, key=str.lower)
+
+
+def _load_admin_context() -> tuple[list[dict], list[str]]:
+    if app.config.get("TESTING"):
+        return _demo_status_stub(), ASSIGNABLE_ROLES
+    token = _get_service_token()
+    statuses = _fetch_user_statuses(token)
+    roles = _fetch_assignable_roles(token)
+    return statuses, roles
+
+
+def _normalize_username(raw: str) -> str:
+    return "".join(char for char in raw.lower().strip() if char.isalnum() or char in {".", "-", "_"})
+
+
+def _role_is_assignable(role: str) -> bool:
+    return role.lower() in ASSIGNABLE_ROLES
+
+
+def _generate_temp_password(length: int = 14) -> str:
+    alphabet = string.ascii_letters + string.digits + "!@#$-_=+"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 def generate_csrf_token() -> str:
@@ -552,7 +718,118 @@ def me():
 @app.route("/admin")
 @require_role("admin")
 def admin():
-    return _render_page("admin.html", title="Admin", protect=True)
+    try:
+        user_statuses, assignable_roles = _load_admin_context()
+    except Exception as exc:
+        flash(f"Unable to load Keycloak state: {exc}", "error")
+        user_statuses = _demo_status_stub()
+        assignable_roles = ASSIGNABLE_ROLES
+    existing_users = [user for user in user_statuses if user["exists"]]
+    return _render_page(
+        "admin.html",
+        title="Admin",
+        protect=True,
+        user_statuses=user_statuses,
+        assignable_roles=assignable_roles,
+        existing_users=existing_users,
+    )
+
+
+@app.post("/admin/joiner")
+@require_role("admin")
+def admin_joiner():
+    username = _normalize_username(request.form.get("username", ""))
+    first = request.form.get("first_name", "").strip()
+    last = request.form.get("last_name", "").strip()
+    email = request.form.get("email", "").strip()
+    role = request.form.get("role", "").strip()
+    temp_password = request.form.get("temp_password", "").strip()
+    require_totp = request.form.get("require_totp") == "on"
+
+    if not all([username, first, last, email, role]):
+        flash("All fields are required to provision a user.", "error")
+        return redirect(url_for("admin"))
+    if not _role_is_assignable(role):
+        flash(f"Role '{role}' is not assignable.", "error")
+        return redirect(url_for("admin"))
+    if not temp_password:
+        temp_password = _generate_temp_password()
+
+    try:
+        token = _get_service_token()
+        jml.create_user(
+            KEYCLOAK_BASE_URL,
+            token,
+            KEYCLOAK_REALM,
+            username,
+            email,
+            first,
+            last,
+            temp_password,
+            role,
+            require_totp=require_totp,
+        )
+    except Exception as exc:
+        flash(f"Failed to provision user '{username}': {exc}", "error")
+    else:
+        flash(f"User '{username}' provisioned. Temporary password: {temp_password}", "success")
+    return redirect(url_for("admin"))
+
+
+@app.post("/admin/mover")
+@require_role("admin")
+def admin_mover():
+    username = request.form.get("username", "").strip()
+    source_role = request.form.get("source_role", "").strip()
+    target_role = request.form.get("target_role", "").strip()
+
+    if not username or not source_role or not target_role:
+        flash("User, current role, and new role are required.", "error")
+        return redirect(url_for("admin"))
+    if source_role == target_role:
+        flash("Choose a different target role to perform a mover operation.", "error")
+        return redirect(url_for("admin"))
+    if not (_role_is_assignable(source_role) and _role_is_assignable(target_role)):
+        flash("One of the selected roles is not managed by this console.", "error")
+        return redirect(url_for("admin"))
+
+    try:
+        token = _get_service_token()
+        jml.change_role(
+            KEYCLOAK_BASE_URL,
+            token,
+            KEYCLOAK_REALM,
+            username,
+            source_role,
+            target_role,
+        )
+    except Exception as exc:
+        flash(f"Failed to update roles for '{username}': {exc}", "error")
+    else:
+        flash(f"User '{username}' moved from {source_role} to {target_role}.", "success")
+    return redirect(url_for("admin"))
+
+
+@app.post("/admin/leaver")
+@require_role("admin")
+def admin_leaver():
+    username = request.form.get("username", "").strip()
+    if not username:
+        flash("Select a user to disable.", "error")
+        return redirect(url_for("admin"))
+    try:
+        token = _get_service_token()
+        jml.disable_user(
+            KEYCLOAK_BASE_URL,
+            token,
+            KEYCLOAK_REALM,
+            username,
+        )
+    except Exception as exc:
+        flash(f"Failed to disable '{username}': {exc}", "error")
+    else:
+        flash(f"User '{username}' disabled successfully.", "success")
+    return redirect(url_for("admin"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

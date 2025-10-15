@@ -11,12 +11,12 @@
     <div class="brand">IAM Lab</div>
     <nav class="nav-actions">
       <a href="{{ url_for('index') }}">Home</a>
+      {% if keycloak_console_url %}
+        <a href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
+      {% endif %}
       {% if is_authenticated %}
         <a href="{{ url_for('me') }}">Profile</a>
         <a href="{{ url_for('admin') }}">Admin</a>
-        {% if is_admin_user and keycloak_console_url %}
-          <a href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
-        {% endif %}
         <a class="btn-secondary" href="{{ url_for('login', force=1) }}">Login as different user</a>
         <a class="btn-primary" href="{{ url_for('logout') }}">Logout</a>
       {% else %}
@@ -26,8 +26,14 @@
   </header>
 
   <main>
-    {% if flash_message %}
-      <div class="alert">{{ flash_message }}</div>
+    {% if flash_messages %}
+      {% for category, message in flash_messages %}
+        <div class="alert {{ 'alert-success' if category == 'success' else 'alert-error' }}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% elif flash_message %}
+      <div class="alert alert-error">{{ flash_message }}</div>
     {% endif %}
     {% block content %}{% endblock %}
   </main>

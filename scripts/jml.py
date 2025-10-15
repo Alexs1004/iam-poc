@@ -265,10 +265,16 @@ def _user_has_totp(kc_url: str, token: str, realm: str, user_id: str) -> bool:
     return any(cred.get("type") == "otp" for cred in cred_resp.json() or [])
 
 
-def _desired_required_actions(kc_url: str, token: str, realm: str, user_id: str) -> list[str]:
+def _desired_required_actions(
+    kc_url: str,
+    token: str,
+    realm: str,
+    user_id: str,
+    require_totp: bool = True,
+) -> list[str]:
     """Compute required actions for new joiners, prompting for TOTP if needed."""
     actions = {"UPDATE_PASSWORD"}
-    if not _user_has_totp(kc_url, token, realm, user_id):
+    if require_totp and not _user_has_totp(kc_url, token, realm, user_id):
         actions.add("CONFIGURE_TOTP")
     return sorted(actions)
 
@@ -298,6 +304,7 @@ def create_user(
     last: str,
     temp_password: str,
     role: str,
+    require_totp: bool = True,
 ) -> None:
     """Create a new user and assign the chosen role and bootstrap password."""
     exists = get_user_by_username(kc_url, token, realm, username)
@@ -324,7 +331,13 @@ def create_user(
         user_id = get_user_by_username(kc_url, token, realm, username)["id"]
         print(f"[joiner] User '{username}' created (id={user_id})", file=sys.stderr)
 
-    ensure_user_required_actions(kc_url, token, realm, user_id, _desired_required_actions(kc_url, token, realm, user_id))
+    ensure_user_required_actions(
+        kc_url,
+        token,
+        realm,
+        user_id,
+        _desired_required_actions(kc_url, token, realm, user_id, require_totp=require_totp),
+    )
 
     resp = requests.put(
         f"{kc_url}/admin/realms/{realm}/users/{user_id}/reset-password",
