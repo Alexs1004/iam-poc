@@ -2,13 +2,14 @@
 {% block content %}
 <section class="panel profile-dashboard">
   <div class="profile-hero">
-    <div class="profile-ident">
+    <div class="profile-hero-body">
+      <span class="hero-kicker">Your identity</span>
       <div class="profile-ident-main">
         <span class="profile-avatar" aria-hidden="true">{{ profile_initials }}</span>
         <div class="profile-meta">
           <h1>{{ profile_display_name }}</h1>
           <div class="profile-subheading">
-            <span>{{ profile_username }}</span>
+            <span>@{{ profile_username }}</span>
             {% if profile_email and profile_email != "—" %}
               <span aria-hidden="true">•</span>
               <a href="mailto:{{ profile_email }}">{{ profile_email }}</a>
@@ -17,33 +18,40 @@
         </div>
       </div>
     </div>
-    <div class="profile-stats">
-      <div class="profile-stat">
-        <span class="stat-label">Email status</span>
-        <span class="stat-value {{ 'verified' if profile_email_verified else 'unverified' }}">
-          {{ 'Verified' if profile_email_verified else 'Unverified' }}
-        </span>
-      </div>
-      <div class="profile-stat">
-        <div class="profile-role-stack">
-          <h3>Access roles</h3>
-          {% if roles %}
-            <ul class="role-list">
-            {% for role in roles %}
-              <li class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</li>
-            {% endfor %}
-            </ul>
-          {% else %}
-            <p class="muted">No mapped realm roles.</p>
-          {% endif %}
-        </div>
-      </div>
+    <div class="profile-hero-status">
+      <span class="status-label">Account Status</span>
+      <span class="status-badge active">Active</span>
+      <span class="status-hint">Verified account</span>
     </div>
   </div>
 
-  <div class="profile-grid">
-    <div class="card profile-card profile-card--full">
-      <h2>Identity details</h2>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-label">Email Status</span>
+      <span class="stat-value {{ 'verified' if profile_email_verified else 'unverified' }}">
+        {{ 'Verified' if profile_email_verified else 'Unverified' }}
+      </span>
+      <span class="stat-hint">Identity verification</span>
+    </div>
+    <div class="stat-card stat-card--roles">
+      <span class="stat-label">Assigned Roles</span>
+      {% if roles %}
+        <div class="role-list">
+          {% for role in roles %}
+            <span class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</span>
+          {% endfor %}
+        </div>
+      {% else %}
+        <span class="stat-hint muted">No roles assigned</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="profile-content">
+    <div class="card profile-card">
+      <div class="card-header">
+        <h2>Identity details</h2>
+      </div>
       <dl class="claim-grid two-column">
         <div>
           <dt>Username</dt>
