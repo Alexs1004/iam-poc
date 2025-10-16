@@ -225,9 +225,8 @@ if not KEYCLOAK_BASE_URL:
 def _default_console_url(public_issuer: str) -> str:
     issuer = public_issuer.rstrip("/")
     if "/realms/" in issuer:
-        base, _, realm = issuer.partition("/realms/")
-        realm = realm.split("/")[0]
-        return f"{base.rstrip('/')}/admin/master/console/#/realms/{realm}"
+        base, _, _realm = issuer.partition("/realms/")
+        return f"{base.rstrip('/')}/admin/master/console/"
     return f"{issuer}/admin/master/console/"
 
 KEYCLOAK_CONSOLE_URL = os.environ.get("KEYCLOAK_CONSOLE_URL", _default_console_url(PUBLIC_ISSUER))
