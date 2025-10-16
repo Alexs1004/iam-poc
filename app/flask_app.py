@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import string
+import time
 from functools import wraps
 from tempfile import gettempdir
 from urllib.parse import urlencode, urlparse
@@ -346,6 +347,15 @@ oidc = oauth.register(
 )
 
 USERINFO_URL = f"{SERVER_URL}/protocol/openid-connect/userinfo"
+TOKEN_ENDPOINT = f"{SERVER_URL}/protocol/openid-connect/token"
+TOKEN_REFRESH_LEEWAY = int(os.environ.get("OIDC_TOKEN_REFRESH_LEEWAY", "60"))
+SKIP_TOKEN_REFRESH_ENDPOINTS = {
+    "login",
+    "logout",
+    "callback",
+    "health_check",
+    "static",
+}
 JWKS_CACHE = None
 
 
@@ -529,6 +539,59 @@ def _collect_roles(*sources):
     return roles
 
 
+def _refresh_session_token() -> bool | None:
+    token = session.get("token") or {}
+    if not token:
+        return None
+    now = time.time()
+    expires_at = token.get("expires_at")
+    if expires_at is None:
+        expires_in = token.get("expires_in")
+        if expires_in is not None:
+            try:
+                expires_at = now + int(expires_in)
+            except (TypeError, ValueError):
+                expires_at = None
+            else:
+                token["expires_at"] = expires_at
+                session["token"] = token
+    if expires_at is None:
+        return None
+    if expires_at - TOKEN_REFRESH_LEEWAY > now:
+        return None
+    refresh_token = token.get("refresh_token")
+    if not refresh_token:
+        app.logger.warning("Session access token expired without refresh token; clearing session.")
+        _clear_session_tokens()
+        return False
+    try:
+        new_token = oidc.refresh_token(TOKEN_ENDPOINT, refresh_token=refresh_token)
+    except Exception as exc:  # pragma: no cover - depends on Keycloak/oidc runtime behaviour
+        app.logger.warning("Token refresh failed: %s", exc, exc_info=False)
+        _clear_session_tokens()
+        return False
+    if not new_token:
+        _clear_session_tokens()
+        return False
+    if "refresh_token" not in new_token:
+        new_token["refresh_token"] = refresh_token
+    expires_in = new_token.get("expires_in")
+    if expires_in is not None:
+        try:
+            new_token["expires_at"] = time.time() + int(expires_in)
+        except (TypeError, ValueError):
+            new_token.pop("expires_at", None)
+    elif "expires_at" not in new_token and expires_at is not None:
+        new_token["expires_at"] = expires_at
+    session["token"] = new_token
+    try:
+        session["id_claims"] = oidc.parse_id_token(new_token)
+    except Exception:
+        session.pop("id_claims", None)
+    session.pop("userinfo", None)
+    return True
+
+
 def _current_user_context():
     token = session.get("token")
     if not token:
@@ -689,6 +752,12 @@ def _generate_temp_password(length: int = 14) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
+def _clear_session_tokens() -> None:
+    session.pop("token", None)
+    session.pop("userinfo", None)
+    session.pop("id_claims", None)
+
+
 def generate_csrf_token() -> str:
     token = session.get(CSRF_SESSION_KEY)
     if not token:
@@ -776,6 +845,20 @@ def _enforce_csrf() -> None:
     session_token = session.get(CSRF_SESSION_KEY, "")
     if not session_token or not submitted_token or not hmac.compare_digest(session_token, submitted_token):
         abort(400, description="CSRF validation failed")
+
+
+@app.before_request
+def _ensure_fresh_token():
+    if not _is_authenticated():
+        return
+    endpoint = (request.endpoint or "").rsplit(".", 1)[-1]
+    if endpoint in SKIP_TOKEN_REFRESH_ENDPOINTS:
+        return
+    if request.path.startswith("/static/"):
+        return
+    outcome = _refresh_session_token()
+    if outcome is False and not _is_authenticated():
+        return redirect(url_for("login", force=1))
 
 
 @app.context_processor

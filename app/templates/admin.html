@@ -1,188 +1,308 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel admin-dashboard">
-  <h1>Joiner / Mover / Leaver control center</h1>
-  <p class="intro">
-    Orchestrate account lifecycle automation directly against Keycloak. Use the forms to provision, update, or disable demo users; the table reflects the latest state pulled from the realm.
-  </p>
-
-  <div class="layout-grid admin-grid">
-    <div class="card">
-      <h2>Automation forms</h2>
-
-      <section class="form-section">
-        <h3>Provision user (Joiner)</h3>
-        <form method="post" action="{{ url_for('admin_joiner') }}" class="form-grid">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <div class="form-field">
-            <label for="joiner-first">First name</label>
-            <input id="joiner-first" name="first_name" type="text" required placeholder="Alice">
-          </div>
-          <div class="form-field">
-            <label for="joiner-last">Last name</label>
-            <input id="joiner-last" name="last_name" type="text" required placeholder="Demo">
-          </div>
-          <div class="form-field">
-            <label for="joiner-email">Email</label>
-            <input id="joiner-email" name="email" type="email" required placeholder="alice@example.com">
-          </div>
-          <div class="form-field">
-            <label for="joiner-username">Username</label>
-            <input id="joiner-username" name="username" type="text" required placeholder="alice">
-          </div>
-          <div class="form-field">
-            <label for="joiner-role">Role</label>
-            <select id="joiner-role" name="role" required>
-              {% for role in assignable_roles %}
-                <option value="{{ role }}">{{ role }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="joiner-temp">Temporary password <span class="muted">(optional)</span></label>
-            <input id="joiner-temp" name="temp_password" type="text" placeholder="Auto-generate if blank">
-          </div>
-          <div class="form-field checkbox-field">
-            <input id="joiner-totp" name="require_totp" type="checkbox" checked>
-            <label for="joiner-totp">Require TOTP enrollment at first login</label>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-primary">Provision user</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="form-section">
-        <h3>Update role (Mover)</h3>
-        {% if existing_users %}
-          <form method="post" action="{{ url_for('admin_mover') }}" class="form-grid">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="form-field">
-              <label for="mover-username">User</label>
-              <select id="mover-username" name="username" required>
-                {% for user in existing_users %}
-                  <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="mover-source">Current role</label>
-              <select id="mover-source" name="source_role" required>
-                {% for role in assignable_roles %}
-                  <option value="{{ role }}">{{ role }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="mover-target">New role</label>
-              <select id="mover-target" name="target_role" required>
-                {% for role in assignable_roles %}
-                  <option value="{{ role }}">{{ role }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-secondary">Update role</button>
-            </div>
-          </form>
-        {% else %}
-          <p class="muted">No managed users are available yet. Provision a user before updating roles.</p>
-        {% endif %}
-      </section>
-
-      <section class="form-section">
-        <h3>Disable account (Leaver)</h3>
-        {% if existing_users %}
-          <form method="post" action="{{ url_for('admin_leaver') }}" class="form-grid">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="form-field">
-              <label for="leaver-username">User</label>
-              <select id="leaver-username" name="username" required>
-                {% for user in existing_users %}
-                  <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="btn btn-danger">Disable user</button>
-            </div>
-          </form>
-        {% else %}
-          <p class="muted">Provision an account before simulating a leaver.</p>
-        {% endif %}
-      </section>
-
-      {% if keycloak_console_url %}
-        <div class="console-cta">
-          <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
-            Open Keycloak Console
-            <span aria-hidden="true">↗</span>
-          </a>
-        </div>
+  <div class="admin-hero">
+    <div class="admin-hero-body">
+      <h1>Joiner / Mover / Leaver control center</h1>
+      <p class="intro">
+        Orchestrate account lifecycle automation directly against Keycloak. Use the forms to provision, update, or disable demo users; the table reflects the latest state pulled from the realm.
+      </p>
+    </div>
+    <div class="admin-hero-meta">
+      <span class="hero-label">Users tracked</span>
+      <span class="hero-value">{{ user_statuses|length }}</span>
+      {% if existing_users %}
+        <span class="hero-subtext">Ready to update {{ existing_users|length }} account{{ 's' if existing_users|length != 1 else '' }}</span>
+      {% else %}
+        <span class="hero-subtext">Provision a new user to get started</span>
       {% endif %}
     </div>
+  </div>
 
-    <div class="card">
-      <h2>Realm user snapshot ({{ user_statuses|length }})</h2>
-      <table class="user-table">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Status</th>
-            <th>Roles</th>
-            <th>Required actions</th>
-            <th>MFA</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for user in user_statuses %}
-            <tr>
-              <td>
-                <div class="user-meta">
-                  <span class="user-name">{{ user.display_name or user.username }}</span>
-                  <span class="user-username">@{{ user.username }}</span>
-                  {% if user.email %}
-                    <span class="user-email">{{ user.email }}</span>
-                  {% endif %}
-                </div>
-              </td>
-              <td>
-                {% if user.exists %}
-                  <span class="status-chip {{ 'active' if user.enabled else 'disabled' }}">
-                    {{ 'Active' if user.enabled else 'Disabled' }}
-                  </span>
-                {% else %}
-                  <span class="status-chip missing">Missing</span>
-                {% endif %}
-              </td>
-              <td class="role-cell">
-                {% if user.roles %}
-                  {% for role in user.roles %}
-                    <span class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</span>
-                  {% endfor %}
-                {% else %}
-                  <span class="muted">—</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if user.required_actions %}
-                  {% for action in user.required_actions %}
-                    <span class="label-pill warning">{{ action }}</span>
-                  {% endfor %}
-                {% else %}
-                  <span class="label-pill success">Clear</span>
-                {% endif %}
-              </td>
-              <td>
-                <span class="label-pill {{ 'success' if user.totp_enrolled else 'warning' }}">
-                  {{ 'Enrolled' if user.totp_enrolled else 'Pending' }}
-                </span>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  {% set existing = user_statuses | selectattr('exists', 'equalto', True) | list %}
+  {% set active = existing | selectattr('enabled', 'equalto', True) | list %}
+  {% set disabled = existing | selectattr('enabled', 'equalto', False) | list %}
+  {% set missing = user_statuses | selectattr('exists', 'equalto', False) | list %}
+  {% set totp_pending = user_statuses | selectattr('totp_enrolled', 'equalto', False) | list %}
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-label">Active</span>
+      <span class="stat-value">{{ active|length }}</span>
+      <span class="stat-hint">Accounts enabled</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Disabled</span>
+      <span class="stat-value">{{ disabled|length }}</span>
+      <span class="stat-hint">Temporarily deactivated</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">MFA pending</span>
+      <span class="stat-value">{{ totp_pending|length }}</span>
+      <span class="stat-hint">Require TOTP enrollment</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Missing</span>
+      <span class="stat-value">{{ missing|length }}</span>
+      <span class="stat-hint">Not found in realm</span>
     </div>
   </div>
+
+  <div class="admin-stack">
+    <div class="admin-view-toggle" role="tablist" aria-label="Admin views">
+      <button
+        type="button"
+        class="toggle-pill is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="admin-forms"
+        data-admin-target="forms"
+        id="admin-forms-tab"
+        tabindex="0"
+      >
+        Automation forms
+      </button>
+      <button
+        type="button"
+        class="toggle-pill"
+        role="tab"
+        aria-selected="false"
+        aria-controls="admin-snapshot"
+        data-admin-target="snapshot"
+        id="admin-snapshot-tab"
+        tabindex="-1"
+      >
+        Realm user snapshot
+      </button>
+    </div>
+
+    <div
+      id="admin-forms"
+      class="card admin-pane"
+      data-admin-section="forms"
+      role="tabpanel"
+      aria-labelledby="admin-forms-tab"
+    >
+      <div class="card-heading">
+        <h2>Automation forms</h2>
+        <p class="card-subtitle">Trigger lifecycle events from a single console.</p>
+      </div>
+      <div class="card-body">
+        <section class="form-section">
+          <header class="form-section-header">
+            <div>
+              <h3>Provision user (Joiner)</h3>
+              <p class="form-section-subtitle">Create a ready-to-go demo identity in one submit.</p>
+            </div>
+            <span class="form-section-icon" aria-hidden="true">🆕</span>
+          </header>
+          <form method="post" action="{{ url_for('admin_joiner') }}" class="form-grid">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-field">
+              <label for="joiner-first">First name</label>
+              <input id="joiner-first" name="first_name" type="text" required placeholder="Alice">
+            </div>
+            <div class="form-field">
+              <label for="joiner-last">Last name</label>
+              <input id="joiner-last" name="last_name" type="text" required placeholder="Demo">
+            </div>
+            <div class="form-field">
+              <label for="joiner-email">Email</label>
+              <input id="joiner-email" name="email" type="email" required placeholder="alice@example.com">
+            </div>
+            <div class="form-field">
+              <label for="joiner-username">Username</label>
+              <input id="joiner-username" name="username" type="text" required placeholder="alice">
+            </div>
+            <div class="form-field">
+              <label for="joiner-role">Role</label>
+              <select id="joiner-role" name="role" required>
+                {% for role in assignable_roles %}
+                  <option value="{{ role }}">{{ role }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="joiner-temp">Temporary password <span class="muted">(optional)</span></label>
+              <input id="joiner-temp" name="temp_password" type="text" placeholder="Auto-generate if blank">
+            </div>
+            <div class="form-field checkbox-field">
+              <input id="joiner-totp" name="require_totp" type="checkbox" checked>
+              <label for="joiner-totp">Require TOTP enrollment at first login</label>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Provision user</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="form-section">
+          <header class="form-section-header">
+            <div>
+              <h3>Update role (Mover)</h3>
+              <p class="form-section-subtitle">Adjust entitlements when responsibilities evolve.</p>
+            </div>
+            <span class="form-section-icon" aria-hidden="true">🔁</span>
+          </header>
+          {% if existing_users %}
+            <form method="post" action="{{ url_for('admin_mover') }}" class="form-grid">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-field">
+                <label for="mover-username">User</label>
+                <select id="mover-username" name="username" required>
+                  {% for user in existing_users %}
+                    <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="mover-source">Current role</label>
+                <select id="mover-source" name="source_role" required>
+                  {% for role in assignable_roles %}
+                    <option value="{{ role }}">{{ role }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="mover-target">New role</label>
+                <select id="mover-target" name="target_role" required>
+                  {% for role in assignable_roles %}
+                    <option value="{{ role }}">{{ role }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-secondary">Update role</button>
+              </div>
+            </form>
+          {% else %}
+            <p class="muted">No managed users are available yet. Provision a user before updating roles.</p>
+          {% endif %}
+        </section>
+
+        <section class="form-section">
+          <header class="form-section-header">
+            <div>
+              <h3>Disable account (Leaver)</h3>
+              <p class="form-section-subtitle">Securely retire access when the journey ends.</p>
+            </div>
+            <span class="form-section-icon" aria-hidden="true">🛑</span>
+          </header>
+          {% if existing_users %}
+            <form method="post" action="{{ url_for('admin_leaver') }}" class="form-grid">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="form-field">
+                <label for="leaver-username">User</label>
+                <select id="leaver-username" name="username" required>
+                  {% for user in existing_users %}
+                    <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-danger">Disable user</button>
+              </div>
+            </form>
+          {% else %}
+            <p class="muted">Provision an account before simulating a leaver.</p>
+          {% endif %}
+        </section>
+
+        {% if keycloak_console_url %}
+          <div class="console-cta">
+            <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
+              Open Keycloak Console
+              <span aria-hidden="true">↗</span>
+            </a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div
+      id="admin-snapshot"
+      class="card admin-pane"
+      data-admin-section="snapshot"
+      role="tabpanel"
+      aria-labelledby="admin-snapshot-tab"
+      hidden
+    >
+      <div class="card-heading">
+        <h2>Realm user snapshot ({{ user_statuses|length }})</h2>
+        <p class="card-subtitle">Live status for each managed Keycloak identity.</p>
+      </div>
+      <div class="card-body">
+        {% if user_statuses %}
+          <div class="admin-table-wrapper">
+            <table class="user-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Status</th>
+                  <th>Roles</th>
+                  <th>Required actions</th>
+                  <th>MFA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for user in user_statuses %}
+                  <tr>
+                    <td>
+                      <div class="user-meta">
+                        <span class="user-name">{{ user.display_name or user.username }}</span>
+                        <span class="user-username">@{{ user.username }}</span>
+                        {% if user.email %}
+                          <span class="user-email">{{ user.email }}</span>
+                        {% endif %}
+                      </div>
+                    </td>
+                    <td>
+                      {% if user.exists %}
+                        <span class="status-chip {{ 'active' if user.enabled else 'disabled' }}">
+                          {{ 'Active' if user.enabled else 'Disabled' }}
+                        </span>
+                      {% else %}
+                        <span class="status-chip missing">Missing</span>
+                      {% endif %}
+                    </td>
+                    <td class="role-cell">
+                      {% if user.roles %}
+                        {% for role in user.roles %}
+                          <span class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</span>
+                        {% endfor %}
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if user.required_actions %}
+                        {% for action in user.required_actions %}
+                          <span class="label-pill warning">{{ action }}</span>
+                        {% endfor %}
+                      {% else %}
+                        <span class="label-pill success">Clear</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <span class="label-pill {{ 'success' if user.totp_enrolled else 'warning' }}">
+                        {{ 'Enrolled' if user.totp_enrolled else 'Pending' }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state">
+            <h3>No users yet</h3>
+            <p>Provision your first demo identity to build out this snapshot.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
 </section>
 {% endblock %}
