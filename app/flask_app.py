@@ -8,7 +8,7 @@ import secrets
 import string
 from functools import wraps
 from tempfile import gettempdir
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests
 from authlib.integrations.flask_client import OAuth
@@ -227,10 +227,23 @@ def _default_console_url(public_issuer: str) -> str:
     if "/realms/" in issuer:
         base, _, realm = issuer.partition("/realms/")
         realm = realm.split("/")[0]
-        return f"{base.rstrip('/')}/admin/{realm}/console/"
+        return f"{base.rstrip('/')}/admin/master/console/#/realms/{realm}"
     return f"{issuer}/admin/master/console/"
 
 KEYCLOAK_CONSOLE_URL = os.environ.get("KEYCLOAK_CONSOLE_URL", _default_console_url(PUBLIC_ISSUER))
+
+
+def _console_root_url() -> str:
+    root = os.environ.get("SECURITY_ADMIN_ROOT_URL", "").strip()
+    if root:
+        return root.rstrip("/")
+    parsed = urlparse(KEYCLOAK_CONSOLE_URL)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    parsed = urlparse(PUBLIC_ISSUER)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return "https://localhost"
 
 SERVICE_CLIENT_SECRET = _ensure_env(
     "KEYCLOAK_SERVICE_CLIENT_SECRET",
@@ -766,7 +779,13 @@ def _enforce_csrf() -> None:
 def inject_global_context():
     token = g.get("csrf_token") or generate_csrf_token()
     is_admin_user = _user_has_role(REALM_ADMIN_ROLE)
-    console_url = KEYCLOAK_CONSOLE_URL
+    console_url = None
+    if _is_authenticated():
+        if _user_has_role(REALM_ADMIN_ROLE):
+            console_root = _console_root_url()
+            console_url = f"{console_root}/admin/{KEYCLOAK_REALM}/console/"
+    else:
+        console_url = KEYCLOAK_CONSOLE_URL or _default_console_url(PUBLIC_ISSUER)
     return {
         "csrf_token": token,
         "is_admin_user": is_admin_user,

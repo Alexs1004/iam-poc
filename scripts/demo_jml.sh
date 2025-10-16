@@ -90,6 +90,7 @@ ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username bob --email
 
 printf "%b\n" "${YELLOW}=== Provision de l'utilisateur joe (joiner) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username joe --email joe@example.com --first Joe --last Demo --role iam-operator --temp-password "${JOE_TEMP}" --no-password-update --no-totp
+${JML_CMD} "${COMMON_FLAGS[@]}" grant-role --realm "${REALM}" --username joe --role realm-admin
 
 printf "%b\n" "${PURPLE}=== Attribution du rôle realm-management/realm-admin à joe ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" client-role --realm "${REALM}" --username joe --client-id realm-management --role realm-admin

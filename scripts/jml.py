@@ -644,6 +644,34 @@ def change_role(kc_url: str, token: str, realm: str, username: str, from_role: s
     print(f"[mover] Added role '{to_role}' to '{username}'", file=sys.stderr)
 
 
+def add_realm_role(kc_url: str, token: str, realm: str, username: str, role: str) -> None:
+    """Grant an additional realm-level role without removing existing ones."""
+    user = get_user_by_username(kc_url, token, realm, username)
+    if not user:
+        print(f"[role-grant] User '{username}' not found", file=sys.stderr)
+        sys.exit(1)
+    user_id = user["id"]
+    role_lookup = requests.get(
+        f"{kc_url}/admin/realms/{realm}/roles/{role}",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    role_lookup.raise_for_status()
+    role_rep = role_lookup.json()
+    resp = requests.post(
+        f"{kc_url}/admin/realms/{realm}/users/{user_id}/role-mappings/realm",
+        json=[{"id": role_rep["id"], "name": role_rep["name"]}],
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    if resp.status_code in (204, 201, 409):
+        print(f"[role-grant] Granted role '{role}' to '{username}'", file=sys.stderr)
+        return
+    if resp.text:
+        print(resp.text, file=sys.stderr)
+    resp.raise_for_status()
+
+
 def disable_user(kc_url: str, token: str, realm: str, username: str) -> None:
     """Disable (leaver) a user account in the specified realm."""
     user = get_user_by_username(kc_url, token, realm, username)
@@ -915,6 +943,11 @@ def main() -> None:
     scr.add_argument("--client-id", required=True)
     scr.add_argument("--role", required=True)
 
+    sr = sub.add_parser("grant-role", help="Assign an additional realm role to a user")
+    sr.add_argument("--realm", default="demo")
+    sr.add_argument("--username", required=True)
+    sr.add_argument("--role", required=True)
+
     sm = sub.add_parser("mover")
     sm.add_argument("--realm", default="demo")
     sm.add_argument("--username", required=True)
@@ -975,7 +1008,7 @@ def main() -> None:
             args.post_logout_redirect_uri,
         )
         configure_security_admin_console(args.kc_url, token, target_realm)
-        for role in ["analyst", "iam-operator"]:
+        for role in ["analyst", "iam-operator", "realm-admin"]:
             create_role(args.kc_url, token, target_realm, role)
         if os.environ.get("ENFORCE_TOTP_REQUIRED_ACTION", "true").lower() == "true":
             ensure_required_action(args.kc_url, token, target_realm, "CONFIGURE_TOTP")
@@ -1001,6 +1034,14 @@ def main() -> None:
             target_realm,
             args.username,
             args.client_id,
+            args.role,
+        )
+    elif args.cmd == "grant-role":
+        add_realm_role(
+            args.kc_url,
+            token,
+            target_realm,
+            args.username,
             args.role,
         )
     elif args.cmd == "mover":
