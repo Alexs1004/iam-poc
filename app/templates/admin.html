@@ -7,6 +7,14 @@
       <p class="intro">
         Orchestrate account lifecycle automation directly against Keycloak. Use the forms to provision, update, or disable demo users; the table reflects the latest state pulled from the realm.
       </p>
+      {% if keycloak_console_url %}
+        <div class="hero-actions">
+          <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
+            Open Keycloak Console
+            <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      {% endif %}
     </div>
     <div class="admin-hero-meta">
       <span class="hero-label">Users tracked</span>
@@ -94,7 +102,6 @@
               <h3>Provision user (Joiner)</h3>
               <p class="form-section-subtitle">Create a ready-to-go demo identity in one submit.</p>
             </div>
-            <span class="form-section-icon" aria-hidden="true">🆕</span>
           </header>
           <form method="post" action="{{ url_for('admin_joiner') }}" class="form-grid">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -142,7 +149,6 @@
               <h3>Update role (Mover)</h3>
               <p class="form-section-subtitle">Adjust entitlements when responsibilities evolve.</p>
             </div>
-            <span class="form-section-icon" aria-hidden="true">🔁</span>
           </header>
           {% if existing_users %}
             <form method="post" action="{{ url_for('admin_mover') }}" class="form-grid">
@@ -186,7 +192,6 @@
               <h3>Disable account (Leaver)</h3>
               <p class="form-section-subtitle">Securely retire access when the journey ends.</p>
             </div>
-            <span class="form-section-icon" aria-hidden="true">🛑</span>
           </header>
           {% if existing_users %}
             <form method="post" action="{{ url_for('admin_leaver') }}" class="form-grid">
@@ -208,14 +213,6 @@
           {% endif %}
         </section>
 
-        {% if keycloak_console_url %}
-          <div class="console-cta">
-            <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
-              Open Keycloak Console
-              <span aria-hidden="true">↗</span>
-            </a>
-          </div>
-        {% endif %}
       </div>
     </div>
 

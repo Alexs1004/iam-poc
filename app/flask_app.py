@@ -539,6 +539,12 @@ def _collect_roles(*sources):
     return roles
 
 
+def _filter_display_roles(roles: list[str]) -> list[str]:
+    default_role_name = f"default-roles-{KEYCLOAK_REALM.lower()}" if KEYCLOAK_REALM else ""
+    hidden = {default_role_name} if default_role_name else set()
+    return [role for role in roles if role.lower() not in hidden]
+
+
 def _refresh_session_token() -> bool | None:
     token = session.get("token") or {}
     if not token:
@@ -640,6 +646,7 @@ def _demo_status_stub() -> list[dict]:
         default_role = info.get("default_role", "analyst")
         client_roles = [role for role in info.get("client_roles", []) if role]
         all_roles = [role for role in [default_role] if role] + client_roles
+        filtered_roles = _filter_display_roles(all_roles)
         stub_statuses.append(
             {
                 "id": info["username"],
@@ -648,7 +655,7 @@ def _demo_status_stub() -> list[dict]:
                 "email": info["email"],
                 "exists": True,
                 "enabled": info["username"] != "bob",
-                "roles": list(dict.fromkeys(all_roles)),
+                "roles": list(dict.fromkeys(filtered_roles)),
                 "required_actions": [],
                 "totp_enrolled": info["username"] == "alice",
             }
@@ -708,6 +715,7 @@ def _fetch_user_statuses(kc_token: str) -> list[dict]:
                 if any(role.get("name") == client_role_name for role in client_roles_resp.json() or []):
                     if client_role_name not in status["roles"]:
                         status["roles"].append(client_role_name)
+            status["roles"] = _filter_display_roles(status["roles"])
         except requests.HTTPError as exc:
             detail = exc.response.text if getattr(exc, "response", None) is not None else str(exc)
             raise RuntimeError(f"Failed to load details for user '{status['username']}': {detail}") from exc

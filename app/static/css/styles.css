@@ -94,37 +94,63 @@ nav.nav-actions form {
 }
 
 button.btn-secondary, a.btn-secondary {
-  background: transparent;
-  border: 1.5px solid rgba(255, 255, 255, 0.5);
-  color: #fff;
-  padding: 0.5rem 1rem;
+  background: rgba(13, 110, 253, 0.08);
+  border: 1.5px solid rgba(13, 110, 253, 0.3);
+  color: var(--brand);
+  padding: 0.65rem 1.75rem;
   border-radius: 8px;
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.95rem;
   transition: all 0.2s ease;
   font-family: inherit;
 }
 
 button.btn-secondary:hover, a.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: #fff;
+  background: rgba(13, 110, 253, 0.15);
+  border-color: rgba(13, 110, 253, 0.5);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  color: var(--brand);
+}
+
+header.top-bar .btn-primary {
+  background: #fff;
+  color: var(--brand);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+}
+
+header.top-bar .btn-primary:hover {
+  background: #f8f9fa;
+  color: var(--brand);
+  box-shadow: var(--shadow-md);
+}
+
+header.top-bar .btn-secondary {
+  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+
+header.top-bar .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #fff;
+  color: #fff;
 }
 
 a.btn-primary, button.btn-primary {
-  background: #fff;
-  color: var(--brand);
-  padding: 0.5rem 1.25rem;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--brand-light) 100%);
+  color: #fff;
+  padding: 0.65rem 1.75rem;
   border-radius: 8px;
   font-weight: 600;
   box-shadow: var(--shadow-sm);
   transition: all 0.2s ease;
+  border: none;
 }
 
 a.btn-primary:hover, button.btn-primary:hover {
-  background: #f8f9fa;
+  background: linear-gradient(135deg, var(--accent-hover) 0%, var(--brand) 100%);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -133,10 +159,10 @@ button.btn-primary,
 .btn,
 button.btn-secondary,
 button.btn-danger {
-  border: none;
   cursor: pointer;
   font-family: inherit;
-  width: 100%;
+  width: auto;
+  position: relative;
 }
 
 .btn {
@@ -144,12 +170,14 @@ button.btn-danger {
   justify-content: center;
   align-items: center;
   text-decoration: none;
+  gap: 0.4rem;
+  border: none;
 }
 
 button.btn-danger {
   background: var(--danger);
   color: #fff;
-  padding: 0.5rem 1.25rem;
+  padding: 0.65rem 1.75rem;
   border-radius: 8px;
   font-weight: 600;
   box-shadow: var(--shadow-sm);
@@ -264,6 +292,15 @@ button.btn-danger:hover {
   opacity: 0.8;
 }
 
+.hero-actions {
+  margin-top: 1.25rem;
+  display: inline-flex;
+}
+
+.admin-hero .btn-console {
+  margin-top: 0;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -372,6 +409,7 @@ button.btn-danger:hover {
   overflow: hidden;
 }
 
+
 .card-body {
   padding: 0 1.5rem 1.5rem;
   display: flex;
@@ -409,19 +447,6 @@ button.btn-danger:hover {
   font-size: 0.9rem;
   margin-top: 0.35rem;
   line-height: 1.4;
-}
-
-.form-section-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  width: 44px;
-  height: 44px;
-  box-shadow: var(--shadow-sm);
 }
 
 .form-grid {
@@ -473,6 +498,14 @@ button.btn-danger:hover {
   grid-column: 1 / -1;
   display: flex;
   justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.form-actions .btn {
+  width: auto;
+  min-width: 12rem;
+  justify-content: center;
 }
 
 .card-heading {
