@@ -118,6 +118,7 @@ mkdir -p "${RUNTIME_SECRET_DIR}"
 chmod 700 "${RUNTIME_SECRET_DIR}"
 umask "${OLD_UMASK}"
 KEYCLOAK_SECRET_FILE="${RUNTIME_SECRET_DIR}/keycloak-admin-password"
+KEYCLOAK_SERVICE_SECRET_FILE="${RUNTIME_SECRET_DIR}/keycloak-service-client-secret"
 if [[ -d "${KEYCLOAK_SECRET_FILE}" ]]; then
   rm -rf "${KEYCLOAK_SECRET_FILE}"
 fi
@@ -138,6 +139,24 @@ fi
 printf '%s' "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" > "${KEYCLOAK_SECRET_FILE}"
 chmod 600 "${KEYCLOAK_SECRET_FILE}"
 chown 1000:0 "${KEYCLOAK_SECRET_FILE}" 2>/dev/null || true
+
+KEYCLOAK_SERVICE_SECRET_VALUE="${KEYCLOAK_SERVICE_CLIENT_SECRET:-}"
+if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" && "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
+  if ! command -v az >/dev/null 2>&1; then
+    echo "[https] Azure CLI not found but AZURE_USE_KEYVAULT=true; aborting." >&2
+    exit 1
+  fi
+  echo "[https] Fetching Keycloak service client secret from Key Vault '${AZURE_KEY_VAULT_NAME}'..."
+  KEYCLOAK_SERVICE_SECRET_VALUE="$(fetch_secret "${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}")"
+fi
+if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" ]]; then
+  echo "[https] KEYCLOAK_SERVICE_CLIENT_SECRET (or corresponding Key Vault secret) is required; aborting." >&2
+  exit 1
+fi
+printf '%s' "${KEYCLOAK_SERVICE_SECRET_VALUE}" > "${KEYCLOAK_SERVICE_SECRET_FILE}"
+chmod 600 "${KEYCLOAK_SERVICE_SECRET_FILE}"
+chown 1000:0 "${KEYCLOAK_SERVICE_SECRET_FILE}" 2>/dev/null || true
+export KEYCLOAK_SERVICE_CLIENT_SECRET="${KEYCLOAK_SERVICE_SECRET_VALUE}"
 
 # Launch containerized services with HTTPS support
 echo "[https] Starting Flask app behind HTTPS proxy..."
@@ -194,3 +213,4 @@ fi
 
 echo "[https] Keycloak healthy; removing local admin secret copy."
 rm -f "${KEYCLOAK_SECRET_FILE}"
+rm -f "${KEYCLOAK_SERVICE_SECRET_FILE}"

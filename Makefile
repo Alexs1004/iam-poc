@@ -179,7 +179,8 @@ demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la v
 quickstart: ## Run stack + bootstrap + demo in one go
 	@./scripts/run_https.sh
 	@$(MAKE) bootstrap-service-account
-	@$(MAKE) demo
+	@./scripts/run_https.sh
+	@$(WITH_ENV) ./scripts/demo_jml.sh
 
 .PHONY: fresh-demo
 fresh-demo: ## Reset everything then run quickstart
@@ -211,7 +212,7 @@ restart: ## Restart all services
 .PHONY: rotate-secret
 rotate-secret: ## Rotate Keycloak service client secret and restart Flask only
 	@$(MAKE) bootstrap-service-account
-	@docker compose restart flask-app
+	@./scripts/run_https.sh
 
 .PHONY: doctor
 doctor: ## Check az login, Key Vault access and docker compose version

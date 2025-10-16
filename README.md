@@ -79,14 +79,15 @@ make down
   - Realm-scoped: `https://localhost/admin/demo/console/` (works with Joe).  
   - Master: `https://localhost/admin/master/console/` (use the global `admin` account).
 - **Automation storyline** via `scripts/demo_jml.sh` (rerun with `make demo` or `make fresh-demo` for a clean state).
+- Secrets snapshot: `scripts/run_https.sh` pulls both the Keycloak admin password and the automation-cli secret from Azure Key Vault on every stack start, so the Flask app always uses the latest credentials.
 
 ## 🛠️ Make Commands — Quick Reference
-- `make quickstart` — Full bootstrap (certs, containers, automation storyline).
+- `make quickstart` — Full bootstrap: start stack, rotate the service secret, restart with the fresh credentials, then replay the JML storyline.
 - `make demo` — Replay the Joiner/Mover/Leaver script against a running stack.
 - `make fresh-demo` — Reset volumes, regenerate secrets, and rerun `make quickstart`.
 - `make down` — Stop containers (manually add `docker compose down -v` to purge data).
 - `make pytest` — Execute unit tests inside a managed Python virtual environment.
-- `make rotate-secret` — Rotate Keycloak service client secret and restart Flask.
+- `make rotate-secret` — Rotate Keycloak service client secret and immediately restart the stack (invokes `scripts/run_https.sh` for you).
 - `make doctor` — Validate `az login`, Key Vault permissions, and docker compose availability.
 - `make open` — Launch https://localhost in the default browser.
 - `make help` — Display all available targets with inline descriptions.
@@ -119,6 +120,7 @@ make down
 - **Key Vault denied** → insufficient RBAC → assign **Key Vault Secrets User** on `<VAULT_NAME>`.
 - **Browser TLS warning** → stale cert trust → accept the new self-signed cert or clear old certificate caches.
 - **Service secret empty** → skipped bootstrap → run `make bootstrap-service-account` or `make rotate-secret`.
+- **Automation CLI unauthorized** → stale service secret → rerun `make rotate-secret` (rotates in Key Vault) then `make quickstart` (which restarts with the new value).
 - **Compose rebuild loop** → bind mount stale → remove `.runtime/azure` via `make clean-secrets` and retry.
 - **pytest import error** → missing deps → run `make pytest` to create venv and install requirements.
 - **Keycloak 401** → admin credentials absent → confirm `KEYCLOAK_ADMIN` plus Key Vault secret mappings in `.env`.
