@@ -54,6 +54,7 @@ def test_init_uses_service_account_token(monkeypatch):
     monkeypatch.setattr(jml, "create_client", lambda *args, **kwargs: None)
     monkeypatch.setattr(jml, "create_role", lambda *args, **kwargs: None)
     monkeypatch.setattr(jml, "ensure_required_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr(jml, "configure_security_admin_console", lambda *args, **kwargs: None)
 
     sys.argv = [
         "jml.py",

@@ -227,7 +227,7 @@ def _default_console_url(public_issuer: str) -> str:
     if "/realms/" in issuer:
         base, _, realm = issuer.partition("/realms/")
         realm = realm.split("/")[0]
-        return f"{base.rstrip('/')}/admin/master/console/#/realms/{realm}"
+        return f"{base.rstrip('/')}/admin/{realm}/console/"
     return f"{issuer}/admin/master/console/"
 
 KEYCLOAK_CONSOLE_URL = os.environ.get("KEYCLOAK_CONSOLE_URL", _default_console_url(PUBLIC_ISSUER))
@@ -575,7 +575,7 @@ def _demo_status_stub() -> list[dict]:
                 "enabled": info["username"] != "bob",
                 "roles": list(dict.fromkeys(all_roles)),
                 "required_actions": [],
-                "totp_enrolled": info["username"] in {"alice", "joe"},
+                "totp_enrolled": info["username"] == "alice",
             }
         )
     return stub_statuses
@@ -855,6 +855,7 @@ def admin_joiner():
             temp_password,
             role,
             require_totp=require_totp,
+            require_password_update=True,
         )
     except Exception as exc:
         flash(f"Failed to provision user '{username}': {exc}", "error")

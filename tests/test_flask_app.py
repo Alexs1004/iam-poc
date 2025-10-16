@@ -117,7 +117,19 @@ def test_admin_joiner_invokes_create_user(monkeypatch, client):
 
     captured = {}
 
-    def fake_create_user(kc_url, token, realm, username, email, first, last, temp_password, role, require_totp=True):
+    def fake_create_user(
+        kc_url,
+        token,
+        realm,
+        username,
+        email,
+        first,
+        last,
+        temp_password,
+        role,
+        require_totp=True,
+        require_password_update=True,
+    ):
         captured["args"] = {
             "kc_url": kc_url,
             "token": token,
@@ -129,6 +141,7 @@ def test_admin_joiner_invokes_create_user(monkeypatch, client):
             "temp_password": temp_password,
             "role": role,
             "require_totp": require_totp,
+            "require_password_update": require_password_update,
         }
 
     monkeypatch.setattr(jml, "create_user", fake_create_user)

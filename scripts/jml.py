@@ -252,6 +252,25 @@ def ensure_user_required_actions(kc_url: str, token: str, realm: str, user_id: s
     print(f"[joiner] Required actions set to {user_rep['requiredActions']}", file=sys.stderr)
 
 
+def set_user_required_actions(kc_url: str, token: str, realm: str, user_id: str, actions: list[str]) -> None:
+    """Overwrite the user's required actions with a specific list."""
+    url = f"{kc_url}/admin/realms/{realm}/users/{user_id}"
+    resp = requests.get(url, headers=_auth_headers(token), timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    user_rep = resp.json()
+    desired = sorted(actions)
+    current = sorted(user_rep.get("requiredActions") or [])
+    if current == desired:
+        return
+    user_rep["requiredActions"] = desired
+    put = requests.put(
+        url,
+        json=user_rep,
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    put.raise_for_status()
+    print(f"[joiner] Required actions overwritten with {desired}", file=sys.stderr)
 
 
 def _user_has_totp(kc_url: str, token: str, realm: str, user_id: str) -> bool:
@@ -271,9 +290,12 @@ def _desired_required_actions(
     realm: str,
     user_id: str,
     require_totp: bool = True,
+    require_password_update: bool = True,
 ) -> list[str]:
     """Compute required actions for new joiners, prompting for TOTP if needed."""
-    actions = {"UPDATE_PASSWORD"}
+    actions: set[str] = set()
+    if require_password_update:
+        actions.add("UPDATE_PASSWORD")
     if require_totp and not _user_has_totp(kc_url, token, realm, user_id):
         actions.add("CONFIGURE_TOTP")
     return sorted(actions)
@@ -305,6 +327,7 @@ def create_user(
     temp_password: str,
     role: str,
     require_totp: bool = True,
+    require_password_update: bool = True,
 ) -> None:
     """Create a new user and assign the chosen role and bootstrap password."""
     exists = get_user_by_username(kc_url, token, realm, username)
@@ -331,17 +354,25 @@ def create_user(
         user_id = get_user_by_username(kc_url, token, realm, username)["id"]
         print(f"[joiner] User '{username}' created (id={user_id})", file=sys.stderr)
 
-    ensure_user_required_actions(
+    desired_actions = _desired_required_actions(
         kc_url,
         token,
         realm,
         user_id,
-        _desired_required_actions(kc_url, token, realm, user_id, require_totp=require_totp),
+        require_totp=require_totp,
+        require_password_update=require_password_update,
+    )
+    set_user_required_actions(
+        kc_url,
+        token,
+        realm,
+        user_id,
+        desired_actions,
     )
 
     resp = requests.put(
         f"{kc_url}/admin/realms/{realm}/users/{user_id}/reset-password",
-        json={"type": "password", "temporary": True, "value": temp_password},
+        json={"type": "password", "temporary": require_password_update, "value": temp_password},
         headers=_auth_headers(token),
         timeout=REQUEST_TIMEOUT,
     )
@@ -445,6 +476,135 @@ def grant_client_role(
     raise RuntimeError(
         f"[client-role] Failed to assign '{role_name}' from '{client_id}' even with admin credentials: {detail}"
     )
+
+
+def _preferred_console_root() -> str:
+    """Infer the external URL origin used to reach the Keycloak console."""
+    candidates = [
+        os.environ.get("SECURITY_ADMIN_ROOT_URL"),
+        os.environ.get("KEYCLOAK_PUBLIC_ISSUER"),
+        os.environ.get("OIDC_REDIRECT_URI"),
+        os.environ.get("KEYCLOAK_PUBLIC_URL"),
+        os.environ.get("KEYCLOAK_PUBLIC_BASE_URL"),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        parsed = urlparse(candidate)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+    return "https://localhost"
+
+
+def _normalize_console_base(path: str, realm: str) -> str:
+    if not path:
+        path = f"/admin/{realm}/console/"
+    if not path.startswith("/"):
+        path = "/" + path.lstrip("/")
+    if not path.endswith("/"):
+        path += "/"
+    return path
+
+
+def configure_security_admin_console(
+    kc_url: str,
+    token: str,
+    realm: str,
+) -> None:
+    """Align the built-in security-admin-console client with console requirements."""
+    client_id = os.environ.get("SECURITY_ADMIN_CLIENT_ID", "security-admin-console")
+    client = _get_client(kc_url, token, realm, client_id)
+    if not client:
+        print(f"[init] Client '{client_id}' not found; skipping console alignment", file=sys.stderr)
+        return
+    client_uuid = client.get("id")
+    if not client_uuid:
+        print(f"[init] Unable to resolve UUID for client '{client_id}'", file=sys.stderr)
+        return
+
+    root_url = os.environ.get("SECURITY_ADMIN_ROOT_URL") or _preferred_console_root()
+    base_url = _normalize_console_base(os.environ.get("SECURITY_ADMIN_BASE_URL", ""), realm)
+    redirect_override = os.environ.get("SECURITY_ADMIN_REDIRECT_URIS")
+    if redirect_override:
+        redirect_uris = [uri.strip() for uri in redirect_override.split(",") if uri.strip()]
+    else:
+        redirect_uris = [f"{root_url.rstrip('/')}/*"]
+    web_origin_override = os.environ.get("SECURITY_ADMIN_WEB_ORIGINS")
+    if web_origin_override:
+        web_origins = [origin.strip() for origin in web_origin_override.split(",") if origin.strip()]
+    else:
+        web_origins = ["*"]
+
+    detail = requests.get(
+        f"{kc_url}/admin/realms/{realm}/clients/{client_uuid}",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    detail.raise_for_status()
+    representation = detail.json()
+
+    changed = False
+
+    def ensure(field: str, value):
+        nonlocal changed
+        if representation.get(field) != value:
+            representation[field] = value
+            changed = True
+
+    ensure("protocol", "openid-connect")
+    confidential = os.environ.get("SECURITY_ADMIN_CONFIDENTIAL", "false").lower() == "true"
+    ensure("publicClient", not confidential)
+    if confidential:
+        ensure("clientAuthenticatorType", "client-secret")
+    elif representation.get("clientAuthenticatorType") != "client-secret":
+        ensure("clientAuthenticatorType", representation.get("clientAuthenticatorType") or "client-secret")
+    ensure("standardFlowEnabled", True)
+    ensure("directAccessGrantsEnabled", True)
+    ensure("serviceAccountsEnabled", False)
+    ensure("rootUrl", root_url)
+    ensure("baseUrl", base_url)
+
+    desired_redirects = sorted({uri for uri in redirect_uris if uri})
+    current_redirects = sorted({uri for uri in representation.get("redirectUris") or [] if uri})
+    if current_redirects != desired_redirects:
+        representation["redirectUris"] = desired_redirects
+        changed = True
+
+    desired_web = sorted({origin for origin in web_origins if origin})
+    current_web = sorted({origin for origin in representation.get("webOrigins") or [] if origin})
+    if current_web != desired_web:
+        representation["webOrigins"] = desired_web
+        changed = True
+
+    if confidential:
+        desired_secret = os.environ.get("SECURITY_ADMIN_CLIENT_SECRET")
+        if desired_secret and representation.get("secret") != desired_secret:
+            representation["secret"] = desired_secret
+            changed = True
+    else:
+        if representation.get("secret"):
+            representation.pop("secret", None)
+            changed = True
+
+    # Remove deprecated accessType key if present to avoid conflicts.
+    if "accessType" in representation:
+        representation.pop("accessType", None)
+
+    if not changed:
+        print(f"[init] Client '{client_id}' already aligned for console access", file=sys.stderr)
+        return
+
+    update = requests.put(
+        f"{kc_url}/admin/realms/{realm}/clients/{client_uuid}",
+        json=representation,
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    if update.status_code in (200, 204):
+        print(f"[init] Client '{client_id}' configured for admin console access", file=sys.stderr)
+        return
+    print(update.text, file=sys.stderr)
+    update.raise_for_status()
 
 
 def change_role(kc_url: str, token: str, realm: str, username: str, from_role: str, to_role: str) -> None:
@@ -738,6 +898,16 @@ def main() -> None:
     sj.add_argument("--last", required=True)
     sj.add_argument("--role", default="analyst")
     sj.add_argument("--temp-password", default=os.environ.get("ALICE_TEMP_PASSWORD_DEMO", "Passw0rd!"))
+    sj.add_argument(
+        "--no-password-update",
+        action="store_true",
+        help="Skip forcing UPDATE_PASSWORD required action",
+    )
+    sj.add_argument(
+        "--no-totp",
+        action="store_true",
+        help="Skip forcing CONFIGURE_TOTP required action",
+    )
 
     scr = sub.add_parser("client-role", help="Assign a client-level role to a user")
     scr.add_argument("--realm", default="demo")
@@ -804,9 +974,11 @@ def main() -> None:
             args.redirect_uri,
             args.post_logout_redirect_uri,
         )
+        configure_security_admin_console(args.kc_url, token, target_realm)
         for role in ["analyst", "iam-operator"]:
             create_role(args.kc_url, token, target_realm, role)
-        ensure_required_action(args.kc_url, token, target_realm, "CONFIGURE_TOTP")
+        if os.environ.get("ENFORCE_TOTP_REQUIRED_ACTION", "true").lower() == "true":
+            ensure_required_action(args.kc_url, token, target_realm, "CONFIGURE_TOTP")
         ensure_required_action(args.kc_url, token, target_realm, "UPDATE_PASSWORD")
     elif args.cmd == "joiner":
         create_user(
@@ -819,6 +991,8 @@ def main() -> None:
             args.last,
             args.temp_password,
             args.role,
+            require_totp=not args.no_totp,
+            require_password_update=not args.no_password_update,
         )
     elif args.cmd == "client-role":
         grant_client_role(

@@ -220,10 +220,6 @@ doctor: ## Check az login, Key Vault access and docker compose version
 	@docker compose version >/dev/null || (echo "[doctor] docker compose not available." >&2; exit 1)
 	@echo "[doctor] Environment looks good."
 
-.PHONY: open
-open: ## Open https://localhost in default browser
-	@xdg-open https://localhost >/dev/null 2>&1 || open https://localhost
-
 .PHONY: pytest
 pytest: ## Run unit tests
 	@python3 -m venv venv >/dev/null 2>&1 || true
