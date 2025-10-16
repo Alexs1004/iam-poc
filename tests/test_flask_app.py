@@ -35,6 +35,10 @@ def _authenticate_as_admin(client):
     _authenticate_with_roles(client, [REALM_ADMIN_ROLE, "analyst", IAM_OPERATOR_ROLE])
 
 
+def _authenticate_as_operator(client):
+    _authenticate_with_roles(client, [IAM_OPERATOR_ROLE, "analyst"])
+
+
 def _get_csrf_token(client):
     client.get("/admin")
     with client.session_transaction() as session:
@@ -109,6 +113,15 @@ def test_admin_allows_realm_admin_role_and_sets_security_headers(client):
     assert response.headers["X-Frame-Options"] == "DENY"
 
 
+def test_admin_allows_iam_operator_role(client):
+    _authenticate_as_operator(client)
+    response = client.get("/admin")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Joiner / Mover / Leaver control center" in body
+    assert "Open Keycloak Console" not in body
+
+
 def test_admin_joiner_invokes_create_user(monkeypatch, client):
     _authenticate_as_admin(client)
     csrf_token = _get_csrf_token(client)
@@ -165,6 +178,37 @@ def test_admin_joiner_invokes_create_user(monkeypatch, client):
     assert captured["args"]["username"] == "test.user"
     assert captured["args"]["role"] == "analyst"
     assert captured["args"]["require_totp"] is True
+
+
+def test_admin_joiner_blocks_operator_from_sensitive_role(monkeypatch, client):
+    _authenticate_as_operator(client)
+    csrf_token = _get_csrf_token(client)
+
+    monkeypatch.setattr(flask_module, "_get_service_token", lambda: "token")
+
+    called = {}
+
+    def fail_if_called(*args, **kwargs):
+        called["called"] = True
+
+    monkeypatch.setattr(jml, "create_user", fail_if_called)
+
+    response = client.post(
+        "/admin/joiner",
+        data={
+            "csrf_token": csrf_token,
+            "first_name": "Test",
+            "last_name": "User",
+            "email": "test@example.com",
+            "username": "test.user",
+            "role": REALM_ADMIN_ROLE,
+            "temp_password": "Temp!123",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert "called" not in called
 
 
 def test_admin_mover_invokes_change_role(monkeypatch, client):
@@ -258,8 +302,8 @@ def test_admin_mover_blocks_self_change(monkeypatch, client):
     assert "called" not in called
 
 
-def test_admin_mover_requires_operator_for_operator_role(monkeypatch, client):
-    _authenticate_with_roles(client, [REALM_ADMIN_ROLE, "analyst"], username="alice")
+def test_admin_mover_requires_realm_admin_for_sensitive_roles(monkeypatch, client):
+    _authenticate_as_operator(client)
     csrf_token = _get_csrf_token(client)
 
     monkeypatch.setattr(flask_module, "_get_service_token", lambda: "token")
@@ -304,8 +348,8 @@ def test_admin_leaver_blocks_self_disable(client):
     assert response.status_code == 302
 
 
-def test_admin_leaver_requires_operator_for_operator_role(monkeypatch, client):
-    _authenticate_with_roles(client, [REALM_ADMIN_ROLE, "analyst"], username="alice")
+def test_admin_leaver_requires_realm_admin_for_sensitive_roles(monkeypatch, client):
+    _authenticate_as_operator(client)
     csrf_token = _get_csrf_token(client)
 
     monkeypatch.setattr(flask_module, "_get_service_token", lambda: "token")

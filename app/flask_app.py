@@ -717,26 +717,30 @@ def _security_headers(response):
     return response
 
 
-def require_role(required_role):
+def require_any_role(*required_roles):
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             if not _is_authenticated():
                 return redirect(url_for("login"))
             _, _, _, roles = _current_user_context()
-            if required_role not in roles:
+            if not any(role in roles for role in required_roles):
                 return _render_page(
                     "403.html",
                     title="Forbidden",
                     status=403,
                     protect=_is_authenticated(),
-                    required_role=required_role,
+                    required_role=required_roles[0] if len(required_roles) == 1 else ", ".join(required_roles),
                 )
             return fn(*args, **kwargs)
 
         return wrapper
 
     return decorator
+
+
+def require_role(required_role):
+    return require_any_role(required_role)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -819,7 +823,7 @@ def me():
 
 
 @app.route("/admin")
-@require_role(REALM_ADMIN_ROLE)
+@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin():
     try:
         user_statuses, assignable_roles = _load_admin_context()
@@ -839,7 +843,7 @@ def admin():
 
 
 @app.post("/admin/joiner")
-@require_role(REALM_ADMIN_ROLE)
+@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin_joiner():
     username = _normalize_username(request.form.get("username", ""))
     first = request.form.get("first_name", "").strip()
@@ -855,8 +859,8 @@ def admin_joiner():
     if not _role_is_assignable(role):
         flash(f"Role '{role}' is not assignable.", "error")
         return redirect(url_for("admin"))
-    if _requires_operator_for_roles([role]) and not _has_operator_privileges():
-        flash("IAM operator privileges are required to assign realm-admin-level roles.", "error")
+    if _requires_operator_for_roles([role]) and not _user_has_role(REALM_ADMIN_ROLE):
+        flash("Realm-admin privileges are required to assign realm-admin-level roles.", "error")
         return redirect(url_for("admin"))
     if not temp_password:
         temp_password = _generate_temp_password()
@@ -884,7 +888,7 @@ def admin_joiner():
 
 
 @app.post("/admin/mover")
-@require_role(REALM_ADMIN_ROLE)
+@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin_mover():
     username = request.form.get("username", "").strip()
     source_role = request.form.get("source_role", "").strip()
@@ -922,8 +926,8 @@ def admin_mover():
         flash(f"Unable to read roles for '{username}': {exc}", "error")
         return redirect(url_for("admin"))
 
-    if (_requires_operator_for_roles(target_roles) or _requires_operator_for_roles([source_role, target_role])) and not _has_operator_privileges():
-        flash("IAM operator privileges are required to modify realm-admin-level access.", "error")
+    if (_requires_operator_for_roles(target_roles) or _requires_operator_for_roles([source_role, target_role])) and not _user_has_role(REALM_ADMIN_ROLE):
+        flash("Realm-admin privileges are required to modify realm-admin-level access.", "error")
         return redirect(url_for("admin"))
 
     try:
@@ -943,7 +947,7 @@ def admin_mover():
 
 
 @app.post("/admin/leaver")
-@require_role(REALM_ADMIN_ROLE)
+@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin_leaver():
     username = request.form.get("username", "").strip()
     if not username:
@@ -972,8 +976,8 @@ def admin_leaver():
         flash(f"Unable to read roles for '{username}': {exc}", "error")
         return redirect(url_for("admin"))
 
-    if _requires_operator_for_roles(target_roles) and not _has_operator_privileges():
-        flash("IAM operator privileges are required to disable realm-admin-level accounts.", "error")
+    if _requires_operator_for_roles(target_roles) and not _user_has_role(REALM_ADMIN_ROLE):
+        flash("Realm-admin privileges are required to disable realm-admin-level accounts.", "error")
         return redirect(url_for("admin"))
 
     try:

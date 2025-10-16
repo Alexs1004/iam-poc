@@ -28,6 +28,7 @@ Ideal for enterprise teams evaluating my approach to IAM architecture, DevSecOps
 - Azure-first secret management via Key Vault and `DefaultAzureCredential` with device-code fallback.
 - Reproducible automation: `scripts/jml.py` provisions realms, roles, and JML workflows with clear logging.
 - Hardened Flask app: server-side sessions, CSRF tokens, strict proxy validation, and RBAC-protected admin routes.
+- Fine-grained demo roles: `iam-operator` handles JML workflows while `realm-admin` is required for realm-level changes and console access.
 - HTTPS by default: `scripts/run_https.sh` mints certs, rebuilds Gunicorn images, and wires health checks end to end.
 - Operational Makefile: guard clauses highlight missing secrets, enabling safe rotations and demos (`make doctor`, `make rotate-secret`).
 - Testable sandbox: pytest coverage for auth controls, ensuring “trust but verify” on cookies, headers, and RBAC.
@@ -70,6 +71,14 @@ Shutdown:
 ```bash
 make down
 ```
+
+### What gets provisioned
+- **OIDC demo login** with Alice / Bob / Joe (pre-seeded passwords from `.env.demo` or Key Vault).
+- **Joiner/Mover/Leaver UI** at `https://localhost/admin` (requires roles, see table below).
+- **Keycloak consoles**  
+  - Realm-scoped: `https://localhost/admin/demo/console/` (works with Joe).  
+  - Master: `https://localhost/admin/master/console/` (use the global `admin` account).
+- **Automation storyline** via `scripts/demo_jml.sh` (rerun with `make demo` or `make fresh-demo` for a clean state).
 
 ## 🛠️ Make Commands — Quick Reference
 - `make quickstart` — Full bootstrap (certs, containers, automation storyline).
@@ -131,6 +140,25 @@ make down
 - Phase 6 — Layer in observability (structured logging, metrics, distributed tracing) across services.
 - Phase 7 — Automate certificate management (ACME/Let’s Encrypt) and key rotation pipelines.
 - Phase 8 — Add policy-as-code guardrails (OPA/Azure Policy) for configuration drift detection.
+
+## 👥 Demo Identities & RBAC Cheatsheet
+
+| Identity | Realm | Roles | Keycloak Console | Notes |
+| --- | --- | --- | --- | --- |
+| `alice` | demo | `analyst` → `iam-operator` (after mover) | No | Illustrates joiner → mover path |
+| `bob` | demo | `analyst` (disabled as leaver) | No | Used to demonstrate leaver |
+| `joe` | demo | `iam-operator`, `realm-admin`, client `realm-management/realm-admin` | `https://localhost/admin/demo/console/` | Operator persona: can use the JML UI and configure the demo realm only |
+| `admin` | master | built-in admin | `https://localhost/admin/master/console/` | Full cross-realm control |
+
+Joe is the operator persona in the demo. He can reach `/admin` (JML) and the Keycloak console for the *demo* realm, but he has no visibility into other realms. The master `admin` user remains available for cross-realm tasks.
+
+## 🧰 Automation CLI (`scripts/jml.py`)
+
+- `init`, `joiner`, `mover`, `leaver`, `delete-realm` – commandes historiques.
+- `client-role` – assigne des rôles clients (ex. `realm-management/realm-admin`) avec repli automatique sur l’admin master si le service account manque de privilèges.
+- `grant-role` – **nouveau** pour ajouter un rôle realm sans retirer les autres (utilisé pour donner `realm-admin` à Joe après le joiner).
+
+`scripts/demo_jml.sh` orchestrates the storyline end-to-end: création du realm, provision des identités, ajout des rôles `iam-operator` + `realm-admin` à Joe, promotion d’Alice, désactivation de Bob, etc. Rerun `make demo` ou `make fresh-demo` pour rejouer la séquence.
 
 ## 📄 License & Credits
 > TODO: Add license details and acknowledgements.
