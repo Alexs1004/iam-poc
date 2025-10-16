@@ -1,21 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>Identity &amp; Access Demo</h1>
-  <p class="intro">This Flask app authenticates against Keycloak using the Authorization Code flow with PKCE. Tokens remain server-side, and RBAC is enforced before any realm admin view is shown.</p>
-  <ul class="muted">
-    <li>Log in to enrol MFA (TOTP) and inspect your claims.</li>
-    <li>Use the JML automation to promote Alice to <strong>iam-operator</strong> and grant Joe the <strong>realm-admin</strong> role plus the <strong>realm-management/realm-admin</strong> client mapping.</li>
-    <li>Automation uses a least-privilege service account (client credentials).</li>
-  </ul>
-  <div class="cta-row">
-    {% if is_authenticated %}
-      <a class="btn-primary" href="{{ url_for('me') }}">View my profile</a>
-      <a class="btn-secondary" href="{{ url_for('admin') }}">Admin area</a>
-    {% else %}
-      <a class="btn-primary" href="{{ url_for('login') }}">Sign in with Keycloak</a>
-      <a href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
-    {% endif %}
+<section class="hero hero--split">
+  <div class="hero-content">
+    <span class="hero-kicker">Identity &amp; Access Demo</span>
+    <h1>Keycloak-powered IAM playground</h1>
+    <p class="hero-lead">
+      Explore joiner/mover/leaver automation against a managed realm, inspect your OpenID Connect claims, and enforce RBAC with a least-privilege service account.
+    </p>
+    <ul class="hero-points">
+      <li><strong>MFA enrolment:</strong> sign in to trigger TOTP and view decoded tokens.</li>
+      <li><strong>Lifecycle orchestration:</strong> promote Alice to <code>iam-operator</code> and elevate Joe to <code>realm-admin</code>.</li>
+      <li><strong>Zero secret sprawl:</strong> automation runs through a client-credentialed Keycloak service account.</li>
+    </ul>
+    <div class="hero-actions">
+      {% if is_authenticated %}
+        <a class="btn-primary" href="{{ url_for('me') }}">View my profile</a>
+        <a class="btn-secondary" href="{{ url_for('admin') }}">Admin area</a>
+      {% else %}
+        <a class="btn-primary" href="{{ url_for('login') }}">Sign in with Keycloak</a>
+        <a class="btn-secondary" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="hero-visual">
+    <div class="hero-card">
+      <h2>What you can try</h2>
+      <ul>
+        <li>Create a joiner with a temporary password and optional TOTP enforcement.</li>
+        <li>Move an identity between roles and require a password update instantly.</li>
+        <li>Deactivate a leaver and confirm the change in the realm snapshot.</li>
+      </ul>
+    </div>
   </div>
 </section>
 {% endblock %}

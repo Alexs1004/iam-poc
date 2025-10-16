@@ -1,24 +1,67 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="panel">
-  <h1>Your profile</h1>
-  <p class="intro">Claims are retrieved server-side from the userinfo endpoint and rendered below.</p>
-  <div class="layout-grid">
-    <div class="card">
-      <h2>Current roles</h2>
-      {% if roles %}
-        <ul class="role-list">
-        {% for role in roles %}
-          <li class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</li>
-        {% endfor %}
-        </ul>
-      {% else %}
-        <p class="muted">No mapped realm roles.</p>
-      {% endif %}
+<section class="panel profile-dashboard">
+  <div class="profile-hero">
+    <div class="profile-ident">
+      <div class="profile-ident-main">
+        <span class="profile-avatar" aria-hidden="true">{{ profile_initials }}</span>
+        <div class="profile-meta">
+          <h1>{{ profile_display_name }}</h1>
+          <div class="profile-subheading">
+            <span>{{ profile_username }}</span>
+            {% if profile_email and profile_email != "—" %}
+              <span aria-hidden="true">•</span>
+              <a href="mailto:{{ profile_email }}">{{ profile_email }}</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <h2>Userinfo claims</h2>
-      <pre>{{ userinfo_json }}</pre>
+    <div class="profile-stats">
+      <div class="profile-stat">
+        <span class="stat-label">Email status</span>
+        <span class="stat-value {{ 'verified' if profile_email_verified else 'unverified' }}">
+          {{ 'Verified' if profile_email_verified else 'Unverified' }}
+        </span>
+      </div>
+      <div class="profile-stat">
+        <div class="profile-role-stack">
+          <h3>Access roles</h3>
+          {% if roles %}
+            <ul class="role-list">
+            {% for role in roles %}
+              <li class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</li>
+            {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">No mapped realm roles.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="profile-grid">
+    <div class="card profile-card profile-card--full">
+      <h2>Identity details</h2>
+      <dl class="claim-grid two-column">
+        <div>
+          <dt>Username</dt>
+          <dd>{{ profile_username }}</dd>
+        </div>
+        <div>
+          <dt>Email</dt>
+          <dd>{{ profile_email }}</dd>
+        </div>
+        <div>
+          <dt>Given name</dt>
+          <dd>{{ userinfo.get('given_name') or '—' }}</dd>
+        </div>
+        <div>
+          <dt>Family name</dt>
+          <dd>{{ userinfo.get('family_name') or '—' }}</dd>
+        </div>
+      </dl>
     </div>
   </div>
 </section>

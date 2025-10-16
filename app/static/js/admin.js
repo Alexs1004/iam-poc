@@ -48,4 +48,109 @@ document.addEventListener("DOMContentLoaded", () => {
   if (defaultButton) {
     activate(defaultButton.dataset.adminTarget);
   }
+
+  document.querySelectorAll("td.role-cell").forEach((cell) => {
+    const roles = cell.querySelectorAll(".role-chip");
+    if (roles.length === 1) {
+      cell.classList.remove("role-cell");
+    }
+  });
+
+  const moverForm = document.querySelector("[data-mover-form]");
+  if (moverForm) {
+    const userSelect = moverForm.querySelector("[data-mover-user]");
+    const roleSelect = moverForm.querySelector("[data-role-select]");
+    const roleDisplay = moverForm.querySelector("[data-role-display]");
+    const roleHidden = moverForm.querySelector("[data-role-hidden]");
+    const roleLabel = moverForm.querySelector("[data-role-label]");
+    const submitButton = moverForm.querySelector("[data-mover-submit]");
+
+    const setRoleControls = (roles) => {
+      const uniqueRoles = Array.from(new Set((roles || []).map((role) => (role || "").toString()))).filter(Boolean);
+
+      if (uniqueRoles.length > 1) {
+        roleSelect.hidden = false;
+        roleSelect.disabled = false;
+        roleSelect.required = true;
+        roleSelect.name = "source_role";
+        roleSelect.innerHTML = "";
+        uniqueRoles.forEach((role) => {
+          const option = document.createElement("option");
+          option.value = role;
+          option.textContent = role;
+          roleSelect.append(option);
+        });
+        roleSelect.value = uniqueRoles[0];
+
+        roleDisplay.hidden = true;
+        roleDisplay.value = "";
+
+        roleHidden.disabled = true;
+        roleHidden.name = "";
+        roleHidden.value = "";
+        roleHidden.required = false;
+
+        if (submitButton) {
+          submitButton.disabled = false;
+        }
+
+
+        if (roleLabel) {
+          roleLabel.setAttribute("for", roleSelect.id);
+        }
+      } else {
+        const roleName = uniqueRoles[0] || "";
+
+        roleSelect.hidden = true;
+        roleSelect.disabled = true;
+        roleSelect.required = false;
+        roleSelect.name = "";
+        roleSelect.innerHTML = "";
+        roleSelect.value = "";
+
+        roleDisplay.hidden = false;
+        roleDisplay.value = roleName || "Not assigned";
+
+        const hasRole = Boolean(roleName);
+        roleHidden.disabled = !hasRole;
+        roleHidden.name = hasRole ? "source_role" : "";
+        roleHidden.value = roleName;
+        roleHidden.required = hasRole;
+
+        if (submitButton) {
+          submitButton.disabled = !hasRole;
+        }
+
+
+        if (roleLabel) {
+          if (hasRole) {
+            roleLabel.setAttribute("for", roleDisplay.id);
+          } else {
+            roleLabel.removeAttribute("for");
+          }
+        }
+      }
+    };
+
+    const updateRolesForUser = () => {
+      const option = userSelect?.selectedOptions?.[0];
+      if (!option) {
+        setRoleControls([]);
+        return;
+      }
+      let roles = [];
+      try {
+        roles = JSON.parse(option.dataset.roles || "[]");
+      } catch (error) {
+        console.error("Failed to parse roles for", option.value, error);
+        roles = [];
+      }
+      setRoleControls(roles);
+    };
+
+    if (userSelect && roleSelect && roleDisplay && roleHidden) {
+      updateRolesForUser();
+      userSelect.addEventListener("change", updateRolesForUser);
+    }
+  }
 });

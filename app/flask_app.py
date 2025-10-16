@@ -901,14 +901,31 @@ def me():
     for candidate in (REALM_ADMIN_ROLE, REALM_ADMIN_CLIENT_ROLE, IAM_OPERATOR_ROLE):
         if candidate:
             visible_roles.add(candidate)
+    userinfo = userinfo or {}
     filtered_roles = [role for role in roles if role in visible_roles]
-    userinfo_json = json.dumps(userinfo or {}, indent=2, ensure_ascii=False)
+    userinfo_json = json.dumps(userinfo, indent=2, ensure_ascii=False)
+    display_name = (
+        userinfo.get("name")
+        or userinfo.get("preferred_username")
+        or userinfo.get("email")
+        or "User"
+    )
+    initials = "".join(part[0] for part in display_name.split() if part.isalpha())[:2].upper() or "U"
+    primary_email = userinfo.get("email") or "—"
+    username = userinfo.get("preferred_username") or userinfo.get("sub") or "—"
+    email_verified = bool(userinfo.get("email_verified"))
     return _render_page(
         "me.html",
         title="Profile",
         protect=True,
         roles=filtered_roles,
+        userinfo=userinfo,
         userinfo_json=userinfo_json,
+        profile_display_name=display_name,
+        profile_initials=initials,
+        profile_email=primary_email,
+        profile_username=username,
+        profile_email_verified=email_verified,
     )
 
 
@@ -942,6 +959,7 @@ def admin_joiner():
     role = request.form.get("role", "").strip()
     temp_password = request.form.get("temp_password", "").strip()
     require_totp = request.form.get("require_totp") == "on"
+    require_password_update = request.form.get("require_password_update") == "on"
 
     if not all([username, first, last, email, role]):
         flash("All fields are required to provision a user.", "error")
@@ -968,7 +986,7 @@ def admin_joiner():
             temp_password,
             role,
             require_totp=require_totp,
-            require_password_update=True,
+            require_password_update=require_password_update,
         )
     except Exception as exc:
         flash(f"Failed to provision user '{username}': {exc}", "error")

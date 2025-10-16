@@ -137,6 +137,10 @@
               <input id="joiner-totp" name="require_totp" type="checkbox" checked>
               <label for="joiner-totp">Require TOTP enrollment at first login</label>
             </div>
+            <div class="form-field checkbox-field">
+              <input id="joiner-password-update" name="require_password_update" type="checkbox" checked>
+              <label for="joiner-password-update">Require password update on first sign-in</label>
+            </div>
             <div class="form-actions">
               <button type="submit" class="btn btn-primary">Provision user</button>
             </div>
@@ -151,34 +155,44 @@
             </div>
           </header>
           {% if existing_users %}
-            <form method="post" action="{{ url_for('admin_mover') }}" class="form-grid">
+            <form method="post" action="{{ url_for('admin_mover') }}" class="form-grid" data-mover-form>
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label for="mover-username">User</label>
-                <select id="mover-username" name="username" required>
+                <select id="mover-username" name="username" required data-mover-user>
                   {% for user in existing_users %}
-                    <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
+                    <option
+                      value="{{ user.username }}"
+                      data-roles='{{ (user.roles or []) | tojson | safe }}'
+                    >
+                      {{ user.display_name }} ({{ user.username }})
+                    </option>
                   {% endfor %}
                 </select>
               </div>
               <div class="form-field">
-                <label for="mover-source">Current role</label>
-                <select id="mover-source" name="source_role" required>
-                  {% for role in assignable_roles %}
-                    <option value="{{ role }}">{{ role }}</option>
-                  {% endfor %}
-                </select>
+                <label data-role-label for="mover-source-select">Current role</label>
+                <select id="mover-source-select" class="role-select" name="source_role" required data-role-select hidden></select>
+                <input
+                  id="mover-source-display"
+                  type="text"
+                  class="role-display"
+                  readonly
+                  data-role-display
+                  hidden
+                >
+                <input type="hidden" data-role-hidden>
               </div>
               <div class="form-field">
                 <label for="mover-target">New role</label>
-                <select id="mover-target" name="target_role" required>
+                <select id="mover-target" name="target_role" required data-role-target>
                   {% for role in assignable_roles %}
                     <option value="{{ role }}">{{ role }}</option>
                   {% endfor %}
                 </select>
               </div>
               <div class="form-actions">
-                <button type="submit" class="btn btn-secondary">Update role</button>
+                <button type="submit" class="btn btn-secondary" data-mover-submit>Update role</button>
               </div>
             </form>
           {% else %}
