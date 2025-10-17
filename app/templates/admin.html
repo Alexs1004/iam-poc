@@ -260,7 +260,7 @@
                     <td>
                       <div class="user-meta">
                         <span class="user-name">{{ user.display_name or user.username }}</span>
-                        <span class="user-username">@{{ user.username }}</span>
+                        <span class="user-username">{{ user.username }}</span>
                         {% if user.email %}
                           <span class="user-email">{{ user.email }}</span>
                         {% endif %}
