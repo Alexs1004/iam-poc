@@ -1033,6 +1033,10 @@ def admin():
 @app.post("/admin/joiner")
 @require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin_joiner():
+    """Create user via unified provisioning service (with optional DOGFOOD_SCIM mode)."""
+    from app import admin_ui_helpers
+    from app.provisioning_service import ScimError
+    
     # Input validation with proper error handling
     try:
         username = _normalize_username(request.form.get("username", ""))
@@ -1060,38 +1064,36 @@ def admin_joiner():
         temp_password = _generate_temp_password()
 
     operator = _current_username() or "system"
+    
     try:
-        token = _get_service_token()
-        jml.create_user(
-            KEYCLOAK_BASE_URL,
-            token,
-            KEYCLOAK_REALM,
-            username,
-            email,
-            first,
-            last,
-            temp_password,
-            role,
+        # Use unified service layer (DOGFOOD mode if enabled)
+        user_id, returned_password = admin_ui_helpers.ui_create_user(
+            username=username,
+            email=email,
+            first_name=first,
+            last_name=last,
+            role=role,
+            temp_password=temp_password,
             require_totp=require_totp,
-            require_password_update=require_password_update,
+            require_password_update=require_password_update
         )
-        # Audit successful joiner operation
+        
+        flash(f"User '{username}' provisioned. Temporary password: {returned_password}", "success")
+        
+        # Note: Audit logging now happens in provisioning_service layer
+        
+    except ScimError as exc:
+        flash(f"Failed to provision user '{username}': {exc.detail}", "error")
         audit.log_jml_event(
             "joiner",
             username,
             operator=operator,
             realm=KEYCLOAK_REALM,
-            details={
-                "role": role,
-                "email": email,
-                "require_totp": require_totp,
-                "require_password_update": require_password_update,
-            },
-            success=True,
+            details={"error": exc.detail, "role": role, "status": exc.status},
+            success=False,
         )
-        flash(f"User '{username}' provisioned. Temporary password: {temp_password}", "success")
     except Exception as exc:
-        # Audit failed joiner operation
+        flash(f"Failed to provision user '{username}': {exc}", "error")
         audit.log_jml_event(
             "joiner",
             username,
@@ -1100,13 +1102,17 @@ def admin_joiner():
             details={"error": str(exc), "role": role},
             success=False,
         )
-        flash(f"Failed to provision user '{username}': {exc}", "error")
+    
     return redirect(url_for("admin"))
 
 
 @app.post("/admin/mover")
 @require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin_mover():
+    """Change user role via unified provisioning service (with optional DOGFOOD_SCIM mode)."""
+    from app import admin_ui_helpers
+    from app.provisioning_service import ScimError
+    
     username = request.form.get("username", "").strip()
     source_role = request.form.get("source_role", "").strip()
     target_role = request.form.get("target_role", "").strip()
@@ -1148,26 +1154,27 @@ def admin_mover():
         return redirect(url_for("admin"))
 
     operator = _current_username() or "system"
+    
     try:
-        jml.change_role(
-            KEYCLOAK_BASE_URL,
-            token,
-            KEYCLOAK_REALM,
-            username,
-            source_role,
-            target_role,
-        )
-        # Audit successful mover operation
+        # Use unified service layer (DOGFOOD mode if enabled)
+        admin_ui_helpers.ui_change_role(username, source_role, target_role)
+        
+        flash(f"User '{username}' moved from {source_role} to {target_role}.", "success")
+        
+        # Note: Audit logging now happens in provisioning_service layer
+        
+    except ScimError as exc:
+        flash(f"Failed to update roles for '{username}': {exc.detail}", "error")
         audit.log_jml_event(
             "mover",
             username,
             operator=operator,
             realm=KEYCLOAK_REALM,
-            details={"from_role": source_role, "to_role": target_role},
-            success=True,
+            details={"error": exc.detail, "from_role": source_role, "to_role": target_role, "status": exc.status},
+            success=False,
         )
-        flash(f"User '{username}' moved from {source_role} to {target_role}.", "success")
     except Exception as exc:
+        flash(f"Failed to update roles for '{username}': {exc}", "error")
         audit.log_jml_event(
             "mover",
             username,
@@ -1176,13 +1183,17 @@ def admin_mover():
             details={"error": str(exc), "from_role": source_role, "to_role": target_role},
             success=False,
         )
-        flash(f"Failed to update roles for '{username}': {exc}", "error")
+    
     return redirect(url_for("admin"))
 
 
 @app.post("/admin/leaver")
 @require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin_leaver():
+    """Disable user via unified provisioning service (with optional DOGFOOD_SCIM mode)."""
+    from app import admin_ui_helpers
+    from app.provisioning_service import ScimError
+    
     username = request.form.get("username", "").strip()
     if not username:
         flash("Select a user to disable.", "error")
@@ -1215,24 +1226,28 @@ def admin_leaver():
         return redirect(url_for("admin"))
 
     operator = _current_username() or "system"
+    
     try:
-        jml.disable_user(
-            KEYCLOAK_BASE_URL,
-            token,
-            KEYCLOAK_REALM,
-            username,
-        )
-        # Audit successful leaver operation
+        # Use unified service layer (DOGFOOD mode if enabled)
+        # This now includes automatic session revocation
+        admin_ui_helpers.ui_disable_user(username)
+        
+        flash(f"User '{username}' disabled successfully (sessions revoked).", "success")
+        
+        # Note: Audit logging now happens in provisioning_service layer
+        
+    except ScimError as exc:
+        flash(f"Failed to disable '{username}': {exc.detail}", "error")
         audit.log_jml_event(
             "leaver",
             username,
             operator=operator,
             realm=KEYCLOAK_REALM,
-            details={"sessions_revoked": True},
-            success=True,
+            details={"error": exc.detail, "status": exc.status},
+            success=False,
         )
-        flash(f"User '{username}' disabled successfully.", "success")
     except Exception as exc:
+        flash(f"Failed to disable '{username}': {exc}", "error")
         audit.log_jml_event(
             "leaver",
             username,
@@ -1241,7 +1256,7 @@ def admin_leaver():
             details={"error": str(exc)},
             success=False,
         )
-        flash(f"Failed to disable '{username}': {exc}", "error")
+    
     return redirect(url_for("admin"))
 
 

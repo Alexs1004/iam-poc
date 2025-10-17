@@ -166,7 +166,151 @@ For detailed integration guides with Okta, Azure AD, and curl examples, see:
 
 # Run unit tests
 make pytest tests/test_scim_api.py
+
+# Run E2E integration tests
+make pytest tests/test_integration_e2e.py -v
 ```
+
+---
+
+## 🏗️ Unified Service Architecture (Version 2.0)
+
+**Version 2.0** introduces a **unified provisioning service layer** that eliminates code duplication between the Flask UI and SCIM API. Both interfaces now share identical business logic, validation, and error handling.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      HTTP Clients                               │
+│  (Browser UI, Okta, Azure AD, curl)                            │
+└────────────┬─────────────────────────┬────────────────────────┘
+             │                          │
+             ▼                          ▼
+  ┌──────────────────────┐   ┌──────────────────────┐
+  │  Flask UI Routes     │   │  SCIM 2.0 API        │
+  │  /admin/joiner       │   │  /scim/v2/Users      │
+  │  /admin/mover        │   │  POST, GET, PUT      │
+  │  /admin/leaver       │   │  DELETE              │
+  └──────────┬───────────┘   └──────────┬───────────┘
+             │                          │
+             │    ✅ UNIFIED LOGIC     │
+             │                          │
+             └────────────┬─────────────┘
+                          │
+                          ▼
+  ┌────────────────────────────────────────────────────────┐
+  │  app/provisioning_service.py (NEW)                     │
+  │  • create_user_scim_like()                            │
+  │  • get_user_scim(), list_users_scim()                 │
+  │  • replace_user_scim(), delete_user_scim()            │
+  │  • change_user_role()                                 │
+  │  • ScimError exception handling                       │
+  │  • Input validation (username, email, names)          │
+  │  • Session revocation helper                          │
+  └────────────────────────┬───────────────────────────────┘
+                           │
+                           ▼
+  ┌────────────────────────────────────────────────────────┐
+  │  scripts/jml.py + scripts/audit.py                     │
+  │  Keycloak Admin API wrapper + Audit logging           │
+  └────────────────────────┬───────────────────────────────┘
+                           │
+                           ▼
+  ┌────────────────────────────────────────────────────────┐
+  │  Keycloak Admin API                                    │
+  │  /users, /roles, /sessions                             │
+  └────────────────────────────────────────────────────────┘
+```
+
+### Key Benefits
+
+- ✅ **Single Source of Truth**: All JML logic in one place (`provisioning_service.py`)
+- ✅ **Consistent Validation**: Username, email, name validation shared across UI and API
+- ✅ **Standardized Errors**: ScimError exception with RFC 7644-compliant format
+- ✅ **Easy Testing**: Mock service layer instead of Keycloak
+- ✅ **DOGFOOD Mode**: Optional UI → SCIM API testing via HTTP
+
+### DOGFOOD Mode (Optional Testing Feature)
+
+Set `DOGFOOD_SCIM=true` to make the Flask UI call the SCIM API via HTTP instead of using the service layer directly. This enables real-world testing of your SCIM API through production UI workflows.
+
+```bash
+# Enable DOGFOOD mode
+export DOGFOOD_SCIM=true
+export APP_BASE_URL=https://localhost
+
+# Start stack
+make quickstart
+
+# Use admin UI - logs will show:
+# [dogfood] Created user via SCIM API: alice (HTTP 201)
+```
+
+**Use cases:**
+- 🧪 Test SCIM API with real UI workflows
+- 🔍 Validate OAuth token flow end-to-end
+- 📊 Monitor SCIM API performance under production conditions
+- 🐛 Debug SCIM issues with familiar UI interface
+
+**⚠️ Performance Impact:** DOGFOOD mode adds +20-50ms latency per request (HTTP overhead). Use only for testing, not production.
+
+### New Files
+
+| File | Description | Lines |
+|------|-------------|-------|
+| `app/provisioning_service.py` | ✨ Unified service layer with SCIM-like operations | ~600 |
+| `app/admin_ui_helpers.py` | ✨ UI helper functions with DOGFOOD mode support | ~200 |
+| `tests/test_service_scim.py` | ✨ Unit tests for service layer (mocked) | ~650 |
+| `tests/test_integration_e2e.py` | ✨ E2E integration tests (real Keycloak) | ~400 |
+| `CHANGELOG.md` | ✨ Version 2.0.0 release notes | ~400 |
+| `docs/UNIFIED_SERVICE_ARCHITECTURE.md` | ✨ Technical documentation | ~600 |
+
+### Modified Files
+
+| File | Change | Impact |
+|------|--------|--------|
+| `app/scim_api.py` | Refactored to thin HTTP layer | 616 → 300 lines (-52%) |
+| `app/flask_app.py` | UI routes use `admin_ui_helpers` | +30 lines |
+| `pytest.ini` | Added `integration` marker | +5 lines |
+
+### Configuration
+
+Add to your `.env`:
+
+```bash
+# Optional: Enable DOGFOOD mode (UI calls SCIM API via HTTP)
+DOGFOOD_SCIM=false
+
+# Required for DOGFOOD mode
+APP_BASE_URL=https://localhost
+
+# Temp password visibility (demo only)
+DEMO_MODE=true  # Shows _tempPassword in SCIM responses
+```
+
+### Documentation
+
+For detailed technical documentation, see:
+- **[Unified Service Architecture](docs/UNIFIED_SERVICE_ARCHITECTURE.md)** — Architecture diagrams, API reference, examples
+- **[CHANGELOG.md](CHANGELOG.md)** — Version 2.0.0 migration guide, breaking changes
+- **[Integration Tests](tests/test_integration_e2e.py)** — E2E test suite with real Keycloak
+
+### Migration Notes
+
+**Breaking Changes in 2.0:**
+- SCIM error format now strictly RFC 7644 compliant
+- Temp passwords only returned in `POST /scim/v2/Users` (not in `GET`)
+- UI routes now return ScimError exceptions (catch in error handlers)
+
+**No Action Required If:**
+- You only use the UI (transparent upgrade)
+- You use SCIM API with standard clients (Okta, Azure AD)
+
+**Action Required If:**
+- Custom SCIM clients: Update error parsing to expect `scimType` field
+- Direct `scripts/jml.py` imports: Use `provisioning_service` instead
+
+---
 
 ## 🧰 Security Guardrails
 - Enforce HTTPS through Nginx with self-signed certificates regenerated on every quickstart.

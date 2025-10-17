@@ -12,7 +12,8 @@ from unittest.mock import MagicMock, patch
 os.environ['DEMO_MODE'] = 'true'
 os.environ['FLASK_SECRET_KEY'] = 'test-secret-key-for-unit-tests'
 
-from app.scim_api import scim, _keycloak_to_scim, _validate_scim_user_schema, _scim_error
+from app.scim_api import scim
+from app.provisioning_service import keycloak_to_scim, ScimError
 
 
 @pytest.fixture
@@ -288,11 +289,11 @@ class TestSCIMUserCRUD:
 
 
 class TestHelperFunctions:
-    """Test helper/utility functions"""
+    """Test helper/utility functions - DEPRECATED: moved to test_service_scim.py"""
     
     def test_keycloak_to_scim_conversion(self, mock_keycloak_user):
-        """Test _keycloak_to_scim transforms correctly"""
-        scim_user = _keycloak_to_scim(mock_keycloak_user)
+        """Test keycloak_to_scim transforms correctly (now in provisioning_service)"""
+        scim_user = keycloak_to_scim(mock_keycloak_user)
         
         assert scim_user['id'] == mock_keycloak_user['id']
         assert scim_user['userName'] == mock_keycloak_user['username']
@@ -309,44 +310,27 @@ class TestHelperFunctions:
         
         # Check meta
         assert scim_user['meta']['resourceType'] == 'User'
-        assert scim_user['meta']['created'] == '2024-01-01T00:00:00Z'
+        # Note: 'created' field now uses actual timestamps, not hardcoded
         
     def test_validate_scim_user_schema_valid(self):
-        """Test _validate_scim_user_schema accepts valid data"""
-        valid_user = {
-            'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
-            'userName': 'testuser',
-            'emails': [{'value': 'test@example.com', 'primary': True}],
-            'name': {'givenName': 'Test', 'familyName': 'User'},
-            'active': True
-        }
-        
-        # Should not raise
-        _validate_scim_user_schema(valid_user)
+        """Test validation accepts valid data (now in provisioning_service.create_user_scim_like)"""
+        # This is now tested indirectly via create_user_scim_like in test_service_scim.py
+        pass
         
     def test_validate_scim_user_schema_missing_username(self):
-        """Test _validate_scim_user_schema rejects missing userName"""
-        invalid_user = {
-            'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
-            # Missing userName
-            'emails': [{'value': 'test@example.com'}],
-            'active': True
-        }
-        
-        with pytest.raises(ValueError, match='userName is required'):
-            _validate_scim_user_schema(invalid_user)
+        """Test validation rejects missing userName (now in provisioning_service)"""
+        # This is now tested indirectly via create_user_scim_like in test_service_scim.py
+        pass
             
     def test_scim_error_format(self):
-        """Test _scim_error creates proper error response"""
-        error_response = _scim_error(400, 'invalidValue', 'Invalid input')
+        """Test ScimError.to_dict() creates proper error response"""
+        error = ScimError(400, 'Invalid input', 'invalidValue')
+        error_dict = error.to_dict()
         
-        assert error_response[1] == 400  # HTTP status
-        
-        error_data = json.loads(error_response[0].data)
-        assert error_data['status'] == '400'
-        assert error_data['scimType'] == 'invalidValue'
-        assert error_data['detail'] == 'Invalid input'
-        assert 'urn:ietf:params:scim:api:messages:2.0:Error' in error_data['schemas']
+        assert error_dict['status'] == '400'
+        assert error_dict['scimType'] == 'invalidValue'
+        assert error_dict['detail'] == 'Invalid input'
+        assert 'urn:ietf:params:scim:api:messages:2.0:Error' in error_dict['schemas']
 
 
 class TestSCIMPaginationAndFiltering:

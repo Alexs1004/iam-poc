@@ -227,6 +227,19 @@ pytest: ## Run unit tests
 	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
 	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest
 
+.PHONY: pytest-unit
+pytest-unit: ## Run unit tests only (skip integration tests)
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest -m "not integration"
+
+.PHONY: pytest-e2e
+pytest-e2e: ## Run E2E integration tests (requires running stack)
+	@echo "[pytest-e2e] Running integration tests against live stack..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest tests/test_integration_e2e.py -v -m integration
+
 .PHONY: verify-audit
 verify-audit: ## Verify integrity of audit log signatures
 	@$(WITH_ENV) $(PYTHON) scripts/audit.py

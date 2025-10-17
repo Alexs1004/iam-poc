@@ -1,191 +1,97 @@
 """SCIM 2.0 API endpoints (RFC 7644) for user provisioning.
 
-This module provides a minimal SCIM-compliant REST API on top of the existing
-JML automation layer, enabling integration with external IdP systems.
+This module provides a minimal SCIM-compliant REST API that delegates all
+business logic to the unified provisioning_service layer.
+
+Architecture:
+    SCIM API (/scim/v2/*) -> app/provisioning_service.py -> scripts/jml.py -> Keycloak
 """
 
 from __future__ import annotations
-import datetime
-from typing import Any
-from flask import Blueprint, request, jsonify, g
-from scripts import jml
-from scripts import audit
 import os
-import requests
+from flask import Blueprint, request, jsonify, Response
+from app import provisioning_service
+from app.provisioning_service import ScimError
 
 # SCIM 2.0 Blueprint
 scim = Blueprint('scim', __name__, url_prefix='/scim/v2')
 
 # Configuration
-KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8080")
-KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "demo")
-KEYCLOAK_SERVICE_REALM = os.environ.get("KEYCLOAK_SERVICE_REALM", KEYCLOAK_REALM)
-KEYCLOAK_SERVICE_CLIENT_ID = os.environ.get("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
-KEYCLOAK_SERVICE_CLIENT_SECRET = os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
-
-DEFAULT_ROLE = os.environ.get("SCIM_DEFAULT_ROLE", "analyst")
-DEFAULT_PASSWORD_LENGTH = 16
+JSON_MAX_SIZE_BYTES = 65536  # 64 KB
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SCIM Schema Definitions
+# Error Handler
 # ─────────────────────────────────────────────────────────────────────────────
 
-SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
-SCIM_ERROR_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:Error"
-SCIM_LIST_RESPONSE_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper Functions
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _get_service_token() -> str:
-    """Obtain service account token for Keycloak operations."""
-    try:
-        return jml.get_service_account_token(
-            KEYCLOAK_BASE_URL,
-            KEYCLOAK_SERVICE_REALM,
-            KEYCLOAK_SERVICE_CLIENT_ID,
-            KEYCLOAK_SERVICE_CLIENT_SECRET,
-        )
-    except Exception as exc:
-        raise RuntimeError(f"Failed to obtain service token: {exc}") from exc
-
-
-def _generate_password() -> str:
-    """Generate secure temporary password."""
-    import secrets
-    import string
-    alphabet = string.ascii_letters + string.digits + "!@#$-_=+"
-    return "".join(secrets.choice(alphabet) for _ in range(DEFAULT_PASSWORD_LENGTH))
-
-
-def _keycloak_to_scim(kc_user: dict) -> dict:
-    """Convert Keycloak user representation to SCIM 2.0 format.
-    
-    Args:
-        kc_user: Keycloak user representation
-        
-    Returns:
-        SCIM User resource
-    """
-    user_id = kc_user.get("id", "")
-    username = kc_user.get("username", "")
-    email = kc_user.get("email", "")
-    first = kc_user.get("firstName", "")
-    last = kc_user.get("lastName", "")
-    enabled = kc_user.get("enabled", True)
-    
-    # Build formatted name
-    formatted_name = " ".join(filter(None, [first, last])).strip() or username
-    
-    scim_user = {
-        "schemas": [SCIM_USER_SCHEMA],
-        "id": user_id,
-        "userName": username,
-        "active": enabled,
-    }
-    
-    # Add email if present
-    if email:
-        scim_user["emails"] = [
-            {
-                "value": email,
-                "type": "work",
-                "primary": True
-            }
-        ]
-    
-    # Add name if present
-    if first or last:
-        scim_user["name"] = {
-            "formatted": formatted_name,
-            "givenName": first,
-            "familyName": last
-        }
-    
-    # Add metadata
-    created_ts = kc_user.get("createdTimestamp")
-    if created_ts:
-        created_dt = datetime.datetime.fromtimestamp(created_ts / 1000, tz=datetime.timezone.utc)
-        created_iso = created_dt.isoformat()
-    else:
-        created_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    
-    scim_user["meta"] = {
-        "resourceType": "User",
-        "created": created_iso,
-        "lastModified": created_iso,
-        "location": f"{request.host_url.rstrip('/')}/scim/v2/Users/{user_id}"
-    }
-    
-    return scim_user
-
-
-def _scim_error(status: int, detail: str, scim_type: str | None = None) -> tuple[dict, int]:
-    """Build SCIM error response.
+def scim_error(status: int, detail: str, scim_type: str = None) -> tuple[Response, int]:
+    """Create SCIM error response.
     
     Args:
         status: HTTP status code
-        detail: Error description
-        scim_type: SCIM error type (uniqueness, invalidValue, etc.)
-        
-    Returns:
-        Tuple of (error_dict, status_code)
-    """
-    error = {
-        "schemas": [SCIM_ERROR_SCHEMA],
-        "status": str(status),
-        "detail": detail
-    }
-    
-    if scim_type:
-        error["scimType"] = scim_type
-    
-    return error, status
-
-
-def _require_scim_content_type():
-    """Validate Content-Type header for SCIM requests."""
-    content_type = request.headers.get("Content-Type", "")
-    if not content_type.startswith("application/scim+json") and not content_type.startswith("application/json"):
-        return _scim_error(
-            400,
-            "Content-Type must be application/scim+json or application/json"
-        )
-    return None
-
-
-def _validate_scim_user_schema(payload: dict) -> str | None:
-    """Validate SCIM User schema in request payload.
+        detail: Human-readable error description
+        scim_type: Optional SCIM error type (uniqueness, invalidValue, etc.)
     
     Returns:
-        Error message if invalid, None if valid
+        Tuple of (JSON response, status code)
     """
-    if not isinstance(payload, dict):
-        return "Request body must be a JSON object"
-    
-    schemas = payload.get("schemas", [])
-    if SCIM_USER_SCHEMA not in schemas:
-        return f"Missing required schema: {SCIM_USER_SCHEMA}"
-    
-    if "userName" not in payload:
-        return "Missing required attribute: userName"
-    
-    return None
+    error = ScimError(status, detail, scim_type)
+    return jsonify(error.to_dict()), status
+
+
+@scim.errorhandler(ScimError)
+def handle_scim_error(error: ScimError):
+    """Global error handler for ScimError exceptions."""
+    return jsonify(error.to_dict()), error.status
+
+
+@scim.errorhandler(413)
+def handle_request_too_large(error):
+    """Handle payload too large errors."""
+    return scim_error(413, "Request payload exceeds maximum allowed size (64 KB)", "invalidValue")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SCIM Endpoints
+# Request Validation Middleware
+# ─────────────────────────────────────────────────────────────────────────────
+
+@scim.before_request
+def validate_request():
+    """Validate request size and content type for mutating operations."""
+    # Check payload size
+    if request.content_length and request.content_length > JSON_MAX_SIZE_BYTES:
+        return scim_error(413, "Request payload too large", "invalidValue")
+    
+    # Validate Content-Type for POST/PUT
+    if request.method in ("POST", "PUT"):
+        content_type = request.content_type or ""
+        if not content_type.startswith("application/scim+json"):
+            return scim_error(
+                400,
+                "Content-Type must be application/scim+json",
+                "invalidSyntax"
+            )
+
+
+@scim.after_request
+def add_correlation_id(response):
+    """Add correlation ID to response headers for tracing."""
+    correlation_id = request.headers.get("X-Correlation-Id")
+    if correlation_id:
+        response.headers["X-Correlation-Id"] = correlation_id
+    return response
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SCIM Schema Discovery Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
 @scim.route('/ServiceProviderConfig', methods=['GET'])
 def service_provider_config():
-    """SCIM 2.0 Service Provider Configuration endpoint (RFC 7644 §5)."""
+    """Return SCIM ServiceProviderConfig (RFC 7643 Section 5)."""
     config = {
         "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
-        "documentationUri": "https://datatracker.ietf.org/doc/html/rfc7644",
+        "documentationUri": "https://github.com/Alexs1004/iam-poc",
         "patch": {
             "supported": False
         },
@@ -196,7 +102,7 @@ def service_provider_config():
         },
         "filter": {
             "supported": True,
-            "maxResults": 100
+            "maxResults": 200
         },
         "changePassword": {
             "supported": False
@@ -209,10 +115,11 @@ def service_provider_config():
         },
         "authenticationSchemes": [
             {
+                "name": "OAuth 2.0 Bearer Token",
+                "description": "OAuth 2.0 client credentials flow",
+                "specUri": "https://tools.ietf.org/html/rfc6750",
                 "type": "oauthbearertoken",
-                "name": "OAuth Bearer Token",
-                "description": "Authentication using OAuth 2.0 Bearer Token",
-                "specUri": "https://datatracker.ietf.org/doc/html/rfc6750"
+                "primary": True
             }
         ]
     }
@@ -221,9 +128,9 @@ def service_provider_config():
 
 @scim.route('/ResourceTypes', methods=['GET'])
 def resource_types():
-    """SCIM 2.0 Resource Types endpoint (RFC 7644 §6)."""
+    """Return supported SCIM resource types."""
     resources = {
-        "schemas": [SCIM_LIST_RESPONSE_SCHEMA],
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
         "totalResults": 1,
         "Resources": [
             {
@@ -231,8 +138,12 @@ def resource_types():
                 "id": "User",
                 "name": "User",
                 "endpoint": "/scim/v2/Users",
-                "description": "User Account",
-                "schema": SCIM_USER_SCHEMA
+                "description": "SCIM User resource for Keycloak provisioning",
+                "schema": "urn:ietf:params:scim:schemas:core:2.0:User",
+                "meta": {
+                    "location": f"{request.host_url.rstrip('/')}/scim/v2/ResourceTypes/User",
+                    "resourceType": "ResourceType"
+                }
             }
         ]
     }
@@ -241,375 +152,222 @@ def resource_types():
 
 @scim.route('/Schemas', methods=['GET'])
 def schemas():
-    """SCIM 2.0 Schemas endpoint (RFC 7644 §7)."""
+    """Return SCIM schema definitions."""
     schema_list = {
-        "schemas": [SCIM_LIST_RESPONSE_SCHEMA],
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
         "totalResults": 1,
         "Resources": [
             {
-                "id": SCIM_USER_SCHEMA,
+                "id": "urn:ietf:params:scim:schemas:core:2.0:User",
                 "name": "User",
-                "description": "User Account"
+                "description": "User Account",
+                "attributes": [
+                    {
+                        "name": "userName",
+                        "type": "string",
+                        "multiValued": False,
+                        "required": True,
+                        "caseExact": False,
+                        "mutability": "readWrite",
+                        "returned": "default",
+                        "uniqueness": "server"
+                    },
+                    {
+                        "name": "emails",
+                        "type": "complex",
+                        "multiValued": True,
+                        "required": False,
+                        "mutability": "readWrite",
+                        "returned": "default"
+                    },
+                    {
+                        "name": "active",
+                        "type": "boolean",
+                        "multiValued": False,
+                        "required": False,
+                        "mutability": "readWrite",
+                        "returned": "default"
+                    }
+                ],
+                "meta": {
+                    "resourceType": "Schema",
+                    "location": f"{request.host_url.rstrip('/')}/scim/v2/Schemas/urn:ietf:params:scim:schemas:core:2.0:User"
+                }
             }
         ]
     }
     return jsonify(schema_list), 200
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SCIM User CRUD Operations
+# ─────────────────────────────────────────────────────────────────────────────
+
 @scim.route('/Users', methods=['POST'])
 def create_user():
-    """SCIM 2.0 Create User endpoint (RFC 7644 §3.3).
+    """Create a new user (Joiner).
     
-    Example request:
-        POST /scim/v2/Users
-        Content-Type: application/scim+json
-        
-        {
-          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-          "userName": "alice",
-          "emails": [{"value": "alice@example.com", "primary": true}],
-          "name": {"givenName": "Alice", "familyName": "Demo"},
-          "active": true
-        }
+    RFC 7644 Section 3.3: Creating Resources
+    
+    Returns:
+        201 Created with Location header and User resource
     """
-    # Validate content type
-    error = _require_scim_content_type()
-    if error:
-        return jsonify(error[0]), error[1]
-    
-    payload = request.get_json(silent=True)
-    if not payload:
-        return jsonify(_scim_error(400, "Invalid JSON payload")[0]), 400
-    
-    # Validate SCIM schema
-    validation_error = _validate_scim_user_schema(payload)
-    if validation_error:
-        return jsonify(_scim_error(400, validation_error)[0]), 400
-    
-    # Extract SCIM attributes
-    username = payload.get("userName", "").strip().lower()
-    emails = payload.get("emails", [])
-    email = emails[0]["value"] if emails else f"{username}@example.com"
-    name = payload.get("name", {})
-    first = name.get("givenName", "User")
-    last = name.get("familyName", "Account")
-    active = payload.get("active", True)
-    
-    # Validate required fields
-    if not username:
-        return jsonify(_scim_error(400, "userName is required")[0]), 400
-    
-    # Generate temporary password
-    temp_password = _generate_password()
-    
-    # Get service token
     try:
-        token = _get_service_token()
-    except Exception as exc:
-        return jsonify(_scim_error(500, f"Authentication failed: {exc}")[0]), 500
-    
-    # Check if user exists
-    existing = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
-    if existing:
-        return jsonify(_scim_error(
-            409,
-            f"User with userName '{username}' already exists",
-            scim_type="uniqueness"
-        )[0]), 409
-    
-    # Create user via JML
-    try:
-        jml.create_user(
-            KEYCLOAK_BASE_URL,
-            token,
-            KEYCLOAK_REALM,
-            username,
-            email,
-            first,
-            last,
-            temp_password,
-            DEFAULT_ROLE,
-            require_totp=True,
-            require_password_update=True,
-        )
+        payload = request.get_json()
+        correlation_id = request.headers.get("X-Correlation-Id")
         
-        # Log audit event
-        audit.log_jml_event(
-            "joiner",
-            username,
-            operator="scim-api",
-            realm=KEYCLOAK_REALM,
-            details={"email": email, "role": DEFAULT_ROLE, "via": "scim"},
-            success=True,
-        )
+        # Create user via service layer
+        scim_user = provisioning_service.create_user_scim_like(payload, correlation_id)
         
+        # Build Location header
+        location = f"{request.host_url.rstrip('/')}/scim/v2/Users/{scim_user['id']}"
+        
+        response = jsonify(scim_user)
+        response.status_code = 201
+        response.headers["Location"] = location
+        
+        return response
+        
+    except ScimError:
+        raise  # Let error handler deal with it
     except Exception as exc:
-        audit.log_jml_event(
-            "joiner",
-            username,
-            operator="scim-api",
-            realm=KEYCLOAK_REALM,
-            details={"error": str(exc), "via": "scim"},
-            success=False,
-        )
-        return jsonify(_scim_error(500, f"User creation failed: {exc}")[0]), 500
-    
-    # Retrieve created user
-    created_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
-    if not created_user:
-        return jsonify(_scim_error(500, "User created but not found")[0]), 500
-    
-    # Convert to SCIM format
-    scim_user = _keycloak_to_scim(created_user)
-    
-    # Add temporary password to response (non-standard, for demo purposes)
-    scim_user["_tempPassword"] = temp_password
-    
-    return jsonify(scim_user), 201
+        return scim_error(500, f"Internal server error: {exc}")
 
 
 @scim.route('/Users/<user_id>', methods=['GET'])
 def get_user(user_id: str):
-    """SCIM 2.0 Get User endpoint (RFC 7644 §3.4.1).
+    """Retrieve a specific user by ID.
     
-    Example request:
-        GET /scim/v2/Users/2819c223-7f76-453a-919d-413861904646
+    RFC 7644 Section 3.4.1: Retrieving a Known Resource
+    
+    Args:
+        user_id: Keycloak user UUID
+    
+    Returns:
+        200 OK with User resource
     """
     try:
-        token = _get_service_token()
+        scim_user = provisioning_service.get_user_scim(user_id)
+        return jsonify(scim_user), 200
+        
+    except ScimError:
+        raise
     except Exception as exc:
-        return jsonify(_scim_error(500, f"Authentication failed: {exc}")[0]), 500
-    
-    # Get user from Keycloak
-    try:
-        resp = requests.get(
-            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
-            headers=jml._auth_headers(token),
-            timeout=jml.REQUEST_TIMEOUT,
-        )
-        
-        if resp.status_code == 404:
-            return jsonify(_scim_error(404, f"User {user_id} not found")[0]), 404
-        
-        resp.raise_for_status()
-        kc_user = resp.json()
-        
-    except requests.HTTPError as exc:
-        return jsonify(_scim_error(500, f"Failed to retrieve user: {exc}")[0]), 500
-    
-    # Convert to SCIM format
-    scim_user = _keycloak_to_scim(kc_user)
-    return jsonify(scim_user), 200
+        return scim_error(500, f"Internal server error: {exc}")
 
 
 @scim.route('/Users', methods=['GET'])
 def list_users():
-    """SCIM 2.0 List Users endpoint with filtering (RFC 7644 §3.4.2).
+    """List users with pagination and filtering.
     
-    Example requests:
-        GET /scim/v2/Users
-        GET /scim/v2/Users?filter=userName eq "alice"
-        GET /scim/v2/Users?startIndex=1&count=10
+    RFC 7644 Section 3.4.2: Listing Resources
+    
+    Query parameters:
+        - startIndex: 1-based starting index (default: 1)
+        - count: Max results per page (default: 10)
+        - filter: SCIM filter string (e.g., 'userName eq "alice"')
+    
+    Returns:
+        200 OK with ListResponse
     """
     try:
-        token = _get_service_token()
+        query = {
+            "startIndex": request.args.get("startIndex", 1),
+            "count": request.args.get("count", 10),
+            "filter": request.args.get("filter", "")
+        }
+        
+        list_response = provisioning_service.list_users_scim(query)
+        return jsonify(list_response), 200
+        
+    except ScimError:
+        raise
     except Exception as exc:
-        return jsonify(_scim_error(500, f"Authentication failed: {exc}")[0]), 500
-    
-    # Parse pagination parameters
-    start_index = int(request.args.get('startIndex', 1))
-    count = min(int(request.args.get('count', 100)), 100)
-    filter_expr = request.args.get('filter', '')
-    
-    # Parse filter (simple implementation: userName eq "value")
-    filter_username = None
-    if filter_expr:
-        parts = filter_expr.split()
-        if len(parts) >= 3 and parts[0] == "userName" and parts[1] == "eq":
-            filter_username = parts[2].strip('"\'').lower()
-    
-    # Get users from Keycloak
-    try:
-        params = {"max": count}
-        if filter_username:
-            params["username"] = filter_username
-        
-        resp = requests.get(
-            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users",
-            params=params,
-            headers=jml._auth_headers(token),
-            timeout=jml.REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        kc_users = resp.json()
-        
-    except requests.HTTPError as exc:
-        return jsonify(_scim_error(500, f"Failed to list users: {exc}")[0]), 500
-    
-    # Convert to SCIM format
-    scim_users = [_keycloak_to_scim(user) for user in kc_users]
-    
-    # Apply pagination
-    total = len(scim_users)
-    if start_index > 1:
-        scim_users = scim_users[start_index - 1:]
-    
-    # Build SCIM ListResponse
-    response = {
-        "schemas": [SCIM_LIST_RESPONSE_SCHEMA],
-        "totalResults": total,
-        "startIndex": start_index,
-        "itemsPerPage": len(scim_users),
-        "Resources": scim_users
-    }
-    
-    return jsonify(response), 200
+        return scim_error(500, f"Internal server error: {exc}")
 
 
 @scim.route('/Users/<user_id>', methods=['PUT'])
 def replace_user(user_id: str):
-    """SCIM 2.0 Replace User endpoint (RFC 7644 §3.5.1).
+    """Update a user via full replacement (Mover/Leaver).
     
-    Example request:
-        PUT /scim/v2/Users/2819c223-7f76-453a-919d-413861904646
-        Content-Type: application/scim+json
-        
-        {
-          "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-          "userName": "alice",
-          "active": false
-        }
+    RFC 7644 Section 3.5.1: Replacing with PUT
+    
+    Args:
+        user_id: Keycloak user UUID
+    
+    Returns:
+        200 OK with updated User resource
     """
-    # Validate content type
-    error = _require_scim_content_type()
-    if error:
-        return jsonify(error[0]), error[1]
-    
-    payload = request.get_json(silent=True)
-    if not payload:
-        return jsonify(_scim_error(400, "Invalid JSON payload")[0]), 400
-    
-    # Validate SCIM schema
-    validation_error = _validate_scim_user_schema(payload)
-    if validation_error:
-        return jsonify(_scim_error(400, validation_error)[0]), 400
-    
     try:
-        token = _get_service_token()
+        payload = request.get_json()
+        correlation_id = request.headers.get("X-Correlation-Id")
+        
+        scim_user = provisioning_service.replace_user_scim(user_id, payload, correlation_id)
+        return jsonify(scim_user), 200
+        
+    except ScimError:
+        raise
     except Exception as exc:
-        return jsonify(_scim_error(500, f"Authentication failed: {exc}")[0]), 500
-    
-    # Get existing user
-    try:
-        resp = requests.get(
-            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
-            headers=jml._auth_headers(token),
-            timeout=jml.REQUEST_TIMEOUT,
-        )
-        
-        if resp.status_code == 404:
-            return jsonify(_scim_error(404, f"User {user_id} not found")[0]), 404
-        
-        resp.raise_for_status()
-        kc_user = resp.json()
-        username = kc_user.get("username", "")
-        
-    except requests.HTTPError as exc:
-        return jsonify(_scim_error(500, f"Failed to retrieve user: {exc}")[0]), 500
-    
-    # Handle active status change (disable user)
-    active = payload.get("active", True)
-    if not active and kc_user.get("enabled", True):
-        try:
-            jml.disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
-            
-            audit.log_jml_event(
-                "leaver",
-                username,
-                operator="scim-api",
-                realm=KEYCLOAK_REALM,
-                details={"via": "scim", "user_id": user_id},
-                success=True,
-            )
-        except Exception as exc:
-            audit.log_jml_event(
-                "leaver",
-                username,
-                operator="scim-api",
-                realm=KEYCLOAK_REALM,
-                details={"error": str(exc), "via": "scim"},
-                success=False,
-            )
-            return jsonify(_scim_error(500, f"Failed to disable user: {exc}")[0]), 500
-    
-    # Retrieve updated user
-    resp = requests.get(
-        f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
-        headers=jml._auth_headers(token),
-        timeout=jml.REQUEST_TIMEOUT,
-    )
-    resp.raise_for_status()
-    updated_user = resp.json()
-    
-    # Convert to SCIM format
-    scim_user = _keycloak_to_scim(updated_user)
-    return jsonify(scim_user), 200
+        return scim_error(500, f"Internal server error: {exc}")
 
 
 @scim.route('/Users/<user_id>', methods=['DELETE'])
 def delete_user(user_id: str):
-    """SCIM 2.0 Delete User endpoint (RFC 7644 §3.6).
+    """Soft-delete a user by disabling (Leaver).
     
-    Note: This implementation disables the user rather than deleting it.
+    RFC 7644 Section 3.6: Deleting Resources
     
-    Example request:
-        DELETE /scim/v2/Users/2819c223-7f76-453a-919d-413861904646
+    Args:
+        user_id: Keycloak user UUID
+    
+    Returns:
+        204 No Content
     """
     try:
-        token = _get_service_token()
+        correlation_id = request.headers.get("X-Correlation-Id")
+        
+        provisioning_service.delete_user_scim(user_id, correlation_id)
+        return '', 204
+        
+    except ScimError:
+        raise
     except Exception as exc:
-        return jsonify(_scim_error(500, f"Authentication failed: {exc}")[0]), 500
+        return scim_error(500, f"Internal server error: {exc}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Optional: POST /Users/.search for Azure AD/Okta compatibility
+# ─────────────────────────────────────────────────────────────────────────────
+
+@scim.route('/Users/.search', methods=['POST'])
+def search_users():
+    """Search users via POST (Azure AD/Okta compatibility).
     
-    # Get user to retrieve username
-    try:
-        resp = requests.get(
-            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
-            headers=jml._auth_headers(token),
-            timeout=jml.REQUEST_TIMEOUT,
-        )
-        
-        if resp.status_code == 404:
-            return jsonify(_scim_error(404, f"User {user_id} not found")[0]), 404
-        
-        resp.raise_for_status()
-        username = resp.json().get("username", "")
-        
-    except requests.HTTPError as exc:
-        return jsonify(_scim_error(500, f"Failed to retrieve user: {exc}")[0]), 500
+    This endpoint accepts the same query parameters as GET /Users but via POST body,
+    which some IdPs prefer for complex filter expressions.
     
-    # Disable user (soft delete)
+    Returns:
+        200 OK with ListResponse
+    """
     try:
-        jml.disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+        payload = request.get_json() or {}
         
-        audit.log_jml_event(
-            "leaver",
-            username,
-            operator="scim-api",
-            realm=KEYCLOAK_REALM,
-            details={"via": "scim_delete", "user_id": user_id},
-            success=True,
-        )
+        query = {
+            "startIndex": payload.get("startIndex", 1),
+            "count": payload.get("count", 10),
+            "filter": payload.get("filter", "")
+        }
         
+        list_response = provisioning_service.list_users_scim(query)
+        return jsonify(list_response), 200
+        
+    except ScimError:
+        raise
     except Exception as exc:
-        audit.log_jml_event(
-            "leaver",
-            username,
-            operator="scim-api",
-            realm=KEYCLOAK_REALM,
-            details={"error": str(exc), "via": "scim_delete"},
-            success=False,
-        )
-        return jsonify(_scim_error(500, f"Failed to delete user: {exc}")[0]), 500
-    
-    # SCIM DELETE returns 204 No Content
-    return '', 204
+        return scim_error(500, f"Internal server error: {exc}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Startup Message (logged when blueprint is registered in flask_app.py)
+# ─────────────────────────────────────────────────────────────────────────────
+# Note: Blueprint startup logging moved to flask_app.py @app.before_first_request
