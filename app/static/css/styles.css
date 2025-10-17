@@ -583,6 +583,7 @@ button.btn-danger:hover {
 
 .form-section:first-of-type {
   border-top: none;
+  
   margin-top: 0;
   padding-top: 2rem;
 }

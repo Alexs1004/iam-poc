@@ -30,6 +30,8 @@ from flask import (
 from flask_session import Session
 from werkzeug.middleware.proxy_fix import ProxyFix
 from scripts import jml
+from scripts import audit
+from app import scim_api
 
 try:
     from azure.identity import DefaultAzureCredential  # type: ignore
@@ -70,6 +72,7 @@ def _load_secrets_from_azure() -> None:
         "KEYCLOAK_ADMIN_PASSWORD": os.environ.get("AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD", "keycloak-admin-password"),
         "ALICE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_ALICE_TEMP_PASSWORD", "alice-temp-password"),
         "BOB_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_BOB_TEMP_PASSWORD", "bob-temp-password"),
+        "AUDIT_LOG_SIGNING_KEY": os.environ.get("AZURE_SECRET_AUDIT_LOG_SIGNING_KEY", "audit-log-signing-key"),
     }
     key_mapping = {
         "FLASK_SECRET_KEY": os.environ.get("AZURE_KEY_FLASK_SECRET_KEY", "").strip(),
@@ -456,6 +459,13 @@ def _render_page(template: str, *, status: int = 200, protect: bool = False, **c
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SCIM 2.0 API Registration
+# ─────────────────────────────────────────────────────────────────────────────
+app.register_blueprint(scim_api.scim)
+print(f"[startup] SCIM 2.0 API registered at /scim/v2")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -748,7 +758,41 @@ def _load_admin_context() -> tuple[list[dict], list[str]]:
 
 
 def _normalize_username(raw: str) -> str:
-    return "".join(char for char in raw.lower().strip() if char.isalnum() or char in {".", "-", "_"})
+    normalized = "".join(char for char in raw.lower().strip() if char.isalnum() or char in {".", "-", "_"})
+    # SCIM-like validation: minimum length, no leading/trailing special chars
+    if len(normalized) < 3:
+        raise ValueError("Username must be at least 3 characters")
+    if len(normalized) > 64:
+        raise ValueError("Username must not exceed 64 characters")
+    if normalized[0] in {".", "-", "_"} or normalized[-1] in {".", "-", "_"}:
+        raise ValueError("Username cannot start or end with special characters")
+    return normalized
+
+
+def _validate_email(email: str) -> str:
+    """Basic RFC-like email validation for SCIM compliance."""
+    email = email.strip().lower()
+    if not email or "@" not in email:
+        raise ValueError("Invalid email format")
+    local, domain = email.rsplit("@", 1)
+    if not local or not domain or "." not in domain:
+        raise ValueError("Invalid email format")
+    if len(email) > 254:
+        raise ValueError("Email exceeds maximum length")
+    return email
+
+
+def _validate_name(name: str, field: str) -> str:
+    """Validate first/last name fields."""
+    name = name.strip()
+    if not name:
+        raise ValueError(f"{field} is required")
+    if len(name) > 128:
+        raise ValueError(f"{field} exceeds maximum length")
+    # Prevent injection attacks
+    if any(char in name for char in "<>\"'`;&|$"):
+        raise ValueError(f"{field} contains invalid characters")
+    return name
 
 
 def _role_is_assignable(role: str) -> bool:
@@ -929,6 +973,43 @@ def me():
     )
 
 
+@app.route("/admin/audit")
+@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
+def admin_audit():
+    """Display audit trail of JML operations."""
+    import json
+    from pathlib import Path
+    
+    audit_file = Path(audit.AUDIT_LOG_FILE)
+    events = []
+    
+    if audit_file.exists():
+        with audit_file.open("r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        events.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+    
+    # Reverse chronological order
+    events.reverse()
+    
+    # Verify signatures
+    total, valid = audit.verify_audit_log()
+    integrity_status = "✓ All signatures valid" if total == valid else f"⚠ {total - valid} invalid signatures"
+    
+    return _render_page(
+        "admin_audit.html",
+        title="Audit Trail",
+        protect=True,
+        events=events,
+        total_events=total,
+        valid_signatures=valid,
+        integrity_status=integrity_status,
+    )
+
+
 @app.route("/admin")
 @require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin():
@@ -952,14 +1033,19 @@ def admin():
 @app.post("/admin/joiner")
 @require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
 def admin_joiner():
-    username = _normalize_username(request.form.get("username", ""))
-    first = request.form.get("first_name", "").strip()
-    last = request.form.get("last_name", "").strip()
-    email = request.form.get("email", "").strip()
-    role = request.form.get("role", "").strip()
-    temp_password = request.form.get("temp_password", "").strip()
-    require_totp = request.form.get("require_totp") == "on"
-    require_password_update = request.form.get("require_password_update") == "on"
+    # Input validation with proper error handling
+    try:
+        username = _normalize_username(request.form.get("username", ""))
+        first = _validate_name(request.form.get("first_name", ""), "First name")
+        last = _validate_name(request.form.get("last_name", ""), "Last name")
+        email = _validate_email(request.form.get("email", ""))
+        role = request.form.get("role", "").strip()
+        temp_password = request.form.get("temp_password", "").strip()
+        require_totp = request.form.get("require_totp") == "on"
+        require_password_update = request.form.get("require_password_update") == "on"
+    except ValueError as exc:
+        flash(f"Validation error: {exc}", "error")
+        return redirect(url_for("admin"))
 
     if not all([username, first, last, email, role]):
         flash("All fields are required to provision a user.", "error")
@@ -973,6 +1059,7 @@ def admin_joiner():
     if not temp_password:
         temp_password = _generate_temp_password()
 
+    operator = _current_username() or "system"
     try:
         token = _get_service_token()
         jml.create_user(
@@ -988,10 +1075,32 @@ def admin_joiner():
             require_totp=require_totp,
             require_password_update=require_password_update,
         )
-    except Exception as exc:
-        flash(f"Failed to provision user '{username}': {exc}", "error")
-    else:
+        # Audit successful joiner operation
+        audit.log_jml_event(
+            "joiner",
+            username,
+            operator=operator,
+            realm=KEYCLOAK_REALM,
+            details={
+                "role": role,
+                "email": email,
+                "require_totp": require_totp,
+                "require_password_update": require_password_update,
+            },
+            success=True,
+        )
         flash(f"User '{username}' provisioned. Temporary password: {temp_password}", "success")
+    except Exception as exc:
+        # Audit failed joiner operation
+        audit.log_jml_event(
+            "joiner",
+            username,
+            operator=operator,
+            realm=KEYCLOAK_REALM,
+            details={"error": str(exc), "role": role},
+            success=False,
+        )
+        flash(f"Failed to provision user '{username}': {exc}", "error")
     return redirect(url_for("admin"))
 
 
@@ -1038,6 +1147,7 @@ def admin_mover():
         flash("Realm-admin privileges are required to modify realm-admin-level access.", "error")
         return redirect(url_for("admin"))
 
+    operator = _current_username() or "system"
     try:
         jml.change_role(
             KEYCLOAK_BASE_URL,
@@ -1047,10 +1157,26 @@ def admin_mover():
             source_role,
             target_role,
         )
-    except Exception as exc:
-        flash(f"Failed to update roles for '{username}': {exc}", "error")
-    else:
+        # Audit successful mover operation
+        audit.log_jml_event(
+            "mover",
+            username,
+            operator=operator,
+            realm=KEYCLOAK_REALM,
+            details={"from_role": source_role, "to_role": target_role},
+            success=True,
+        )
         flash(f"User '{username}' moved from {source_role} to {target_role}.", "success")
+    except Exception as exc:
+        audit.log_jml_event(
+            "mover",
+            username,
+            operator=operator,
+            realm=KEYCLOAK_REALM,
+            details={"error": str(exc), "from_role": source_role, "to_role": target_role},
+            success=False,
+        )
+        flash(f"Failed to update roles for '{username}': {exc}", "error")
     return redirect(url_for("admin"))
 
 
@@ -1088,6 +1214,7 @@ def admin_leaver():
         flash("Realm-admin privileges are required to disable realm-admin-level accounts.", "error")
         return redirect(url_for("admin"))
 
+    operator = _current_username() or "system"
     try:
         jml.disable_user(
             KEYCLOAK_BASE_URL,
@@ -1095,10 +1222,26 @@ def admin_leaver():
             KEYCLOAK_REALM,
             username,
         )
-    except Exception as exc:
-        flash(f"Failed to disable '{username}': {exc}", "error")
-    else:
+        # Audit successful leaver operation
+        audit.log_jml_event(
+            "leaver",
+            username,
+            operator=operator,
+            realm=KEYCLOAK_REALM,
+            details={"sessions_revoked": True},
+            success=True,
+        )
         flash(f"User '{username}' disabled successfully.", "success")
+    except Exception as exc:
+        audit.log_jml_event(
+            "leaver",
+            username,
+            operator=operator,
+            realm=KEYCLOAK_REALM,
+            details={"error": str(exc)},
+            success=False,
+        )
+        flash(f"Failed to disable '{username}': {exc}", "error")
     return redirect(url_for("admin"))
 
 

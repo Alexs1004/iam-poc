@@ -100,18 +100,93 @@ make down
 - `scripts/run_https.sh` syncs `~/.azure` → `.runtime/azure` for container auth; clear caches with `make clean-secrets`.
 - Generated Keycloak secrets land in `.runtime/secrets` and mount read-only into containers; keep the directory git-ignored.
 
+## 🔄 SCIM 2.0 API Integration
+
+This project implements a **production-ready SCIM 2.0 API** (RFC 7644) for standardized user provisioning. The API enables integration with enterprise Identity Providers like Okta, Azure AD, and others.
+
+### Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/scim/v2/ServiceProviderConfig` | SCIM capability discovery |
+| `GET` | `/scim/v2/ResourceTypes` | Advertises supported resource types |
+| `GET` | `/scim/v2/Schemas` | Returns User schema definition |
+| `POST` | `/scim/v2/Users` | Create user (joiner) |
+| `GET` | `/scim/v2/Users` | List users with filtering/pagination |
+| `GET` | `/scim/v2/Users/{id}` | Retrieve specific user |
+| `PUT` | `/scim/v2/Users/{id}` | Update user (supports `active=false` for leaver) |
+| `DELETE` | `/scim/v2/Users/{id}` | Soft delete user via disable |
+
+### Authentication
+
+All SCIM endpoints require OAuth 2.0 Bearer token authentication:
+
+```bash
+# Get service account token
+TOKEN=$(curl -sk -X POST \
+  "https://localhost/realms/demo/protocol/openid-connect/token" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=automation-cli" \
+  -d "client_secret=${KEYCLOAK_SERVICE_CLIENT_SECRET}" \
+  | jq -r '.access_token')
+
+# Create user via SCIM
+curl -sk -X POST "https://localhost/scim/v2/Users" \
+  -H "Content-Type: application/scim+json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+    "userName": "newuser",
+    "emails": [{"value": "newuser@example.com", "primary": true}],
+    "name": {"givenName": "New", "familyName": "User"},
+    "active": true
+  }'
+```
+
+### Features
+
+- ✅ **RFC 7644 Compliant**: Standard SCIM schemas, error responses, filtering
+- ✅ **Filtering Support**: `filter=userName eq "alice"` for targeted queries
+- ✅ **Pagination**: `startIndex` and `count` parameters
+- ✅ **Audit Trail**: All SCIM operations logged with HMAC-SHA256 signatures
+- ✅ **Session Revocation**: Immediate effect when disabling users
+- ✅ **Input Validation**: Strict username/email/name sanitization
+
+### Integration Examples
+
+For detailed integration guides with Okta, Azure AD, and curl examples, see:
+- **[SCIM API Guide](docs/SCIM_API_GUIDE.md)** — Complete usage documentation
+- **[SCIM Compliance Analysis](docs/SCIM_COMPLIANCE_ANALYSIS.md)** — Conformance details
+
+### Testing
+
+```bash
+# Run integration tests (requires running stack)
+./scripts/test_scim_api.sh
+
+# Run unit tests
+make pytest tests/test_scim_api.py
+```
+
 ## 🧰 Security Guardrails
 - Enforce HTTPS through Nginx with self-signed certificates regenerated on every quickstart.
 - Require Authorization Code + PKCE, role checks, and mandatory TOTP enrollment in the Keycloak realm.
 - Rotate secrets via Key Vault-backed automation (`make rotate-secret`); never store credentials in plaintext.
 - Harden session cookies (`Secure`, `HttpOnly`, `SameSite=Lax`) and validate CSRF tokens on every state-changing route.
 - Restrict proxy forwarding with trusted IP allow lists and reject non-HTTPS `X-Forwarded-Proto` headers.
+- **SCIM 2.0 Provisioning API** (`/scim/v2`) for standardized user lifecycle management (RFC 7644)
+- **Immediate session revocation** on user disable (prevents 5-15 minute token validity window)
+- **Input validation** with strict username/email/name sanitization (XSS/SQLi protection)
+- **Cryptographic audit trail** with HMAC-SHA256 signatures for tamper detection
 - Capture structured audit logs from `scripts/jml.py`, redacting tokens and surfacing failed admin calls.
 - Deny missing environment variables in non-demo mode, preventing accidental startup without required secrets.
 
 ## 🧪 Tests
 - `tests/test_flask_app.py` validates RBAC enforcement, admin-only routes, hardened headers, CSRF protection, secure cookies, and proxy trust logic.
 - `tests/test_jml.py` exercises the automation CLI, ensuring service-account tokens, bootstrap safeguards, and secret rotations behave as expected.
+- `tests/test_audit.py` verifies cryptographic signature generation, tamper detection, and JSONL audit log integrity.
+- `tests/test_scim_api.py` validates SCIM 2.0 RFC 7644 compliance (schema endpoints, CRUD operations, filtering).
+- `scripts/test_scim_api.sh` provides end-to-end integration testing for SCIM API with real OAuth tokens.
 - The suite runs under `DEMO_MODE=true`, keeping tests self-contained while mimicking Keycloak token payloads.
 
 ## 🚧 Troubleshooting
@@ -135,12 +210,18 @@ make down
 - Integrate container scanning and IaC validation into CI/CD (e.g., GitHub Actions + Trivy/Terraform Validate).
 
 ## 🗺️ Roadmap
-- Phase 2 — Add Microsoft Entra ID (Azure AD) support with configuration switches and consent automation.
-- Phase 3 — Deliver SCIM/webhook provisioning to extend JML workflows beyond Keycloak.
+- ✅ **Phase 2.1 — SCIM 2.0 Provisioning** (Completed)
+  - Full RFC 7644 compliant REST API at `/scim/v2`
+  - Support for Okta, Azure AD, and other IdP integrations
+  - Cryptographically signed audit trail (HMAC-SHA256)
+  - Session revocation on user disable (immediate effect)
+  - Input validation and security guardrails
+- Phase 2.2 — Add Microsoft Entra ID (Azure AD) support with configuration switches and consent automation.
+- Phase 3 — Deliver webhook provisioning to extend real-time JML workflows.
 - Phase 4 — Introduce integration tests against live containers using pytest + docker.
 - Phase 5 — Package `scripts/jml.py` as a versioned CLI with documentation and release automation.
 - Phase 6 — Layer in observability (structured logging, metrics, distributed tracing) across services.
-- Phase 7 — Automate certificate management (ACME/Let’s Encrypt) and key rotation pipelines.
+- Phase 7 — Automate certificate management (ACME/Let's Encrypt) and key rotation pipelines.
 - Phase 8 — Add policy-as-code guardrails (OPA/Azure Policy) for configuration drift detection.
 
 ## 👥 Demo Identities & RBAC Cheatsheet

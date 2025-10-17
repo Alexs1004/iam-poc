@@ -12,6 +12,9 @@
           <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
             Open Keycloak Console
           </a>
+          <a class="btn-console btn-secondary" href="{{ url_for('admin_audit') }}">
+            🔍 View Audit Trail
+          </a>
         </div>
       {% endif %}
     </div>

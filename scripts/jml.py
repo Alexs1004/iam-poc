@@ -673,12 +673,33 @@ def add_realm_role(kc_url: str, token: str, realm: str, username: str, role: str
 
 
 def disable_user(kc_url: str, token: str, realm: str, username: str) -> None:
-    """Disable (leaver) a user account in the specified realm."""
+    """Disable (leaver) a user account in the specified realm and revoke all active sessions."""
     user = get_user_by_username(kc_url, token, realm, username)
     if not user:
         print(f"[leaver] User '{username}' not found", file=sys.stderr)
         sys.exit(1)
     user_id = user["id"]
+    
+    # Revoke all active sessions before disabling
+    sessions_resp = requests.get(
+        f"{kc_url}/admin/realms/{realm}/users/{user_id}/sessions",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    if sessions_resp.status_code == 200:
+        active_sessions = sessions_resp.json() or []
+        if active_sessions:
+            logout_resp = requests.post(
+                f"{kc_url}/admin/realms/{realm}/users/{user_id}/logout",
+                headers=_auth_headers(token),
+                timeout=REQUEST_TIMEOUT,
+            )
+            if logout_resp.status_code in (204, 200):
+                print(f"[leaver] Revoked {len(active_sessions)} active session(s) for '{username}'", file=sys.stderr)
+            else:
+                print(f"[leaver] Warning: Failed to revoke sessions (status {logout_resp.status_code})", file=sys.stderr)
+    
+    # Disable the account
     user["enabled"] = False
     resp = requests.put(
         f"{kc_url}/admin/realms/{realm}/users/{user_id}",

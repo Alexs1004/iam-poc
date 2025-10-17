@@ -226,3 +226,7 @@ pytest: ## Run unit tests
 	@python3 -m venv venv >/dev/null 2>&1 || true
 	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
 	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest
+
+.PHONY: verify-audit
+verify-audit: ## Verify integrity of audit log signatures
+	@$(WITH_ENV) $(PYTHON) scripts/audit.py
