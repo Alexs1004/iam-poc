@@ -1029,7 +1029,7 @@ def main() -> None:
             args.post_logout_redirect_uri,
         )
         configure_security_admin_console(args.kc_url, token, target_realm)
-        for role in ["analyst", "iam-operator", "realm-admin"]:
+        for role in ["analyst", "manager", "iam-operator", "realm-admin"]:
             create_role(args.kc_url, token, target_realm, role)
         if os.environ.get("ENFORCE_TOTP_REQUIRED_ACTION", "true").lower() == "true":
             ensure_required_action(args.kc_url, token, target_realm, "CONFIGURE_TOTP")
