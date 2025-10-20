@@ -32,7 +32,17 @@ import requests
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-KEYCLOAK_BASE_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8080")
+# Get Keycloak base URL from either KEYCLOAK_URL or extract from KEYCLOAK_SERVER_URL
+_keycloak_url = os.environ.get("KEYCLOAK_URL")
+if not _keycloak_url:
+    # Extract base URL from KEYCLOAK_SERVER_URL (e.g., http://keycloak:8080/realms/demo -> http://keycloak:8080)
+    server_url = os.environ.get("KEYCLOAK_SERVER_URL", "http://localhost:8080/realms/demo")
+    if "/realms/" in server_url:
+        _keycloak_url = server_url.split("/realms/")[0]
+    else:
+        _keycloak_url = server_url
+
+KEYCLOAK_BASE_URL = _keycloak_url
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "demo")
 KEYCLOAK_SERVICE_REALM = os.environ.get("KEYCLOAK_SERVICE_REALM", KEYCLOAK_REALM)
 KEYCLOAK_SERVICE_CLIENT_ID = os.environ.get("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
@@ -40,6 +50,9 @@ KEYCLOAK_SERVICE_CLIENT_SECRET = os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET"
 
 DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
 DEFAULT_ROLE = os.environ.get("SCIM_DEFAULT_ROLE", "analyst")
+
+# Log configuration at module import
+print(f"[provisioning_service] KEYCLOAK_BASE_URL={KEYCLOAK_BASE_URL}, REALM={KEYCLOAK_REALM}")
 
 # SCIM schemas
 SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
