@@ -7,16 +7,16 @@
       <p class="intro">
         Orchestrate account lifecycle automation directly against Keycloak. Use the forms to provision, update, or disable demo users; the table reflects the latest state pulled from the realm.
       </p>
-      {% if keycloak_console_url %}
-        <div class="hero-actions">
-          <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
-            Open Keycloak Console
-          </a>
-          <a class="btn-console btn-secondary" href="{{ url_for('admin_audit') }}">
-            🔍 View Audit Trail
-          </a>
-        </div>
-      {% endif %}
+      <div class="hero-actions">
+        {% if keycloak_console_url %}
+        <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
+          Open Keycloak Console
+        </a>
+        {% endif %}
+        <a class="btn-console btn-secondary" href="{{ url_for('admin_audit') }}">
+          🔍 View Audit Trail
+        </a>
+      </div>
     </div>
     <div class="admin-hero-meta">
       <span class="hero-label">Users tracked</span>
@@ -60,6 +60,7 @@
 
   <div class="admin-stack">
     <div class="admin-view-toggle" role="tablist" aria-label="Admin views">
+      {% if can_perform_jml %}
       <button
         type="button"
         class="toggle-pill is-active"
@@ -84,6 +85,20 @@
       >
         Realm user snapshot
       </button>
+      {% else %}
+      <button
+        type="button"
+        class="toggle-pill is-active"
+        role="tab"
+        aria-selected="true"
+        aria-controls="admin-snapshot"
+        data-admin-target="snapshot"
+        id="admin-snapshot-tab"
+        tabindex="0"
+      >
+        Realm user snapshot
+      </button>
+      {% endif %}
     </div>
 
     <div
@@ -92,15 +107,11 @@
       data-admin-section="forms"
       role="tabpanel"
       aria-labelledby="admin-forms-tab"
+      {% if not can_perform_jml %}hidden{% endif %}
     >
       <div class="card-heading">
         <h2>Automation forms</h2>
         <p class="card-subtitle">Trigger lifecycle events from a single console.</p>
-        {% if not can_perform_jml %}
-          <p class="alert alert-info" style="margin-top: 1rem; padding: 0.75rem; background: #e3f2fd; border-left: 4px solid #2196f3; color: #1565c0;">
-            ℹ️ <strong>Read-only access</strong> — You can view the dashboard, but only <strong>iam-operator</strong> and <strong>realm-admin</strong> roles can perform JML operations.
-          </p>
-        {% endif %}
       </div>
       <div class="card-body">
         <section class="form-section">
@@ -114,23 +125,23 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-field">
               <label for="joiner-first">First name</label>
-              <input id="joiner-first" name="first_name" type="text" required placeholder="Alice" {{ 'disabled' if not can_perform_jml else '' }}>
+              <input id="joiner-first" name="first_name" type="text" required placeholder="Alice">
             </div>
             <div class="form-field">
               <label for="joiner-last">Last name</label>
-              <input id="joiner-last" name="last_name" type="text" required placeholder="Demo" {{ 'disabled' if not can_perform_jml else '' }}>
+              <input id="joiner-last" name="last_name" type="text" required placeholder="Demo">
             </div>
             <div class="form-field">
               <label for="joiner-email">Email</label>
-              <input id="joiner-email" name="email" type="email" required placeholder="alice@example.com" {{ 'disabled' if not can_perform_jml else '' }}>
+              <input id="joiner-email" name="email" type="email" required placeholder="alice@example.com">
             </div>
             <div class="form-field">
               <label for="joiner-username">Username</label>
-              <input id="joiner-username" name="username" type="text" required placeholder="alice" {{ 'disabled' if not can_perform_jml else '' }}>
+              <input id="joiner-username" name="username" type="text" required placeholder="alice">
             </div>
             <div class="form-field">
               <label for="joiner-role">Role</label>
-              <select id="joiner-role" name="role" required {{ 'disabled' if not can_perform_jml else '' }}>
+              <select id="joiner-role" name="role" required>
                 {% for role in assignable_roles %}
                   <option value="{{ role }}">{{ role }}</option>
                 {% endfor %}
@@ -138,18 +149,18 @@
             </div>
             <div class="form-field">
               <label for="joiner-temp">Temporary password <span class="muted">(optional)</span></label>
-              <input id="joiner-temp" name="temp_password" type="text" placeholder="Auto-generate if blank" {{ 'disabled' if not can_perform_jml else '' }}>
+              <input id="joiner-temp" name="temp_password" type="text" placeholder="Auto-generate if blank">
             </div>
             <div class="form-field checkbox-field">
-              <input id="joiner-totp" name="require_totp" type="checkbox" checked {{ 'disabled' if not can_perform_jml else '' }}>
+              <input id="joiner-totp" name="require_totp" type="checkbox" checked>
               <label for="joiner-totp">Require TOTP enrollment at first login</label>
             </div>
             <div class="form-field checkbox-field">
-              <input id="joiner-password-update" name="require_password_update" type="checkbox" checked {{ 'disabled' if not can_perform_jml else '' }}>
+              <input id="joiner-password-update" name="require_password_update" type="checkbox" checked>
               <label for="joiner-password-update">Require password update on first sign-in</label>
             </div>
             <div class="form-actions">
-              <button type="submit" class="btn btn-primary" {{ 'disabled' if not can_perform_jml else '' }}>Provision user</button>
+              <button type="submit" class="btn btn-primary">Provision user</button>
             </div>
           </form>
         </section>
@@ -167,7 +178,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label for="mover-username">User</label>
-                <select id="mover-username" name="username" required data-mover-user {{ 'disabled' if not can_perform_jml else '' }}>
+                <select id="mover-username" name="username" required data-mover-user>
                   {% for user in active_users_for_mover %}
                     <option
                       value="{{ user.username }}"
@@ -180,7 +191,7 @@
               </div>
               <div class="form-field">
                 <label data-role-label for="mover-source-select">Current role</label>
-                <select id="mover-source-select" class="role-select" name="source_role" required data-role-select hidden {{ 'disabled' if not can_perform_jml else '' }}></select>
+                <select id="mover-source-select" class="role-select" name="source_role" required data-role-select hidden></select>
                 <input
                   id="mover-source-display"
                   type="text"
@@ -188,20 +199,19 @@
                   readonly
                   data-role-display
                   hidden
-                  {{ 'disabled' if not can_perform_jml else '' }}
                 >
                 <input type="hidden" data-role-hidden>
               </div>
               <div class="form-field">
                 <label for="mover-target">New role</label>
-                <select id="mover-target" name="target_role" required data-role-target {{ 'disabled' if not can_perform_jml else '' }}>
+                <select id="mover-target" name="target_role" required data-role-target>
                   {% for role in assignable_roles %}
                     <option value="{{ role }}">{{ role }}</option>
                   {% endfor %}
                 </select>
               </div>
               <div class="form-actions">
-                <button type="submit" class="btn btn-secondary" data-mover-submit {{ 'disabled' if not can_perform_jml else '' }}>Update role</button>
+                <button type="submit" class="btn btn-secondary" data-mover-submit>Update role</button>
               </div>
             </form>
           {% else %}
@@ -222,14 +232,14 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label for="leaver-username">User</label>
-                <select id="leaver-username" name="username" required {{ 'disabled' if not can_perform_jml else '' }}>
+                <select id="leaver-username" name="username" required>
                   {% for user in active_users %}
                     <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
                   {% endfor %}
                 </select>
               </div>
               <div class="form-actions">
-                <button type="submit" class="btn btn-danger" {{ 'disabled' if not can_perform_jml else '' }}>Disable user</button>
+                <button type="submit" class="btn btn-danger">Disable user</button>
               </div>
             </form>
           {% else %}
@@ -246,7 +256,7 @@
       data-admin-section="snapshot"
       role="tabpanel"
       aria-labelledby="admin-snapshot-tab"
-      hidden
+      {% if can_perform_jml %}hidden{% endif %}
     >
       <div class="card-heading">
         <h2>Realm user snapshot ({{ user_statuses|length }})</h2>

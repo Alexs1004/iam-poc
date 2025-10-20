@@ -372,22 +372,26 @@ For detailed technical documentation, see:
 
 | Identity | Realm | Roles | `/admin` Access | JML Operations | Keycloak Console | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `alice` | demo | `analyst` → `iam-operator` (after mover) | ✅ View | ✅ (after promotion) | ❌ | Illustrates joiner → mover path |
-| `bob` | demo | `analyst` (disabled as leaver) | ✅ View | ❌ | ❌ | Used to demonstrate leaver |
-| `carol` | demo | `manager` → `iam-operator` (after mover) | ✅ View | ✅ (after promotion) | ❌ | Manager persona with read-only access initially |
-| `joe` | demo | `iam-operator`, `realm-admin`, client `realm-management/realm-admin` | ✅ Full | ✅ | ✅ `https://localhost/admin/demo/console/` | Operator persona: can perform JML and configure the demo realm |
-| `admin` | master | built-in admin | ✅ Full | ✅ | ✅ `https://localhost/admin/master/console/` | Full cross-realm control |
+| `alice` | demo | `analyst` → `iam-operator` (after mover) | ✅ View (snapshot + audit) | ✅ (after promotion) | ❌ | Illustrates joiner → mover path |
+| `bob` | demo | `analyst` (disabled as leaver) | ✅ View (snapshot + audit) | ❌ | ❌ | Used to demonstrate leaver |
+| `carol` | demo | `manager` → `iam-operator` (after mover) | ✅ View (snapshot + audit, **no JML forms**) | ✅ (after promotion) | ❌ | Manager persona with oversight-only access initially |
+| `joe` | demo | `iam-operator`, `realm-admin`, client `realm-management/realm-admin` | ✅ Full (snapshot + audit + JML forms) | ✅ | ✅ `https://localhost/admin/demo/console/` | Operator persona: can perform JML and configure the demo realm |
+| `admin` | master | built-in admin | ✅ Full (snapshot + audit + JML forms) | ✅ | ✅ `https://localhost/admin/master/console/` | Full cross-realm control |
 
 ### Role-Based Access Control (RBAC) Model
 
 ```
-analyst      → /me only (view own profile)
-manager      → /admin (view dashboard & audit, READ-ONLY, no JML operations)
-iam-operator → /admin (FULL access: view + JML operations)
+analyst      → /admin (view user snapshot + audit, NO JML forms)
+manager      → /admin (view user snapshot + audit, NO JML forms, oversight role)
+iam-operator → /admin (FULL access: snapshot + audit + JML automation forms)
 realm-admin  → /admin + Keycloak Console (FULL access + realm configuration)
 ```
 
-**Governance Principle**: Visibility is separated from modification rights. Managers can see the IAM dashboard and audit trail for oversight, but only IAM operators can perform lifecycle changes (Joiner/Mover/Leaver). This demonstrates the **principle of least privilege** in action.
+**Governance Principle**: Visibility is separated from modification rights. Analysts and managers can see the user snapshot and audit trail for oversight, but only IAM operators can perform lifecycle changes (Joiner/Mover/Leaver). Managers see the **current state** (snapshot) and **historical actions** (audit) without being distracted by operational forms. This demonstrates the **principle of least privilege** in action.
+
+**UI Behavior**:
+- **Analyst/Manager**: `/admin` shows only "Realm user snapshot" tab — clean oversight interface
+- **Operator/Admin**: `/admin` shows both "Automation forms" and "Realm user snapshot" tabs — full operational capability
 
 Joe is the operator persona in the demo. He can reach `/admin` (JML) and the Keycloak console for the *demo* realm, but he has no visibility into other realms. The master `admin` user remains available for cross-realm tasks.
 

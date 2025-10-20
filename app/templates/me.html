@@ -38,7 +38,7 @@
       {% if roles %}
         <div class="role-list">
           {% for role in roles %}
-            <span class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% endif %}">{{ role }}</span>
+            <span class="role-chip{% if role == realm_admin_role %} realm-admin{% elif role == iam_operator_role %} iam-operator{% elif role == 'manager' %} manager{% endif %}">{{ role }}</span>
           {% endfor %}
         </div>
       {% else %}

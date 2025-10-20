@@ -982,7 +982,7 @@ def me():
     if not _is_authenticated():
         return redirect(url_for("login"))
     _, _, userinfo, roles = _current_user_context()
-    visible_roles = {"analyst"}
+    visible_roles = {"analyst", "manager"}
     for candidate in (REALM_ADMIN_ROLE, REALM_ADMIN_CLIENT_ROLE, IAM_OPERATOR_ROLE):
         if candidate:
             visible_roles.add(candidate)
