@@ -97,7 +97,7 @@ printf "%b\n" "${YELLOW}=== Provision de l'utilisateur bob (joiner) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username bob --email bob@example.com --first Bob --last Demo --role analyst --temp-password "${BOB_TEMP}"
 
 printf "%b\n" "${YELLOW}=== Provision de l'utilisatrice carol (joiner) ===${RESET}"
-${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username carol --email carol@example.com --first Carol --last Manager --role manager --temp-password "${CAROL_TEMP}"
+${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username carol --email carol@example.com --first Carol --last Demo --role manager --temp-password "${CAROL_TEMP}" --no-totp
 
 printf "%b\n" "${YELLOW}=== Provision de l'utilisateur joe (joiner) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username joe --email joe@example.com --first Joe --last Demo --role iam-operator --temp-password "${JOE_TEMP}" --no-password-update --no-totp
@@ -108,9 +108,6 @@ ${JML_CMD} "${COMMON_FLAGS[@]}" client-role --realm "${REALM}" --username joe --
 
 printf "%b\n" "${PURPLE}=== Promotion d'alice vers le rôle iam-operator (mover) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" mover --realm "${REALM}" --username alice --from-role analyst --to-role iam-operator
-
-printf "%b\n" "${PURPLE}=== Promotion de carol vers le rôle iam-operator (mover) ===${RESET}"
-${JML_CMD} "${COMMON_FLAGS[@]}" mover --realm "${REALM}" --username carol --from-role manager --to-role iam-operator
 
 printf "%b\n" "${RED}=== Désactivation de bob (leaver) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" leaver --realm "${REALM}" --username bob

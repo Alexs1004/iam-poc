@@ -370,12 +370,24 @@ For detailed technical documentation, see:
 
 ## 👥 Demo Identities & RBAC Cheatsheet
 
-| Identity | Realm | Roles | Keycloak Console | Notes |
-| --- | --- | --- | --- | --- |
-| `alice` | demo | `analyst` → `iam-operator` (after mover) | No | Illustrates joiner → mover path |
-| `bob` | demo | `analyst` (disabled as leaver) | No | Used to demonstrate leaver |
-| `joe` | demo | `iam-operator`, `realm-admin`, client `realm-management/realm-admin` | `https://localhost/admin/demo/console/` | Operator persona: can use the JML UI and configure the demo realm only |
-| `admin` | master | built-in admin | `https://localhost/admin/master/console/` | Full cross-realm control |
+| Identity | Realm | Roles | `/admin` Access | JML Operations | Keycloak Console | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `alice` | demo | `analyst` → `iam-operator` (after mover) | ✅ View | ✅ (after promotion) | ❌ | Illustrates joiner → mover path |
+| `bob` | demo | `analyst` (disabled as leaver) | ✅ View | ❌ | ❌ | Used to demonstrate leaver |
+| `carol` | demo | `manager` → `iam-operator` (after mover) | ✅ View | ✅ (after promotion) | ❌ | Manager persona with read-only access initially |
+| `joe` | demo | `iam-operator`, `realm-admin`, client `realm-management/realm-admin` | ✅ Full | ✅ | ✅ `https://localhost/admin/demo/console/` | Operator persona: can perform JML and configure the demo realm |
+| `admin` | master | built-in admin | ✅ Full | ✅ | ✅ `https://localhost/admin/master/console/` | Full cross-realm control |
+
+### Role-Based Access Control (RBAC) Model
+
+```
+analyst      → /me only (view own profile)
+manager      → /admin (view dashboard & audit, READ-ONLY, no JML operations)
+iam-operator → /admin (FULL access: view + JML operations)
+realm-admin  → /admin + Keycloak Console (FULL access + realm configuration)
+```
+
+**Governance Principle**: Visibility is separated from modification rights. Managers can see the IAM dashboard and audit trail for oversight, but only IAM operators can perform lifecycle changes (Joiner/Mover/Leaver). This demonstrates the **principle of least privilege** in action.
 
 Joe is the operator persona in the demo. He can reach `/admin` (JML) and the Keycloak console for the *demo* realm, but he has no visibility into other realms. The master `admin` user remains available for cross-realm tasks.
 

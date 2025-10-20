@@ -888,6 +888,22 @@ def require_role(required_role):
     return require_any_role(required_role)
 
 
+def require_admin_view(*args, **kwargs):
+    """
+    Allow access to admin dashboard for viewing.
+    Permits: analyst, manager, iam-operator, realm-admin
+    """
+    return require_any_role("analyst", "manager", REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)(*args, **kwargs)
+
+
+def require_jml_operator(fn):
+    """
+    Restrict JML operations (joiner/mover/leaver) to operators only.
+    Permits: iam-operator, realm-admin
+    """
+    return require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)(fn)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CSRF & Proxy Guards
 # ─────────────────────────────────────────────────────────────────────────────
@@ -999,7 +1015,7 @@ def me():
 
 
 @app.route("/admin/audit")
-@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
+@require_admin_view
 def admin_audit():
     """Display audit trail of JML operations."""
     import json
@@ -1036,7 +1052,7 @@ def admin_audit():
 
 
 @app.route("/admin")
-@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
+@require_admin_view
 def admin():
     try:
         user_statuses, assignable_roles = _load_admin_context()
@@ -1045,6 +1061,11 @@ def admin():
         user_statuses = _demo_status_stub()
         assignable_roles = ASSIGNABLE_ROLES
     existing_users = [user for user in user_statuses if user["exists"]]
+    
+    # Check if user can perform JML operations (not just view)
+    _, _, _, roles = _current_user_context()
+    can_perform_jml = any(role in roles for role in [REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE])
+    
     return _render_page(
         "admin.html",
         title="Admin",
@@ -1052,11 +1073,12 @@ def admin():
         user_statuses=user_statuses,
         assignable_roles=assignable_roles,
         existing_users=existing_users,
+        can_perform_jml=can_perform_jml,
     )
 
 
 @app.post("/admin/joiner")
-@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
+@require_jml_operator
 def admin_joiner():
     """Create user via unified provisioning service (with optional DOGFOOD_SCIM mode)."""
     from app import admin_ui_helpers
@@ -1132,7 +1154,7 @@ def admin_joiner():
 
 
 @app.post("/admin/mover")
-@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
+@require_jml_operator
 def admin_mover():
     """Change user role via unified provisioning service (with optional DOGFOOD_SCIM mode)."""
     from app import admin_ui_helpers
@@ -1213,7 +1235,7 @@ def admin_mover():
 
 
 @app.post("/admin/leaver")
-@require_any_role(REALM_ADMIN_ROLE, IAM_OPERATOR_ROLE)
+@require_jml_operator
 def admin_leaver():
     """Disable user via unified provisioning service (with optional DOGFOOD_SCIM mode)."""
     from app import admin_ui_helpers
