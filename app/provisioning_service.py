@@ -319,14 +319,17 @@ def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -
     
     # Log to audit trail
     audit.log_jml_event(
-        operation="scim_create_user",
-        username=username,
+        "scim_create_user",
+        username,
+        operator="scim-api",
+        realm=KEYCLOAK_REALM,
         details={
             "user_id": user_id,
             "email": email,
             "role": role,
             "correlation_id": correlation_id
-        }
+        },
+        success=True
     )
     
     # Retrieve created user
@@ -472,12 +475,15 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
             
             # Log to audit trail
             audit.log_jml_event(
-                operation="scim_disable_user",
-                username=username,
+                "scim_disable_user",
+                username,
+                operator="scim-api",
+                realm=KEYCLOAK_REALM,
                 details={
                     "user_id": user_id,
                     "correlation_id": correlation_id
-                }
+                },
+                success=True
             )
         except Exception as exc:
             # Idempotent: if already disabled, don't error
@@ -529,12 +535,15 @@ def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None
     
     # Log to audit trail
     audit.log_jml_event(
-        operation="scim_delete_user",
-        username=username,
+        "scim_delete_user",
+        username,
+        operator="scim-api",
+        realm=KEYCLOAK_REALM,
         details={
             "user_id": user_id,
             "correlation_id": correlation_id
-        }
+        },
+        success=True
     )
 
 
@@ -591,11 +600,14 @@ def change_user_role(username: str, source_role: str, target_role: str, correlat
     
     # Log to audit trail
     audit.log_jml_event(
-        operation="scim_change_role",
-        username=username,
+        "scim_change_role",
+        username,
+        operator="scim-api",
+        realm=KEYCLOAK_REALM,
         details={
             "source_role": source_role,
             "target_role": target_role,
             "correlation_id": correlation_id
-        }
+        },
+        success=True
     )

@@ -13,7 +13,12 @@ AUDIT_LOG_DIR = Path(os.environ.get("AUDIT_LOG_DIR", ".runtime/audit"))
 AUDIT_LOG_FILE = AUDIT_LOG_DIR / "jml-events.jsonl"
 AUDIT_SIGNING_KEY = os.environ.get("AUDIT_LOG_SIGNING_KEY", "").encode("utf-8")
 
-EventType = Literal["joiner", "mover", "leaver", "role_grant", "role_revoke", "session_revoke"]
+EventType = Literal[
+    "joiner", "mover", "leaver", 
+    "role_grant", "role_revoke", "session_revoke",
+    # SCIM API operations
+    "scim_create_user", "scim_change_role", "scim_disable_user", "scim_delete_user"
+]
 
 
 def _ensure_audit_dir() -> None:
