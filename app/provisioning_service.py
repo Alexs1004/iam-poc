@@ -471,8 +471,20 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
     Raises:
         ScimError: On validation failure or user not found (404)
     """
-    # Validate payload
-    validate_scim_user_payload(payload)
+    # Check required schema
+    if "schemas" not in payload or SCIM_USER_SCHEMA not in payload["schemas"]:
+        raise ScimError(400, f"schemas must include {SCIM_USER_SCHEMA}", "invalidSyntax")
+    
+    # Validate userName (always required)
+    validate_username(payload.get("userName", ""))
+    
+    # For deactivation (active=false), we don't require full payload validation
+    # Only validate full payload if we're doing more than just disabling
+    is_deactivation_only = payload.get("active") is False and len(payload.keys()) <= 4  # schemas, userName, active, id
+    
+    if not is_deactivation_only:
+        # Full validation for complete updates
+        validate_scim_user_payload(payload)
     
     # Check if user exists
     try:
