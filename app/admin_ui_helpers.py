@@ -103,7 +103,17 @@ def ui_disable_user(username: str) -> None:
     else:
         # Call service layer directly - need to get user ID first
         from scripts import jml
-        user = jml.get_user_by_username(username)
+        
+        # Get service token
+        token = provisioning_service.get_service_token()
+        
+        # Get user by username
+        user = jml.get_user_by_username(
+            provisioning_service.KEYCLOAK_BASE_URL,
+            token,
+            provisioning_service.KEYCLOAK_REALM,
+            username
+        )
         if not user:
             raise ScimError(404, f"User '{username}' not found")
         
@@ -187,8 +197,16 @@ def _dogfood_disable_user(username: str) -> None:
     """Disable user via SCIM API HTTP call (DOGFOOD mode)."""
     from scripts import jml
     
+    # Get service token
+    token = provisioning_service.get_service_token()
+    
     # Get user ID first
-    user = jml.get_user_by_username(username)
+    user = jml.get_user_by_username(
+        provisioning_service.KEYCLOAK_BASE_URL,
+        token,
+        provisioning_service.KEYCLOAK_REALM,
+        username
+    )
     if not user:
         raise ScimError(404, f"User '{username}' not found")
     
