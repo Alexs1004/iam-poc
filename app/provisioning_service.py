@@ -385,12 +385,13 @@ def get_user_scim(user_id: str) -> dict:
     """
     try:
         token = get_service_token()
-        admin = jml.KeycloakAdmin(
-            server_url=KEYCLOAK_BASE_URL,
-            realm_name=KEYCLOAK_REALM,
-            token={"access_token": token}
+        resp = requests.get(
+            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
         )
-        kc_user = admin.get_user(user_id)
+        resp.raise_for_status()
+        kc_user = resp.json()
     except Exception as exc:
         raise ScimError(404, f"User with id '{user_id}' not found")
     
@@ -424,17 +425,21 @@ def list_users_scim(query: Optional[dict] = None) -> dict:
     # Get users from Keycloak
     try:
         token = get_service_token()
-        admin = jml.KeycloakAdmin(
-            server_url=KEYCLOAK_BASE_URL,
-            realm_name=KEYCLOAK_REALM,
-            token={"access_token": token}
-        )
         
-        # Apply username filter if provided
+        # Build query parameters
+        params = {}
         if username_filter:
-            kc_users = admin.get_users({"username": username_filter})
-        else:
-            kc_users = admin.get_users({})
+            params["username"] = username_filter
+        
+        # Get users via REST API
+        resp = requests.get(
+            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users",
+            headers={"Authorization": f"Bearer {token}"},
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        kc_users = resp.json()
     except Exception as exc:
         raise ScimError(500, f"Failed to list users: {exc}")
     
@@ -487,15 +492,14 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
         validate_scim_user_payload(payload)
     
     # Check if user exists
-    try:
-        token = get_service_token()
-        admin = jml.KeycloakAdmin(
-            server_url=KEYCLOAK_BASE_URL,
-            realm_name=KEYCLOAK_REALM,
-            token={"access_token": token}
-        )
-        kc_user = admin.get_user(user_id)
-    except Exception:
+    token = get_service_token()
+    kc_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, payload.get("userName", ""))
+    
+    if not kc_user:
+        raise ScimError(404, f"User with id '{user_id}' not found")
+    
+    # Verify the user_id matches (security check)
+    if kc_user.get("id") != user_id:
         raise ScimError(404, f"User with id '{user_id}' not found")
     
     username = kc_user.get("username")
@@ -503,10 +507,7 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
     # Handle deactivation (Leaver)
     if not payload.get("active", True):
         try:
-            # Revoke sessions before disabling (security requirement)
-            _revoke_user_sessions(user_id, admin)
-            
-            # Disable user
+            # Disable user (jml.disable_user already revokes sessions)
             jml.disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
             
             # Log to audit trail
@@ -530,8 +531,10 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
     # Note: SCIM doesn't have standard "roles" field, so we'd need custom extension
     # For now, we'll just update basic attributes
     
-    # Refresh user state
-    kc_user = admin.get_user(user_id)
+    # Refresh user state (re-query to get updated enabled status)
+    kc_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    if not kc_user:
+        raise ScimError(500, "User state could not be refreshed")
     
     return keycloak_to_scim(kc_user, base_url=os.environ.get("APP_BASE_URL", "https://localhost"))
 
@@ -546,22 +549,23 @@ def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None
     Raises:
         ScimError: 404 if user not found
     """
+    token = get_service_token()
+    
+    # Find user by ID - we need to get all users and filter by ID
+    # since jml.get_user_by_username requires username
     try:
-        token = get_service_token()
-        admin = jml.KeycloakAdmin(
-            server_url=KEYCLOAK_BASE_URL,
-            realm_name=KEYCLOAK_REALM,
-            token={"access_token": token}
+        resp = requests.get(
+            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
         )
-        kc_user = admin.get_user(user_id)
+        resp.raise_for_status()
+        kc_user = resp.json()
         username = kc_user.get("username")
     except Exception:
         raise ScimError(404, f"User with id '{user_id}' not found")
     
-    # Revoke sessions before disabling
-    _revoke_user_sessions(user_id, admin)
-    
-    # Disable user (idempotent)
+    # Disable user (idempotent, jml.disable_user already revokes sessions)
     try:
         jml.disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
     except Exception as exc:
@@ -581,27 +585,6 @@ def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None
         },
         success=True
     )
-
-
-def _revoke_user_sessions(user_id: str, admin) -> None:
-    """Revoke all active sessions for a user (internal helper).
-    
-    Args:
-        user_id: Keycloak user ID
-        admin: KeycloakAdmin instance with valid token
-    """
-    try:
-        # Get all active sessions
-        sessions = admin.get_user_sessions(user_id=user_id)
-        
-        # Delete each session
-        for session in sessions:
-            session_id = session.get("id")
-            if session_id:
-                admin.delete_session(session_id=session_id)
-    except Exception:
-        # Log but don't fail - session revocation is best-effort
-        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
