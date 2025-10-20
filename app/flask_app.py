@@ -514,7 +514,13 @@ def callback():
         session["userinfo"] = {}
     
     # Smart redirect based on user role (for demo UX)
-    roles = _collect_roles(session.get("id_claims"), session.get("userinfo"))
+    # Decode access token to get all roles (realm + client roles)
+    id_claims = session.get("id_claims") or {}
+    userinfo = session.get("userinfo") or {}
+    access_claims = _decode_access_token(token.get("access_token"))
+    
+    # Collect roles from all sources (like _current_user_context does)
+    roles = _collect_roles(id_claims, userinfo, access_claims)
     admin_roles = {"admin", "realm-admin", "iam-operator"}
     
     # Debug: log collected roles
