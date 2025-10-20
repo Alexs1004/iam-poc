@@ -11,7 +11,10 @@ from typing import Any, Literal
 
 AUDIT_LOG_DIR = Path(os.environ.get("AUDIT_LOG_DIR", ".runtime/audit"))
 AUDIT_LOG_FILE = AUDIT_LOG_DIR / "jml-events.jsonl"
-AUDIT_SIGNING_KEY = os.environ.get("AUDIT_LOG_SIGNING_KEY", "").encode("utf-8")
+
+def _get_signing_key() -> bytes:
+    """Get the audit signing key from environment (loaded lazily to support Key Vault)."""
+    return os.environ.get("AUDIT_LOG_SIGNING_KEY", "").encode("utf-8")
 
 EventType = Literal[
     "joiner", "mover", "leaver", 
@@ -29,11 +32,12 @@ def _ensure_audit_dir() -> None:
 
 def _sign_event(event: dict[str, Any]) -> str:
     """Generate HMAC-SHA256 signature for audit event."""
-    if not AUDIT_SIGNING_KEY:
+    signing_key = _get_signing_key()
+    if not signing_key:
         return ""
     # Canonical JSON representation for signing
     canonical = json.dumps(event, sort_keys=True, separators=(",", ":"))
-    return hmac.new(AUDIT_SIGNING_KEY, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(signing_key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def log_jml_event(

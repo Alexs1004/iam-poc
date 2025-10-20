@@ -30,7 +30,7 @@ from flask import (
 from flask_session import Session
 from werkzeug.middleware.proxy_fix import ProxyFix
 from scripts import jml
-from scripts import audit
+# audit is imported lazily after Key Vault secrets are loaded
 from app import scim_api
 
 try:
@@ -119,6 +119,9 @@ def _load_secrets_from_azure() -> None:
 
 
 _load_secrets_from_azure()
+
+# Import audit module AFTER Key Vault secrets are loaded so it can access AUDIT_LOG_SIGNING_KEY
+from scripts import audit  # noqa: E402 - module level import not at top of file
 
 DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
 

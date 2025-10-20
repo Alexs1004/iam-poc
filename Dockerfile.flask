@@ -32,4 +32,4 @@ COPY . /srv/app
 
 EXPOSE 8000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "app.flask_app:app"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "--bind", "0.0.0.0:8000", "app.flask_app:app"]

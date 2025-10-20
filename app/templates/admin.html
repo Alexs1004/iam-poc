@@ -156,13 +156,14 @@
               <p class="form-section-subtitle">Adjust entitlements when responsibilities evolve.</p>
             </div>
           </header>
-          {% if existing_users %}
+          {% set active_users_for_mover = existing_users | selectattr('enabled', 'equalto', True) | list %}
+          {% if active_users_for_mover %}
             <form method="post" action="{{ url_for('admin_mover') }}" class="form-grid" data-mover-form>
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label for="mover-username">User</label>
                 <select id="mover-username" name="username" required data-mover-user>
-                  {% for user in existing_users %}
+                  {% for user in active_users_for_mover %}
                     <option
                       value="{{ user.username }}"
                       data-roles='{{ (user.roles or []) | tojson | safe }}'
@@ -198,7 +199,7 @@
               </div>
             </form>
           {% else %}
-            <p class="muted">No managed users are available yet. Provision a user before updating roles.</p>
+            <p class="muted">No active users available to change roles. All existing users are disabled.</p>
           {% endif %}
         </section>
 
@@ -209,13 +210,14 @@
               <p class="form-section-subtitle">Securely retire access when the journey ends.</p>
             </div>
           </header>
-          {% if existing_users %}
+          {% set active_users = existing_users | selectattr('enabled', 'equalto', True) | list %}
+          {% if active_users %}
             <form method="post" action="{{ url_for('admin_leaver') }}" class="form-grid">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label for="leaver-username">User</label>
                 <select id="leaver-username" name="username" required>
-                  {% for user in existing_users %}
+                  {% for user in active_users %}
                     <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
                   {% endfor %}
                 </select>
@@ -225,7 +227,7 @@
               </div>
             </form>
           {% else %}
-            <p class="muted">Provision an account before simulating a leaver.</p>
+            <p class="muted">No active users available to disable. All existing users are already disabled.</p>
           {% endif %}
         </section>
 
