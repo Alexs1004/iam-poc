@@ -17,7 +17,7 @@ services:
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
       KC_HOSTNAME_URL: https://localhost
-      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT: "false"
       KC_PROXY: edge
     ports:
       - "127.0.0.1:8080:8080"
