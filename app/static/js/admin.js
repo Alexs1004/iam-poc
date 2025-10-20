@@ -63,7 +63,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const roleDisplay = moverForm.querySelector("[data-role-display]");
     const roleHidden = moverForm.querySelector("[data-role-hidden]");
     const roleLabel = moverForm.querySelector("[data-role-label]");
+    const targetRoleSelect = moverForm.querySelector("[data-role-target]");
     const submitButton = moverForm.querySelector("[data-mover-submit]");
+
+    const updateTargetRoleOptions = (currentRole) => {
+      if (!targetRoleSelect) return;
+      
+      const allOptions = Array.from(targetRoleSelect.querySelectorAll("option"));
+      const currentValue = targetRoleSelect.value;
+      
+      allOptions.forEach((option) => {
+        option.disabled = option.value === currentRole;
+        option.hidden = option.value === currentRole;
+      });
+      
+      if (currentValue === currentRole) {
+        const firstAvailable = allOptions.find(opt => opt.value !== currentRole);
+        if (firstAvailable) {
+          targetRoleSelect.value = firstAvailable.value;
+        }
+      }
+    };
 
     const setRoleControls = (roles) => {
       const uniqueRoles = Array.from(new Set((roles || []).map((role) => (role || "").toString()))).filter(Boolean);
@@ -94,6 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
           submitButton.disabled = false;
         }
 
+        updateTargetRoleOptions(uniqueRoles[0]);
 
         if (roleLabel) {
           roleLabel.setAttribute("for", roleSelect.id);
@@ -121,6 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
           submitButton.disabled = !hasRole;
         }
 
+        updateTargetRoleOptions(roleName);
 
         if (roleLabel) {
           if (hasRole) {
@@ -151,6 +173,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (userSelect && roleSelect && roleDisplay && roleHidden) {
       updateRolesForUser();
       userSelect.addEventListener("change", updateRolesForUser);
+      
+      // Update target role options when current role changes (for multi-role users)
+      roleSelect.addEventListener("change", () => {
+        updateTargetRoleOptions(roleSelect.value);
+      });
     }
   }
 });

@@ -17,7 +17,7 @@ PYTHON_BIN=${PYTHON:-python3}
 JML_CMD="${PYTHON_BIN} ${SCRIPT_DIR}/jml.py"
 
 # Sensitive data supplied via environment (ensure .env is excluded from VCS)
-if [[ -z "${ALICE_TEMP_PASSWORD:-}" || -z "${BOB_TEMP_PASSWORD:-}" || -z "${JOE_TEMP_PASSWORD:-}" ]]; then
+if [[ -z "${ALICE_TEMP_PASSWORD:-}" || -z "${BOB_TEMP_PASSWORD:-}" || -z "${CAROL_TEMP_PASSWORD:-}" || -z "${JOE_TEMP_PASSWORD:-}" ]]; then
   if [[ "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
     if ! command -v az >/dev/null 2>&1; then
       echo "[demo] Azure CLI is required to fetch secrets from Key Vault when environment variables are unset." >&2
@@ -41,6 +41,9 @@ if [[ -z "${ALICE_TEMP_PASSWORD:-}" || -z "${BOB_TEMP_PASSWORD:-}" || -z "${JOE_
     if [[ -z "${BOB_TEMP_PASSWORD:-}" ]]; then
       BOB_TEMP_PASSWORD="$(fetch_secret "${AZURE_SECRET_BOB_TEMP_PASSWORD}")"
     fi
+    if [[ -z "${CAROL_TEMP_PASSWORD:-}" ]]; then
+      CAROL_TEMP_PASSWORD="$(fetch_secret "${AZURE_SECRET_CAROL_TEMP_PASSWORD}")"
+    fi
     if [[ -z "${JOE_TEMP_PASSWORD:-}" ]]; then
       JOE_TEMP_PASSWORD="$(fetch_secret "${AZURE_SECRET_JOE_TEMP_PASSWORD}")"
     fi
@@ -53,6 +56,10 @@ if [[ -z "${ALICE_TEMP_PASSWORD:-}" ]]; then
 fi
 if [[ -z "${BOB_TEMP_PASSWORD:-}" ]]; then
   echo "[demo] BOB_TEMP_PASSWORD is required; set it in the environment or store it in Key Vault." >&2
+  exit 1
+fi
+if [[ -z "${CAROL_TEMP_PASSWORD:-}" ]]; then
+  echo "[demo] CAROL_TEMP_PASSWORD is required; set it in the environment or store it in Key Vault." >&2
   exit 1
 fi
 if [[ -z "${JOE_TEMP_PASSWORD:-}" ]]; then
@@ -70,6 +77,7 @@ REDIRECT_URI=${OIDC_REDIRECT_URI:?Variable OIDC_REDIRECT_URI required}
 POST_LOGOUT_REDIRECT_URI=${POST_LOGOUT_REDIRECT_URI:?Variable POST_LOGOUT_REDIRECT_URI required}
 ALICE_TEMP=${ALICE_TEMP_PASSWORD:?Variable ALICE_TEMP_PASSWORD required}
 BOB_TEMP=${BOB_TEMP_PASSWORD:?Variable BOB_TEMP_PASSWORD required}
+CAROL_TEMP=${CAROL_TEMP_PASSWORD:?Variable CAROL_TEMP_PASSWORD required}
 JOE_TEMP=${JOE_TEMP_PASSWORD:?Variable JOE_TEMP_PASSWORD required}
 
 COMMON_FLAGS=(
@@ -88,6 +96,9 @@ ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username alice --ema
 printf "%b\n" "${YELLOW}=== Provision de l'utilisateur bob (joiner) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username bob --email bob@example.com --first Bob --last Demo --role analyst --temp-password "${BOB_TEMP}"
 
+printf "%b\n" "${YELLOW}=== Provision de l'utilisatrice carol (joiner) ===${RESET}"
+${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username carol --email carol@example.com --first Carol --last Manager --role manager --temp-password "${CAROL_TEMP}"
+
 printf "%b\n" "${YELLOW}=== Provision de l'utilisateur joe (joiner) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username joe --email joe@example.com --first Joe --last Demo --role iam-operator --temp-password "${JOE_TEMP}" --no-password-update --no-totp
 ${JML_CMD} "${COMMON_FLAGS[@]}" grant-role --realm "${REALM}" --username joe --role realm-admin
@@ -97,6 +108,9 @@ ${JML_CMD} "${COMMON_FLAGS[@]}" client-role --realm "${REALM}" --username joe --
 
 printf "%b\n" "${PURPLE}=== Promotion d'alice vers le rôle iam-operator (mover) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" mover --realm "${REALM}" --username alice --from-role analyst --to-role iam-operator
+
+printf "%b\n" "${PURPLE}=== Promotion de carol vers le rôle iam-operator (mover) ===${RESET}"
+${JML_CMD} "${COMMON_FLAGS[@]}" mover --realm "${REALM}" --username carol --from-role manager --to-role iam-operator
 
 printf "%b\n" "${RED}=== Désactivation de bob (leaver) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" leaver --realm "${REALM}" --username bob

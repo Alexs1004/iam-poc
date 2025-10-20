@@ -315,7 +315,7 @@ DEMO_USER_DIRECTORY = {
     },
 }
 
-_default_assignable_roles = ["analyst"]
+_default_assignable_roles = ["analyst", "manager"]
 if IAM_OPERATOR_ROLE and IAM_OPERATOR_ROLE not in _default_assignable_roles:
     _default_assignable_roles.append(IAM_OPERATOR_ROLE)
 _default_assignable_roles = list(dict.fromkeys(filter(None, _default_assignable_roles)))

@@ -36,6 +36,7 @@ def post_fork(server, worker):
         "KEYCLOAK_ADMIN_PASSWORD": os.environ.get("AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD", "keycloak-admin-password"),
         "ALICE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_ALICE_TEMP_PASSWORD", "alice-temp-password"),
         "BOB_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_BOB_TEMP_PASSWORD", "bob-temp-password"),
+        "CAROL_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_CAROL_TEMP_PASSWORD", "carol-temp-password"),
         "AUDIT_LOG_SIGNING_KEY": os.environ.get("AZURE_SECRET_AUDIT_LOG_SIGNING_KEY", "audit-log-signing-key"),
     }
     
