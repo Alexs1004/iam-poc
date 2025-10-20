@@ -512,7 +512,23 @@ def callback():
         session["userinfo"] = oidc.get(USERINFO_URL, token=token).json()
     except Exception:
         session["userinfo"] = {}
-    return redirect(url_for("me"))
+    
+    # Smart redirect based on user role (for demo UX)
+    roles = _collect_roles(session.get("id_claims"), session.get("userinfo"))
+    admin_roles = {"admin", "realm-admin", "iam-operator"}
+    
+    # Debug: log collected roles
+    app.logger.info(f"Collected roles for user: {roles}")
+    app.logger.info(f"Admin roles to check: {admin_roles}")
+    
+    # Case-insensitive role matching
+    roles_lower = [role.lower() for role in roles]
+    if any(role in roles_lower for role in admin_roles):
+        app.logger.info(f"Admin role detected, redirecting to /admin")
+        return redirect(url_for("admin"))
+    else:
+        app.logger.info(f"No admin role detected, redirecting to /me")
+        return redirect(url_for("me"))
 
 
 @app.route("/logout")
