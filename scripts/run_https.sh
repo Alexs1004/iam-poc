@@ -132,6 +132,11 @@ if [[ -z "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" && "${AZURE_USE_KEYVAULT,,}" == "tru
   echo "[https] Fetching Keycloak admin password from Key Vault '${AZURE_KEY_VAULT_NAME}'..."
   KEYCLOAK_ADMIN_PASSWORD_VALUE="$(fetch_secret "${AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD}")"
 fi
+# Fallback to demo default if DEMO_MODE=true
+if [[ -z "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" && "${DEMO_MODE,,}" == "true" ]]; then
+  echo "[https] Using demo default for KEYCLOAK_ADMIN_PASSWORD (DEMO_MODE=true)"
+  KEYCLOAK_ADMIN_PASSWORD_VALUE="admin"
+fi
 if [[ -z "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" ]]; then
   echo "[https] KEYCLOAK_ADMIN_PASSWORD (or the corresponding Key Vault secret) is required; aborting." >&2
   exit 1
@@ -148,6 +153,11 @@ if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" && "${AZURE_USE_KEYVAULT,,}" == "tru
   fi
   echo "[https] Fetching Keycloak service client secret from Key Vault '${AZURE_KEY_VAULT_NAME}'..."
   KEYCLOAK_SERVICE_SECRET_VALUE="$(fetch_secret "${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}")"
+fi
+# Fallback to demo default if DEMO_MODE=true
+if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" && "${DEMO_MODE,,}" == "true" ]]; then
+  echo "[https] Using demo default for KEYCLOAK_SERVICE_CLIENT_SECRET (DEMO_MODE=true)"
+  KEYCLOAK_SERVICE_SECRET_VALUE="demo-service-secret"
 fi
 if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" ]]; then
   echo "[https] KEYCLOAK_SERVICE_CLIENT_SECRET (or corresponding Key Vault secret) is required; aborting." >&2

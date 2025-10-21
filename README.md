@@ -25,13 +25,15 @@ Automation scripts rebuild containers on source hash changes, rotate secrets, an
 Ideal for enterprise teams evaluating my approach to IAM architecture, DevSecOps, and Azure-first operations.
 
 ## 💡 Project Highlights
-- Azure-first secret management via Key Vault and `DefaultAzureCredential` with device-code fallback.
+- **Zero-friction demo mode**: `make fresh-demo` works instantly without Azure setup — smart secret fallbacks and automatic synchronization.
+- Azure-first secret management via Key Vault and `DefaultAzureCredential` with device-code fallback (production mode).
 - Reproducible automation: `scripts/jml.py` provisions realms, roles, and JML workflows with clear logging.
 - Hardened Flask app: server-side sessions, CSRF tokens, strict proxy validation, and RBAC-protected admin routes.
 - Fine-grained demo roles: `iam-operator` handles JML workflows while `realm-admin` is required for realm-level changes and console access.
 - HTTPS by default: `scripts/run_https.sh` mints certs, rebuilds Gunicorn images, and wires health checks end to end.
 - Operational Makefile: guard clauses highlight missing secrets, enabling safe rotations and demos (`make doctor`, `make rotate-secret`).
-- Testable sandbox: pytest coverage for auth controls, ensuring “trust but verify” on cookies, headers, and RBAC.
+- Testable sandbox: pytest coverage for auth controls, ensuring "trust but verify" on cookies, headers, and RBAC.
+- **Production-ready SCIM 2.0 API** with RFC 7644 compliance, OAuth 2.0 authentication, and cryptographic audit trails.
 
 ## 🧱 Architecture (dev)
 ```
@@ -64,7 +66,7 @@ Docker Compose orchestrates three services (Keycloak, Flask/Gunicorn, Nginx). Az
 ## ⚙️ Quickstart (2 minutes)
 ```bash
 cp .env.demo .env                                    # enable DEMO_MODE defaults
-make quickstart                                      # HTTPS certs + stack + scripted JML demo
+make fresh-demo                                      # Clean start: HTTPS certs + stack + scripted JML demo
 open https://localhost                              # trust the self-signed certificate once
 ```
 Shutdown:
@@ -72,33 +74,132 @@ Shutdown:
 make down
 ```
 
+**What happens during `make fresh-demo`:**
+1. ✅ Removes old containers and volumes for a clean state
+2. ✅ Clears runtime secrets and Azure cache
+3. ✅ Generates self-signed HTTPS certificates (valid 30 days)
+4. ✅ Starts Keycloak, Flask, and Nginx with health checks
+5. ✅ Bootstraps `automation-cli` service account with **fixed demo secret** (`demo-service-secret`)
+6. ✅ Creates demo realm with roles, users (alice, bob, carol, joe), and required actions
+7. ✅ Demonstrates JML workflows: alice promoted, bob disabled
+
+**No Azure Key Vault required!** Demo mode uses hardcoded secrets from `.env` for rapid local development.
+
 ### What gets provisioned
-- **OIDC demo login** with Alice / Bob / Joe (pre-seeded passwords from `.env.demo` or Key Vault).
+- **OIDC demo login** with Alice / Bob / Carol / Joe (pre-seeded passwords from `.env`).
 - **Joiner/Mover/Leaver UI** at `https://localhost/admin` (requires roles, see table below).
 - **Keycloak consoles**  
   - Realm-scoped: `https://localhost/admin/demo/console/` (works with Joe).  
   - Master: `https://localhost/admin/master/console/` (use the global `admin` account).
 - **Automation storyline** via `scripts/demo_jml.sh` (rerun with `make demo` or `make fresh-demo` for a clean state).
-- Secrets snapshot: `scripts/run_https.sh` pulls both the Keycloak admin password and the automation-cli secret from Azure Key Vault on every stack start, so the Flask app always uses the latest credentials.
+- **Demo Mode Secret Management**: In `DEMO_MODE=true`, the automation bootstrap automatically restores the service client secret to `demo-service-secret` after rotation, ensuring Flask and scripts stay synchronized without manual restarts.
 
 ## 🛠️ Make Commands — Quick Reference
-- `make quickstart` — Full bootstrap: start stack, rotate the service secret, restart with the fresh credentials, then replay the JML storyline.
-- `make demo` — Replay the Joiner/Mover/Leaver script against a running stack.
-- `make fresh-demo` — Reset volumes, regenerate secrets, and rerun `make quickstart`.
+- `make fresh-demo` — **Recommended**: Reset volumes, clear secrets, regenerate certs, and rerun full demo (clean slate).
+- `make quickstart` — Start stack, bootstrap service account, and replay JML storyline (reuses existing volumes).
+- `make demo` — Replay the Joiner/Mover/Leaver script against a running stack (no rebuild).
 - `make down` — Stop containers (manually add `docker compose down -v` to purge data).
+- `make clean-secrets` — Remove `.runtime/secrets` and `.runtime/azure` caches.
 - `make pytest` — Execute unit tests inside a managed Python virtual environment.
-- `make rotate-secret` — Rotate Keycloak service client secret and immediately restart the stack (invokes `scripts/run_https.sh` for you).
+- `make pytest-e2e` — Run end-to-end integration tests against live stack (requires running containers).
+- `make rotate-secret` — Rotate Keycloak service client secret in Key Vault and restart stack (production mode only).
 - `make doctor` — Validate `az login`, Key Vault permissions, and docker compose availability.
-- `make open` — Launch https://localhost in the default browser.
 - `make help` — Display all available targets with inline descriptions.
 
 ## 🔐 Configuration & Secrets
-- Copy `.env.demo` to `.env`; DEMO defaults enable warnings and generate safe placeholder secrets.
-- Set `DEMO_MODE=false` to force production-grade secret checks; the app will refuse to start otherwise.
-- Enable `AZURE_USE_KEYVAULT=true` to load secrets from Key Vault using `DefaultAzureCredential` (supports device-code sign-in).
-- Map secret names in `.env` (e.g., `AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET=<SECRET_NAME>`) instead of storing raw values.
-- `scripts/run_https.sh` syncs `~/.azure` → `.runtime/azure` for container auth; clear caches with `make clean-secrets`.
-- Generated Keycloak secrets land in `.runtime/secrets` and mount read-only into containers; keep the directory git-ignored.
+
+### Demo Mode (without Azure Key Vault) — **Recommended for Local Development**
+Copy `.env.demo` to `.env` for local development:
+```bash
+cp .env.demo .env
+```
+
+Key settings for demo mode:
+- `DEMO_MODE=true` — Auto-generates missing secrets and uses hardcoded demo values
+- `AZURE_USE_KEYVAULT=false` — Uses environment variables directly instead of Key Vault
+- Set passwords directly in `.env`:
+  ```bash
+  KEYCLOAK_ADMIN_PASSWORD=admin
+  ALICE_TEMP_PASSWORD=Passw0rd!
+  BOB_TEMP_PASSWORD=Passw0rd!
+  CAROL_TEMP_PASSWORD=Passw0rd!
+  JOE_TEMP_PASSWORD=Passw0rd!
+  ```
+
+**Smart Secret Management in Demo Mode:**
+- Service client secret (`automation-cli`) is automatically set to `demo-service-secret` after bootstrap
+- Flask and automation scripts stay synchronized without manual restarts
+- No Azure Key Vault setup required — instant local development
+- Scripts detect `DEMO_MODE=true` and apply demo defaults automatically
+
+⚠️ **Warning**: Demo credentials are printed at startup. Never deploy with these defaults in production.
+
+### Production Mode (with Azure Key Vault)
+For production deployments:
+- Set `DEMO_MODE=false` — Enforces production-grade secret checks
+- Set `AZURE_USE_KEYVAULT=true` — Loads secrets from Azure Key Vault using `DefaultAzureCredential`
+- Map secret names in `.env` (e.g., `AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET=keycloak-service-client-secret`)
+- `scripts/run_https.sh` syncs `~/.azure` → `.runtime/azure` for container auth
+- Service secrets are rotated and stored in `.runtime/secrets/keycloak-service-client-secret`
+- Clear caches with `make clean-secrets` if needed
+
+**Production Secret Workflow:**
+```bash
+# 1. Set production mode
+DEMO_MODE=false
+AZURE_USE_KEYVAULT=true
+
+# 2. Initial setup - Bootstrap automatically updates Key Vault
+./scripts/demo_jml.sh
+# ✅ Service account created
+# ✅ Secret automatically stored in Azure Key Vault
+# ✅ NO secret exposed in terminal logs
+
+# 3. Orchestrated secret rotation (production only)
+make rotate-secret          # Full rotation: Keycloak → Key Vault → Restart Flask → Health-check
+make rotate-secret-dry      # Dry-run to test without making changes
+
+# 4. Verify Flask can authenticate
+curl -sk https://localhost/admin
+```
+
+**Security Best Practices:**
+- ✅ **Automated Key Vault updates**: Secrets are written directly to Key Vault, never printed to terminal
+- ✅ **Zero manual copy/paste**: Eliminates risk of secrets in shell history or logs
+- ✅ **Audit trail**: All Key Vault changes are logged in Azure Activity Log
+- ✅ **Fail-fast**: Script exits if Key Vault update fails, preventing mismatched secrets
+
+**Secret Rotation Details:**
+The `scripts/rotate_secret.sh` script performs an **orchestrated secret rotation**:
+1. ✅ Generates a new secret in Keycloak (client credential rotation)
+2. ✅ Updates Azure Key Vault with the new secret
+3. ✅ Restarts Flask container to reload the secret
+4. ✅ Verifies application health with retry logic
+
+Features:
+- 🔒 **Production-only**: Refuses to run in `DEMO_MODE=true`
+- 🧪 **Dry-run support**: Test with `--dry-run` flag
+- 🔄 **Idempotent**: Safe to run multiple times
+- 📊 **Observable**: Clear logging and health-check validation
+- ⚡ **Zero-downtime**: Docker restart is graceful
+
+This is the recommended approach for periodic secret rotation in production environments.
+
+### Auto-Generated Secrets (Demo Mode Only)
+When `DEMO_MODE=true`, the following secrets are auto-generated if not provided:
+- `FLASK_SECRET_KEY` — Flask session encryption key (48-byte token)
+- `AUDIT_LOG_SIGNING_KEY` — HMAC key for audit trail signatures (48-byte token)
+- Service passwords default to demo values (`admin`, `Passw0rd!`) if not explicitly set
+- Service client secret (`automation-cli`) is automatically restored to `demo-service-secret` after bootstrap
+- These are regenerated on each restart unless explicitly set in `.env`
+- Generated Keycloak secrets land in `.runtime/secrets` but are overwritten with demo defaults
+
+**Priority Order for Secrets (Demo Mode):**
+1. Environment variables explicitly set in `.env`
+2. Demo default values (e.g., `admin`, `demo-service-secret`)
+3. Auto-generated values for Flask/audit keys
+
+This ensures `make fresh-demo` works out-of-the-box without any Azure setup.
 
 ## 🔄 SCIM 2.0 API Integration
 
@@ -157,6 +258,66 @@ curl -sk -X POST "https://localhost/scim/v2/Users" \
 For detailed integration guides with Okta, Azure AD, and curl examples, see:
 - **[SCIM API Guide](docs/SCIM_API_GUIDE.md)** — Complete usage documentation
 - **[SCIM Compliance Analysis](docs/SCIM_COMPLIANCE_ANALYSIS.md)** — Conformance details
+
+---
+
+## 🔄 Secret Rotation (Production)
+
+The project includes an **orchestrated secret rotation script** for production environments. This script automates the complete rotation workflow: Keycloak credential regeneration → Azure Key Vault update → application restart → health verification.
+
+### Quick Start
+
+```bash
+# Dry-run (safe test without making changes)
+make rotate-secret-dry
+
+# Production rotation (requires DEMO_MODE=false + AZURE_USE_KEYVAULT=true)
+make rotate-secret
+```
+
+For complete documentation, troubleshooting, and CI/CD integration examples, see:
+- **[Secret Rotation Guide](docs/SECRET_ROTATION.md)** — Complete rotation documentation
+
+### What the Script Does
+
+1. ✅ **Validates context**: Refuses to run in demo mode, checks Azure CLI login
+2. ✅ **Generates new secret**: Calls Keycloak Admin API to rotate the `automation-cli` client secret
+3. ✅ **Updates Key Vault**: Synchronizes the new secret to Azure Key Vault
+4. ✅ **Restarts Flask**: Gracefully restarts the Flask container to reload secrets
+5. ✅ **Health check**: Verifies application availability with retry logic (10 attempts, 2s interval)
+
+### Prerequisites
+
+- `DEMO_MODE=false` and `AZURE_USE_KEYVAULT=true` in `.env`
+- Active Azure CLI session (`az login`)
+- Required tools: `curl`, `jq`, `docker`, `az`
+- Running stack (Keycloak + Flask)
+
+### Example Output
+
+```bash
+$ make rotate-secret
+[INFO] Variables chargées depuis /home/alex/iam-poc/.env
+[INFO] Obtention d'un token admin Keycloak…
+[INFO] Recherche du client 'automation-cli' dans le realm 'demo'…
+[INFO] Régénération du secret Keycloak pour le client automation-cli…
+[INFO] Nouveau secret obtenu (longueur 36 chars).
+[INFO] Mise à jour du secret dans Azure Key Vault: demo-key-vault-alex/keycloak-service-client-secret
+[INFO] Key Vault synchronisé.
+[INFO] Redémarrage du service Docker 'flask-app'…
+[INFO] Health-check sur https://localhost/health…
+[INFO] ✅ Application OK (HTTP 200).
+[INFO] ✅ Rotation orchestrée terminée avec succès.
+```
+
+### Why This Matters for Security Roles
+
+- **Zero-trust compliance**: Regular credential rotation without manual intervention
+- **Audit trail**: All rotation events logged with timestamps
+- **Idempotent operations**: Safe to re-run, no side effects
+- **Separation of concerns**: Rotation is external to the application
+- **Observable**: Clear logging and health validation
+- **Production-ready**: Dry-run mode for CI/CD testing
 
 ### Testing
 
@@ -335,14 +496,17 @@ For detailed technical documentation, see:
 
 ## 🚧 Troubleshooting
 - **Flask unhealthy** → missing `az login` → run `make doctor` then rerun `scripts/run_https.sh`.
-- **404 on automation calls** → stack not running → execute `make quickstart` to bootstrap services.
+- **404 on automation calls** → stack not running → execute `make fresh-demo` to bootstrap services.
 - **Key Vault denied** → insufficient RBAC → assign **Key Vault Secrets User** on `<VAULT_NAME>`.
 - **Browser TLS warning** → stale cert trust → accept the new self-signed cert or clear old certificate caches.
-- **Service secret empty** → skipped bootstrap → run `make bootstrap-service-account` or `make rotate-secret`.
-- **Automation CLI unauthorized** → stale service secret → rerun `make rotate-secret` (rotates in Key Vault) then `make quickstart` (which restarts with the new value).
+- **Service secret empty** → skipped bootstrap → run `make bootstrap-service-account` or `make fresh-demo`.
+- **"Invalid client credentials" error on /admin** → In demo mode, secret mismatch between Flask and Keycloak → run `make fresh-demo` to reset to demo defaults.
+- **Automation CLI unauthorized** → In production mode, stale service secret → rerun `make rotate-secret` then `make quickstart`.
 - **Compose rebuild loop** → bind mount stale → remove `.runtime/azure` via `make clean-secrets` and retry.
 - **pytest import error** → missing deps → run `make pytest` to create venv and install requirements.
-- **Keycloak 401** → admin credentials absent → confirm `KEYCLOAK_ADMIN` plus Key Vault secret mappings in `.env`.
+- **Keycloak 401** → admin credentials absent → confirm `KEYCLOAK_ADMIN` plus Key Vault secret mappings or demo defaults in `.env`.
+- **Demo mode not working** → Check `.env` has `DEMO_MODE=true` and `AZURE_USE_KEYVAULT=false` → passwords should be set directly in file.
+- **Stack starts but demo script fails** → Run `./scripts/demo_jml.sh` manually to see detailed error messages → check `KEYCLOAK_URL=http://127.0.0.1:8080` (not localhost).
 
 ## ☁️ Production Notes
 - Remove development bind mounts (`.:/srv/app`, `./.runtime/azure:/root/.azure`) and bake source into container images.
@@ -354,15 +518,27 @@ For detailed technical documentation, see:
 - Integrate container scanning and IaC validation into CI/CD (e.g., GitHub Actions + Trivy/Terraform Validate).
 
 ## 🗺️ Roadmap
-- ✅ **Phase 2.1 — SCIM 2.0 Provisioning** (Completed)
+- ✅ **Phase 1 — Core IAM Stack** (Completed)
+  - Keycloak + Flask + OIDC with PKCE
+  - Azure Key Vault integration
+  - JML automation scripts
+- ✅ **Phase 2.0 — SCIM 2.0 Provisioning** (Completed)
   - Full RFC 7644 compliant REST API at `/scim/v2`
   - Support for Okta, Azure AD, and other IdP integrations
   - Cryptographically signed audit trail (HMAC-SHA256)
   - Session revocation on user disable (immediate effect)
   - Input validation and security guardrails
-- Phase 2.2 — Add Microsoft Entra ID (Azure AD) support with configuration switches and consent automation.
-- Phase 3 — Deliver webhook provisioning to extend real-time JML workflows.
-- Phase 4 — Introduce integration tests against live containers using pytest + docker.
+- ✅ **Phase 2.1 — Unified Service Architecture** (Completed)
+  - Consolidated business logic in `provisioning_service.py`
+  - DOGFOOD mode for testing SCIM API via UI
+  - Comprehensive E2E integration tests
+- ✅ **Phase 2.2 — Demo Mode Improvements** (Completed - Current)
+  - Zero Azure Key Vault dependency for local development
+  - Automatic secret synchronization in demo mode
+  - Smart fallback: demo defaults → environment → Key Vault
+  - `make fresh-demo` works out-of-the-box
+- Phase 3 — Add Microsoft Entra ID (Azure AD) support with configuration switches and consent automation.
+- Phase 4 — Deliver webhook provisioning to extend real-time JML workflows.
 - Phase 5 — Package `scripts/jml.py` as a versioned CLI with documentation and release automation.
 - Phase 6 — Layer in observability (structured logging, metrics, distributed tracing) across services.
 - Phase 7 — Automate certificate management (ACME/Let's Encrypt) and key rotation pipelines.

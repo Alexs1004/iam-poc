@@ -34,6 +34,16 @@ import requests
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
+# NOTE: This enforcement is duplicated in flask_app.py because both modules  
+# can be loaded independently (e.g., SCIM API loads this module directly).
+# The duplication ensures DEMO_MODE consistency regardless of import order.
+# This is a safety guard; normally validate_env.sh should correct .env before Docker starts.
+DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
+if DEMO_MODE and os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true":
+    print("[provisioning_service] WARNING: DEMO_MODE=true requires AZURE_USE_KEYVAULT=false (runtime guard)")
+    print("[provisioning_service] Forcing AZURE_USE_KEYVAULT=false | Run 'make validate-env' to fix .env permanently")
+    os.environ["AZURE_USE_KEYVAULT"] = "false"
+
 # Get Keycloak base URL from either KEYCLOAK_URL or extract from KEYCLOAK_SERVER_URL
 _keycloak_url = os.environ.get("KEYCLOAK_URL")
 if not _keycloak_url:
@@ -48,13 +58,23 @@ KEYCLOAK_BASE_URL = _keycloak_url
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "demo")
 KEYCLOAK_SERVICE_REALM = os.environ.get("KEYCLOAK_SERVICE_REALM", KEYCLOAK_REALM)
 KEYCLOAK_SERVICE_CLIENT_ID = os.environ.get("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
-KEYCLOAK_SERVICE_CLIENT_SECRET = os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
 
-DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
+# Get service client secret with demo fallback
+if DEMO_MODE:
+    KEYCLOAK_SERVICE_CLIENT_SECRET = (
+        os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET") or 
+        os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO") or 
+        "demo-service-secret"
+    )
+else:
+    KEYCLOAK_SERVICE_CLIENT_SECRET = os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
+
 DEFAULT_ROLE = os.environ.get("SCIM_DEFAULT_ROLE", "analyst")
 
 # Log configuration at module import
+print(f"[provisioning_service] DEMO_MODE={DEMO_MODE}, AZURE_USE_KEYVAULT={os.environ.get('AZURE_USE_KEYVAULT', 'false')}")
 print(f"[provisioning_service] KEYCLOAK_BASE_URL={KEYCLOAK_BASE_URL}, REALM={KEYCLOAK_REALM}")
+print(f"[provisioning_service] CLIENT_ID={KEYCLOAK_SERVICE_CLIENT_ID}, SECRET={'***' if KEYCLOAK_SERVICE_CLIENT_SECRET else 'EMPTY'}")
 
 # SCIM schemas
 SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"

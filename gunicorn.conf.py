@@ -7,8 +7,17 @@ def post_fork(server, worker):
     Called just after a worker has been forked.
     Load secrets from Azure Key Vault in each worker process.
     """
+    # Enforce DEMO_MODE consistency: Demo mode must never use Azure Key Vault
+    # This is a safety guard; normally validate_env.sh should correct .env before Docker starts
+    demo_mode = os.environ.get("DEMO_MODE", "false").lower() == "true"
+    if demo_mode and os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true":
+        worker.log.warning("DEMO_MODE=true requires AZURE_USE_KEYVAULT=false (runtime guard)")
+        worker.log.info("Forcing AZURE_USE_KEYVAULT=false | Run 'make validate-env' to fix .env permanently")
+        os.environ["AZURE_USE_KEYVAULT"] = "false"
+    
     use_kv = os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true"
     if not use_kv:
+        worker.log.info("Skipping Azure Key Vault (AZURE_USE_KEYVAULT=false)")
         return
     
     try:

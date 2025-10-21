@@ -32,6 +32,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from scripts import jml
 # audit is imported lazily after Key Vault secrets are loaded
 from app import scim_api
+from app import provisioning_service
 
 try:
     from azure.identity import DefaultAzureCredential  # type: ignore
@@ -50,10 +51,22 @@ except ImportError:  # pragma: no cover - optional dependency
 # Flask Application & Session Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
+# NOTE: This enforcement is duplicated in provisioning_service.py because both modules
+# can be loaded independently (e.g., SCIM API loads provisioning_service directly).
+# The duplication ensures DEMO_MODE consistency regardless of import order.
+# This is a safety guard; normally validate_env.sh should correct .env before Docker starts.
+DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
+if DEMO_MODE and os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true":
+    print("[flask_app] WARNING: DEMO_MODE=true requires AZURE_USE_KEYVAULT=false (runtime guard)")
+    print("[flask_app] Forcing AZURE_USE_KEYVAULT=false | Run 'make validate-env' to fix .env permanently")
+    os.environ["AZURE_USE_KEYVAULT"] = "false"
+
 
 def _load_secrets_from_azure() -> None:
     use_kv = os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true"
+    print(f"[flask_app._load_secrets_from_azure] AZURE_USE_KEYVAULT={os.environ.get('AZURE_USE_KEYVAULT')}, use_kv={use_kv}")
     if not use_kv:
+        print("[flask_app._load_secrets_from_azure] Skipping Key Vault (AZURE_USE_KEYVAULT=false)")
         return
     if DefaultAzureCredential is None or SecretClient is None:
         raise RuntimeError("Azure Key Vault integration requested but azure-keyvault-secrets is not installed.")
@@ -72,6 +85,8 @@ def _load_secrets_from_azure() -> None:
         "KEYCLOAK_ADMIN_PASSWORD": os.environ.get("AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD", "keycloak-admin-password"),
         "ALICE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_ALICE_TEMP_PASSWORD", "alice-temp-password"),
         "BOB_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_BOB_TEMP_PASSWORD", "bob-temp-password"),
+        "CAROL_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_CAROL_TEMP_PASSWORD", "carol-temp-password"),
+        "JOE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_JOE_TEMP_PASSWORD", "joe-temp-password"),
         "AUDIT_LOG_SIGNING_KEY": os.environ.get("AZURE_SECRET_AUDIT_LOG_SIGNING_KEY", "audit-log-signing-key"),
     }
     key_mapping = {
@@ -118,12 +133,18 @@ def _load_secrets_from_azure() -> None:
         os.environ[env_name] = secret.value
 
 
+
 _load_secrets_from_azure()
 
 # Import audit module AFTER Key Vault secrets are loaded so it can access AUDIT_LOG_SIGNING_KEY
 from scripts import audit  # noqa: E402 - module level import not at top of file
 
 DEMO_MODE = os.environ.get("DEMO_MODE", "false").lower() == "true"
+
+# Ensure AUDIT_LOG_SIGNING_KEY exists in demo mode
+if DEMO_MODE and not os.environ.get("AUDIT_LOG_SIGNING_KEY"):
+    print("[demo-mode] Generating temporary AUDIT_LOG_SIGNING_KEY")
+    os.environ["AUDIT_LOG_SIGNING_KEY"] = secrets.token_urlsafe(48)
 
 
 def _ensure_env(name: str, *, demo_default: str | None = None, required: bool = True) -> str:
@@ -253,28 +274,33 @@ def _console_root_url() -> str:
 
 SERVICE_CLIENT_SECRET = _ensure_env(
     "KEYCLOAK_SERVICE_CLIENT_SECRET",
-    demo_default=os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO", "demo-service-secret"),
+    demo_default=(os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO") or "demo-service-secret"),
 )
-ADMIN_USERNAME = _ensure_env("KEYCLOAK_ADMIN", demo_default=os.environ.get("KEYCLOAK_ADMIN_DEMO", "admin"))
-ADMIN_PASSWORD = _ensure_env("KEYCLOAK_ADMIN_PASSWORD", demo_default=os.environ.get("KEYCLOAK_ADMIN_PASSWORD_DEMO", "admin"))
+ADMIN_USERNAME = _ensure_env("KEYCLOAK_ADMIN", demo_default=(os.environ.get("KEYCLOAK_ADMIN_DEMO") or "admin"))
+ADMIN_PASSWORD = _ensure_env("KEYCLOAK_ADMIN_PASSWORD", demo_default=(os.environ.get("KEYCLOAK_ADMIN_PASSWORD_DEMO") or "admin"))
 ALICE_PASSWORD = _ensure_env(
     "ALICE_TEMP_PASSWORD",
-    demo_default=os.environ.get("ALICE_TEMP_PASSWORD_DEMO", "Passw0rd!"),
+    demo_default=(os.environ.get("ALICE_TEMP_PASSWORD_DEMO") or "Passw0rd!"),
 )
 BOB_PASSWORD = _ensure_env(
     "BOB_TEMP_PASSWORD",
-    demo_default=os.environ.get("BOB_TEMP_PASSWORD_DEMO", "Passw0rd!"),
+    demo_default=(os.environ.get("BOB_TEMP_PASSWORD_DEMO") or "Passw0rd!"),
+)
+CAROL_PASSWORD = _ensure_env(
+    "CAROL_TEMP_PASSWORD",
+    demo_default=(os.environ.get("CAROL_TEMP_PASSWORD_DEMO") or "Passw0rd!"),
+    required=False,
+)
+JOE_PASSWORD = _ensure_env(
+    "JOE_TEMP_PASSWORD",
+    demo_default=(os.environ.get("JOE_TEMP_PASSWORD_DEMO") or "Passw0rd!"),
+    required=False,
 )
 
 REALM_ADMIN_ROLE = os.environ.get("REALM_ADMIN_ROLE", "realm-admin").strip().lower()
 IAM_OPERATOR_ROLE = os.environ.get("IAM_OPERATOR_ROLE", "iam-operator").strip().lower()
 REALM_ADMIN_CLIENT_ID = os.environ.get("REALM_ADMIN_CLIENT_ID", "realm-management").strip()
 REALM_ADMIN_CLIENT_ROLE = os.environ.get("REALM_ADMIN_CLIENT_ROLE", REALM_ADMIN_ROLE or "realm-admin").strip().lower()
-JOE_PASSWORD = _ensure_env(
-    "JOE_TEMP_PASSWORD",
-    demo_default=os.environ.get("JOE_TEMP_PASSWORD_DEMO", "Passw0rd!"),
-    required=False,
-)
 
 DEMO_WARN_VARS = {
     "KEYCLOAK_SERVICE_CLIENT_SECRET": SERVICE_CLIENT_SECRET,
@@ -282,6 +308,8 @@ DEMO_WARN_VARS = {
     "ALICE_TEMP_PASSWORD": ALICE_PASSWORD,
     "BOB_TEMP_PASSWORD": BOB_PASSWORD,
 }
+if CAROL_PASSWORD:
+    DEMO_WARN_VARS["CAROL_TEMP_PASSWORD"] = CAROL_PASSWORD
 if JOE_PASSWORD:
     DEMO_WARN_VARS["JOE_TEMP_PASSWORD"] = JOE_PASSWORD
 
@@ -647,21 +675,6 @@ def _current_user_context():
     return token, id_claims, userinfo, roles
 
 
-def _get_service_token() -> str:
-    try:
-        return jml.get_service_account_token(
-            KEYCLOAK_BASE_URL,
-            KEYCLOAK_SERVICE_REALM,
-            KEYCLOAK_SERVICE_CLIENT_ID,
-            SERVICE_CLIENT_SECRET,
-        )
-    except requests.HTTPError as exc:
-        detail = exc.response.text if getattr(exc, "response", None) is not None else str(exc)
-        raise RuntimeError(f"Failed to obtain service account token: {detail}") from exc
-    except Exception as exc:  # pragma: no cover - unexpected runtime issues
-        raise RuntimeError(f"Failed to obtain service account token: {exc}") from exc
-
-
 def _user_roles(kc_token: str, user_id: str) -> list[str]:
     resp = requests.get(
         f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}/role-mappings/realm",
@@ -672,7 +685,6 @@ def _user_roles(kc_token: str, user_id: str) -> list[str]:
     return sorted({role.get("name") for role in resp.json() or [] if role.get("name")})
 
 
-setattr(app, "_get_service_token", _get_service_token)
 setattr(app, "_user_roles", _user_roles)
 
 def _demo_status_stub() -> list[dict]:
@@ -776,7 +788,10 @@ def _fetch_assignable_roles(kc_token: str) -> list[str]:
 def _load_admin_context() -> tuple[list[dict], list[str]]:
     if app.config.get("TESTING"):
         return _demo_status_stub(), ASSIGNABLE_ROLES
-    token = _get_service_token()
+    try:
+        token = provisioning_service.get_service_token()
+    except provisioning_service.ScimError as exc:
+        raise RuntimeError(f"Failed to obtain service account token: {exc.detail}") from exc
     statuses = _fetch_user_statuses(token)
     roles = _fetch_assignable_roles(token)
     return statuses, roles
@@ -1180,8 +1195,11 @@ def admin_mover():
         return redirect(url_for("admin"))
 
     try:
-        token = _get_service_token()
+        token = provisioning_service.get_service_token()
         target_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    except provisioning_service.ScimError as exc:
+        flash(f"Failed to obtain service token: {exc.detail}", "error")
+        return redirect(url_for("admin"))
     except Exception as exc:
         flash(f"Failed to update roles for '{username}': {exc}", "error")
         return redirect(url_for("admin"))
@@ -1252,8 +1270,11 @@ def admin_leaver():
         return redirect(url_for("admin"))
 
     try:
-        token = _get_service_token()
+        token = provisioning_service.get_service_token()
         target_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    except provisioning_service.ScimError as exc:
+        flash(f"Failed to obtain service token: {exc.detail}", "error")
+        return redirect(url_for("admin"))
     except Exception as exc:
         flash(f"Failed to disable '{username}': {exc}", "error")
         return redirect(url_for("admin"))

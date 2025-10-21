@@ -46,6 +46,10 @@ WITH_ENV := set -a; source .env; set +a; \
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | sed 's/:.*##/: /'
 
+.PHONY: validate-env
+validate-env: ## Validate and auto-correct .env (DEMO_MODE=true forces AZURE_USE_KEYVAULT=false)
+	@./scripts/validate_env.sh
+
 .PHONY: require-service-secret
 require-service-secret:
 	@$(WITH_ENV) test -n "$${KEYCLOAK_SERVICE_CLIENT_SECRET}" || (echo "KEYCLOAK_SERVICE_CLIENT_SECRET missing. Run 'make bootstrap-service-account' to rotate it in Key Vault." >&2; exit 1)
@@ -170,20 +174,17 @@ clean-secrets: ## Remove local runtime secrets and azure cache
 demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la valeur
 	@cp .env .env.backup_demo || true
 	@sed -i 's/^DEMO_MODE=.*/DEMO_MODE=true/' .env
-	@$(MAKE) fresh-demo
-	@mv .env.backup_demo .env
-	@sed -i 's/^DEMO_MODE=.*/DEMO_MODE=false/' .env
+	@$(MAKE) fresh-demo || (mv .env.backup_demo .env 2>/dev/null; exit 1)
+	@mv .env.backup_demo .env 2>/dev/null || true
 	@echo "[demo-mode] fresh-demo exécuté en mode démo, configuration restaurée."
 
 .PHONY: quickstart
-quickstart: ## Run stack + bootstrap + demo in one go
-	@./scripts/run_https.sh
-	@$(MAKE) bootstrap-service-account
+quickstart: validate-env ## Run stack + demo_jml.sh (which handles bootstrap)
 	@./scripts/run_https.sh
 	@$(WITH_ENV) ./scripts/demo_jml.sh
 
 .PHONY: fresh-demo
-fresh-demo: ## Reset everything then run quickstart
+fresh-demo: validate-env ## Reset everything then run quickstart
 	@docker compose down -v || true
 	@$(MAKE) clean-secrets
 	@$(MAKE) quickstart
@@ -209,8 +210,15 @@ restart: ## Restart all services
 	@$(MAKE) down
 	@$(MAKE) up
 
-.PHONY: rotate-secret
-rotate-secret: ## Rotate Keycloak service client secret and restart Flask only
+.PHONY: restart-flask
+restart-flask: ## Restart entire stack to reload secrets from files
+	@echo "[restart-flask] Restarting stack to reload secrets..."
+	@docker-compose down
+	@./scripts/run_https.sh
+	@echo "[restart-flask] Stack restarted with updated secrets"
+
+.PHONY: rotate-secret-legacy
+rotate-secret-legacy: ## [DEPRECATED] Old rotation method (use rotate-secret instead)
 	@$(MAKE) bootstrap-service-account
 	@./scripts/run_https.sh
 
@@ -243,3 +251,11 @@ pytest-e2e: ## Run E2E integration tests (requires running stack)
 .PHONY: verify-audit
 verify-audit: ## Verify integrity of audit log signatures
 	@$(WITH_ENV) $(PYTHON) scripts/audit.py
+
+.PHONY: rotate-secret
+rotate-secret: ## Rotate Keycloak service client secret (production only)
+	@./scripts/rotate_secret.sh
+
+.PHONY: rotate-secret-dry
+rotate-secret-dry: ## Dry-run of secret rotation (no changes applied)
+	@./scripts/rotate_secret.sh --dry-run
