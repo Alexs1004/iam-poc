@@ -739,11 +739,19 @@ For detailed technical documentation, see:
   - Consolidated business logic in `provisioning_service.py`
   - DOGFOOD mode for testing SCIM API via UI
   - Comprehensive E2E integration tests
-- ✅ **Phase 2.2 — Demo Mode Improvements** (Completed - Current)
+- ✅ **Phase 2.2 — Demo Mode Improvements** (Completed)
   - Zero Azure Key Vault dependency for local development
   - Automatic secret synchronization in demo mode
   - Smart fallback: demo defaults → environment → Key Vault
   - `make fresh-demo` works out-of-the-box
+- ✅ **Phase 2.3 — Secret Management & Production Hardening** (Completed - Current)
+  - **Auto-generation with mode detection**: `make ensure-secrets` generates strong secrets (256-384 bits) in demo mode only
+  - **Production guard**: `DEMO_MODE=false` disables local generation, enforces Azure Key Vault via `/run/secrets`
+  - **Idempotent workflow**: Secrets generated once, never overwritten (regex detection: `^KEY=[^[:space:]#]+`)
+  - **Git-safe by design**: `.env` in `.gitignore`, secrets never logged to console
+  - **Docker Secrets pattern**: Production secrets mounted read-only in `/run/secrets` (chmod 400)
+  - **Configuration reset**: `make reset-demo` with confirmation prompt for safe environment resets
+  - **Zero-config quickstart**: `rm .env && make quickstart` works instantly (copies `.env.demo` → auto-generates secrets)
 - Phase 3 — Add Microsoft Entra ID (Azure AD) support with configuration switches and consent automation.
 - Phase 4 — Deliver webhook provisioning to extend real-time JML workflows.
 - Phase 5 — Package `scripts/jml.py` as a versioned CLI with documentation and release automation.
