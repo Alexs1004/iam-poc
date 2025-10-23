@@ -57,29 +57,36 @@ ensure-env: ## Copy .env.demo to .env if .env doesn't exist (zero-config demo mo
 	fi
 
 .PHONY: ensure-secrets
-ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (idempotent)
-	@echo "[ensure-secrets] Checking secrets in .env..." >&2
-	@if ! grep -qE "^FLASK_SECRET_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
-		SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
-		if grep -q "^FLASK_SECRET_KEY=" .env; then \
-			sed -i "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$$SECRET|" .env; \
-		else \
-			echo "FLASK_SECRET_KEY=$$SECRET" >> .env; \
-		fi; \
-		echo "[ensure-secrets] ✓ Generated FLASK_SECRET_KEY" >&2; \
+ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (demo mode only)
+	@set -a; source .env 2>/dev/null || true; set +a; \
+	if [[ "$${DEMO_MODE,,}" == "false" ]]; then \
+		echo "[ensure-secrets] Production mode detected (DEMO_MODE=false)" >&2; \
+		echo "[ensure-secrets] Secrets will be loaded from Azure Key Vault via /run/secrets" >&2; \
+		echo "[ensure-secrets] Skipping local secret generation" >&2; \
 	else \
-		echo "[ensure-secrets] ✓ FLASK_SECRET_KEY already set" >&2; \
-	fi
-	@if ! grep -qE "^AUDIT_LOG_SIGNING_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
-		SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(48))"); \
-		if grep -q "^AUDIT_LOG_SIGNING_KEY=" .env; then \
-			sed -i "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=$$SECRET|" .env; \
+		echo "[ensure-secrets] Demo mode: checking secrets in .env..." >&2; \
+		if ! grep -qE "^FLASK_SECRET_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
+			SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
+			if grep -q "^FLASK_SECRET_KEY=" .env; then \
+				sed -i "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$$SECRET|" .env; \
+			else \
+				echo "FLASK_SECRET_KEY=$$SECRET" >> .env; \
+			fi; \
+			echo "[ensure-secrets] ✓ Generated FLASK_SECRET_KEY" >&2; \
 		else \
-			echo "AUDIT_LOG_SIGNING_KEY=$$SECRET" >> .env; \
+			echo "[ensure-secrets] ✓ FLASK_SECRET_KEY already set" >&2; \
 		fi; \
-		echo "[ensure-secrets] ✓ Generated AUDIT_LOG_SIGNING_KEY" >&2; \
-	else \
-		echo "[ensure-secrets] ✓ AUDIT_LOG_SIGNING_KEY already set" >&2; \
+		if ! grep -qE "^AUDIT_LOG_SIGNING_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
+			SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(48))"); \
+			if grep -q "^AUDIT_LOG_SIGNING_KEY=" .env; then \
+				sed -i "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=$$SECRET|" .env; \
+			else \
+				echo "AUDIT_LOG_SIGNING_KEY=$$SECRET" >> .env; \
+			fi; \
+			echo "[ensure-secrets] ✓ Generated AUDIT_LOG_SIGNING_KEY" >&2; \
+		else \
+			echo "[ensure-secrets] ✓ AUDIT_LOG_SIGNING_KEY already set" >&2; \
+		fi; \
 	fi
 
 .PHONY: reset-demo

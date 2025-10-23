@@ -13,16 +13,23 @@ make reset-demo    # Reset to clean slate (requires confirmation)
 ```
 
 **What happens:**
-- `make quickstart` copies `.env.demo` if `.env` doesn't exist
-- Generates strong secrets automatically if `FLASK_SECRET_KEY` or `AUDIT_LOG_SIGNING_KEY` are empty
-- Idempotent: safe to run multiple times (no duplicate changes)
-- Demo mode uses in-memory secrets (no Azure Key Vault needed)
+- `make quickstart` copies `.env.demo` → `.env` if `.env` doesn't exist
+- Detects `DEMO_MODE=true` and auto-generates strong secrets **only in demo mode**
+- Generates `FLASK_SECRET_KEY` (32 bytes) and `AUDIT_LOG_SIGNING_KEY` (48 bytes) using Python `secrets.token_urlsafe()`
+- **Idempotent**: safe to run multiple times (no duplicate changes, secrets preserved)
+- **Security**: Secrets never printed to console (logs to stderr only)
+- **Production-safe**: When `DEMO_MODE=false`, skips local generation and loads from Azure Key Vault
 - JML automation runs at startup to show provisioning workflows
 
 **Access the stack:**
-- Admin UI: https://localhost:8443/admin (alice/alice, enable MFA)
-- Keycloak: https://localhost:8443/keycloak (admin/admin)
-- SCIM API: https://localhost:8443/scim/v2 (OAuth 2.0 bearer token)
+- Admin UI: https://localhost/admin (alice/alice, enable MFA)
+- Keycloak: https://localhost/keycloak (admin/admin)
+- SCIM API: https://localhost/scim/v2 (OAuth 2.0 bearer token)
+
+**Secret Management:**
+- **Demo mode** (`DEMO_MODE=true`): Secrets auto-generated in `.env` (gitignored)
+- **Production mode** (`DEMO_MODE=false`): Secrets loaded from Azure Key Vault → `.runtime/secrets/` (read-only mount)
+- `.env` file is **never committed** to git (protected by `.gitignore`)
 
 To switch to production mode with Azure Key Vault, see [🔐 Configuration & Secrets](#-configuration--secrets).
 
@@ -49,15 +56,40 @@ Automation scripts rebuild containers on source hash changes, rotate secrets, an
 Ideal for enterprise teams evaluating my approach to IAM architecture, DevSecOps, and Azure-first operations.
 
 ## 💡 Project Highlights
-- **Zero-friction demo mode**: `make fresh-demo` works instantly without Azure setup — smart secret fallbacks and automatic synchronization.
-- Azure-first secret management via Key Vault and `DefaultAzureCredential` with device-code fallback (production mode).
-- Reproducible automation: `scripts/jml.py` provisions realms, roles, and JML workflows with clear logging.
-- Hardened Flask app: server-side sessions, CSRF tokens, strict proxy validation, and RBAC-protected admin routes.
-- Fine-grained demo roles: `iam-operator` handles JML workflows while `realm-admin` is required for realm-level changes and console access.
-- HTTPS by default: `scripts/run_https.sh` mints certs, rebuilds Gunicorn images, and wires health checks end to end.
-- Operational Makefile: guard clauses highlight missing secrets, enabling safe rotations and demos (`make doctor`, `make rotate-secret`).
-- Testable sandbox: pytest coverage for auth controls, ensuring "trust but verify" on cookies, headers, and RBAC.
-- **Production-ready SCIM 2.0 API** with RFC 7644 compliance, OAuth 2.0 authentication, and cryptographic audit trails.
+
+### Zero-Config Demo Mode
+- **Instant startup**: `make quickstart` works without any Azure setup
+- **Auto-generated secrets**: Strong cryptographic keys (256-384 bits) generated automatically
+- **Idempotent workflow**: Safe to run multiple times, secrets preserved
+- **Production guard**: `DEMO_MODE=false` disables local generation, enforces Azure Key Vault
+
+### Enterprise-Grade Secret Management
+- **Azure Key Vault integration**: Production secrets via `DefaultAzureCredential`
+- **Docker Secrets pattern**: Secrets mounted read-only in `/run/secrets` (chmod 400)
+- **Orchestrated rotation**: Automated Keycloak → Key Vault → restart → health-check workflow
+- **No console leaks**: Secrets never printed to stdout/stderr
+- **Audit trail**: All Key Vault access logged in Azure Activity Log
+
+### Production-Ready SCIM 2.0 API
+- **RFC 7644 compliant**: Standard schemas, error responses, filtering, pagination
+- **OAuth 2.0 authentication**: Bearer token validation with Keycloak
+- **Unified architecture**: Shared service layer between UI and API (no code duplication)
+- **Cryptographic audit trails**: HMAC-SHA256 signatures on all JML events
+- **Session revocation**: Immediate effect when disabling users
+
+### Security & Compliance
+- **HTTPS by default**: Self-signed certificates regenerated automatically
+- **Hardened Flask app**: Server-side sessions, CSRF tokens, strict proxy validation
+- **RBAC enforcement**: `iam-operator` and `realm-admin` roles at route level
+- **Mandatory MFA**: TOTP required action enforced in Keycloak
+- **Immutable audit logs**: Append-only JSON Lines with signature verification
+
+### Developer Experience
+- **Operational Makefile**: 30+ targets with guard clauses and clear documentation
+- **Reproducible automation**: `scripts/jml.py` provisions realms, roles, and JML workflows
+- **Testable sandbox**: pytest coverage for auth controls, RBAC, and SCIM API
+- **DOGFOOD mode**: UI can call SCIM API via HTTP for real-world testing
+- **Health checks**: Liveness probes on all services with retry logic
 
 ## 🧱 Architecture (dev)
 ```
@@ -119,16 +151,37 @@ make down
 - **Demo Mode Secret Management**: In `DEMO_MODE=true`, the automation bootstrap automatically restores the service client secret to `demo-service-secret` after rotation, ensuring Flask and scripts stay synchronized without manual restarts.
 
 ## 🛠️ Make Commands — Quick Reference
-- `make fresh-demo` — **Recommended**: Reset volumes, clear secrets, regenerate certs, and rerun full demo (clean slate).
-- `make quickstart` — Start stack, bootstrap service account, and replay JML storyline (reuses existing volumes).
-- `make demo` — Replay the Joiner/Mover/Leaver script against a running stack (no rebuild).
-- `make down` — Stop containers (manually add `docker compose down -v` to purge data).
-- `make clean-secrets` — Remove `.runtime/secrets` and `.runtime/azure` caches.
-- `make pytest` — Execute unit tests inside a managed Python virtual environment.
-- `make pytest-e2e` — Run end-to-end integration tests against live stack (requires running containers).
-- `make rotate-secret` — Rotate Keycloak service client secret in Key Vault and restart stack (production mode only).
-- `make doctor` — Validate `az login`, Key Vault permissions, and docker compose availability.
-- `make help` — Display all available targets with inline descriptions.
+
+### Essential Commands
+- `make quickstart` — **Zero-config start**: Auto-setup `.env`, generate secrets (demo mode only), start stack + JML demo
+- `make fresh-demo` — **Clean slate**: Reset volumes, clear secrets, regenerate certs, rerun full demo
+- `make reset-demo` — **Reset configuration**: Restore `.env` to `.env.demo` defaults (requires typing `yes` confirmation)
+- `make down` — Stop containers (add `-v` flag manually to purge volumes)
+
+### Secret Management
+- `make ensure-env` — Copy `.env.demo` → `.env` if `.env` doesn't exist
+- `make ensure-secrets` — Auto-generate `FLASK_SECRET_KEY` and `AUDIT_LOG_SIGNING_KEY` (demo mode only, skips in production)
+- `make load-secrets` — Load secrets from Azure Key Vault → `.runtime/secrets/` (production mode)
+- `make clean-secrets` — Remove `.runtime/secrets/` and `.runtime/azure/` caches (keeps audit logs)
+- `make clean-all` — Remove all runtime data (secrets + audit logs)
+- `make archive-audit` — Archive current audit log with timestamp
+
+### Testing & Validation
+- `make pytest` — Execute unit tests in managed Python virtual environment
+- `make pytest-e2e` — Run end-to-end integration tests against live stack (requires running containers)
+- `make validate-env` — Validate `.env` configuration (auto-corrects `DEMO_MODE=true` + `AZURE_USE_KEYVAULT=true` conflict)
+- `make doctor` — Validate `az login`, Key Vault permissions, and docker compose availability
+
+### Production Operations
+- `make rotate-secret` — Orchestrated secret rotation: Keycloak → Azure Key Vault → Restart Flask → Health-check (production only)
+- `make rotate-secret-dry` — Dry-run rotation test without making changes
+- `make demo` — Replay Joiner/Mover/Leaver script against running stack (no rebuild)
+
+### Utilities
+- `make help` — Display all available targets with inline descriptions
+- `make ps` — Display service status
+- `make logs` — Tail logs for all services
+- `make restart-flask` — Restart Flask container to reload secrets
 
 ## 🔐 Configuration & Secrets
 
@@ -210,20 +263,108 @@ Features:
 This is the recommended approach for periodic secret rotation in production environments.
 
 ### Auto-Generated Secrets (Demo Mode Only)
-When `DEMO_MODE=true`, the following secrets are auto-generated if not provided:
-- `FLASK_SECRET_KEY` — Flask session encryption key (48-byte token)
-- `AUDIT_LOG_SIGNING_KEY` — HMAC key for audit trail signatures (48-byte token)
-- Service passwords default to demo values (`admin`, `Passw0rd!`) if not explicitly set
-- Service client secret (`automation-cli`) is automatically restored to `demo-service-secret` after bootstrap
-- These are regenerated on each restart unless explicitly set in `.env`
-- Generated Keycloak secrets land in `.runtime/secrets` but are overwritten with demo defaults
+
+When `DEMO_MODE=true`, `make quickstart` automatically generates secure secrets using Python's `secrets` module:
+
+| Secret | Algorithm | Length | Purpose |
+|--------|-----------|--------|---------|
+| `FLASK_SECRET_KEY` | `secrets.token_urlsafe(32)` | 43 chars (256 bits) | Flask session encryption + CSRF tokens |
+| `AUDIT_LOG_SIGNING_KEY` | `secrets.token_urlsafe(48)` | 64 chars (384 bits) | HMAC-SHA256 audit trail signatures |
+
+**Key Features:**
+- ✅ **Idempotent**: Secrets generated only if empty or missing in `.env`
+- ✅ **No duplication**: Detects existing values with regex `^KEY=[^[:space:]#]+`
+- ✅ **No console leaks**: Secrets never printed to stdout (logs to stderr only)
+- ✅ **Production-safe**: When `DEMO_MODE=false`, generation is **skipped** entirely
+- ✅ **Git-safe**: `.env` is in `.gitignore`, secrets never committed
 
 **Priority Order for Secrets (Demo Mode):**
-1. Environment variables explicitly set in `.env`
-2. Demo default values (e.g., `admin`, `demo-service-secret`)
-3. Auto-generated values for Flask/audit keys
+1. Explicitly set values in `.env` (preserved, never overwritten)
+2. Auto-generated values for `FLASK_SECRET_KEY` and `AUDIT_LOG_SIGNING_KEY`
+3. Demo default fallbacks (`*_DEMO` variables, e.g., `KEYCLOAK_ADMIN_PASSWORD_DEMO=admin`)
 
-This ensures `make fresh-demo` works out-of-the-box without any Azure setup.
+**Service Secrets:**
+- Service client secret (`automation-cli`) is set to `demo-service-secret` in demo mode
+- User passwords default to `Passw0rd!` if not explicitly set
+- Keycloak admin password defaults to `admin`
+
+**Production Mode Behavior:**
+When `DEMO_MODE=false`, `make ensure-secrets` outputs:
+```
+[ensure-secrets] Production mode detected (DEMO_MODE=false)
+[ensure-secrets] Secrets will be loaded from Azure Key Vault via /run/secrets
+[ensure-secrets] Skipping local secret generation
+```
+
+This separation ensures:
+- **Demo mode**: Fast zero-config local development with auto-generated secrets
+- **Production mode**: Secrets always loaded from Azure Key Vault, never stored in `.env`
+
+### Production Secret Pattern: `/run/secrets`
+
+In production mode, the project follows Docker Swarm/Kubernetes secret patterns:
+
+```bash
+# 1. Load secrets from Azure Key Vault
+make load-secrets
+
+# This creates:
+.runtime/secrets/
+├── flask_secret_key (chmod 400)
+├── keycloak_admin_password (chmod 400)
+├── keycloak_service_client_secret (chmod 400)
+├── audit_log_signing_key (chmod 400)
+└── *_temp_password (chmod 400, optional)
+
+# 2. Secrets mounted read-only in containers
+docker-compose.yml:
+  volumes:
+    - ./.runtime/secrets:/run/secrets:ro  # Read-only mount
+```
+
+**Application reads secrets from files:**
+
+```python
+# app/config/settings.py
+def _load_secret_from_file(secret_name: str) -> str | None:
+    """Load secret from /run/secrets (Docker secrets pattern)."""
+    secret_file = Path("/run/secrets") / secret_name
+    
+    if secret_file.exists() and secret_file.is_file():
+        return secret_file.read_text().strip()
+    
+    return None
+
+# Priority: /run/secrets > environment variable > demo fallback
+flask_secret_key = _load_secret_from_file("flask_secret_key", "FLASK_SECRET_KEY")
+```
+
+**Security Benefits:**
+- ✅ **No secrets in `.env`**: Environment file can be safely versioned
+- ✅ **Read-only mount**: Containers cannot modify secrets
+- ✅ **File permissions**: `chmod 400` (owner read-only)
+- ✅ **Centralized rotation**: Update Azure Key Vault → `make load-secrets` → restart
+- ✅ **Audit trail**: Azure Key Vault logs all access
+- ✅ **Kubernetes-ready**: Same pattern works with Kubernetes secrets
+
+**Workflow:**
+```bash
+# Production deployment
+DEMO_MODE=false
+AZURE_USE_KEYVAULT=true
+
+# 1. Authenticate to Azure
+az login
+
+# 2. Load secrets (called automatically by make quickstart)
+make load-secrets
+
+# 3. Start stack (secrets mounted from .runtime/secrets/)
+make up
+
+# 4. Rotate a secret (orchestrated workflow)
+make rotate-secret
+```
 
 ## 🔄 SCIM 2.0 API Integration
 
@@ -498,10 +639,52 @@ For detailed technical documentation, see:
 ---
 
 ## 🧰 Security Guardrails
-- Enforce HTTPS through Nginx with self-signed certificates regenerated on every quickstart.
-- Require Authorization Code + PKCE, role checks, and mandatory TOTP enrollment in the Keycloak realm.
-- Rotate secrets via Key Vault-backed automation (`make rotate-secret`); never store credentials in plaintext.
-- Harden session cookies (`Secure`, `HttpOnly`, `SameSite=Lax`) and validate CSRF tokens on every state-changing route.
+
+### Transport & Network Security
+- ✅ **HTTPS Enforcement**: Nginx reverse proxy with self-signed certificates (regenerated on `make quickstart`)
+- ✅ **Strict Proxy Validation**: Flask validates `X-Forwarded-*` headers against `TRUSTED_PROXY_IPS` whitelist
+- ✅ **TLS Configuration**: Modern cipher suites, HTTP/2 support
+
+### Authentication & Authorization
+- ✅ **OIDC Authorization Code + PKCE**: Prevents authorization code interception attacks
+- ✅ **Role-Based Access Control**: `iam-operator` and `realm-admin` roles enforced at route level
+- ✅ **Mandatory TOTP/MFA**: Required action enforced in Keycloak realm
+- ✅ **Session Validation**: Server-side session storage with secure cookies
+
+### Secret Management (Production)
+- ✅ **Azure Key Vault Integration**: Secrets loaded via `DefaultAzureCredential` (never in `.env`)
+- ✅ **Docker Secrets Pattern**: Secrets mounted read-only in `/run/secrets` (chmod 400)
+- ✅ **Secret Rotation**: Orchestrated rotation with `make rotate-secret` (Keycloak → Key Vault → Restart → Health-check)
+- ✅ **Audit Trail**: All Key Vault access logged in Azure Activity Log
+- ✅ **No Console Leaks**: Secrets never printed to stdout/stderr during rotation
+
+### Secret Management (Demo Mode)
+- ✅ **Auto-Generation**: Strong secrets generated with Python `secrets.token_urlsafe()` (256-384 bits)
+- ✅ **Idempotent**: Secrets generated only once, never overwritten
+- ✅ **Git-Safe**: `.env` file in `.gitignore`, secrets never committed
+- ✅ **Production Guard**: `DEMO_MODE=false` disables local generation, enforces Azure Key Vault
+- ✅ **Clear Warnings**: Demo mode displays warnings at startup
+
+### Application Security
+- ✅ **Hardened Session Cookies**: `Secure`, `HttpOnly`, `SameSite=Lax` flags
+- ✅ **CSRF Protection**: Tokens validated on all state-changing routes
+- ✅ **Input Validation**: Strict regex validation for usernames, emails, names
+- ✅ **SQL Injection Protection**: ORM-based queries (Keycloak REST API)
+- ✅ **XSS Prevention**: Jinja2 auto-escaping, CSP headers
+
+### Audit & Compliance
+- ✅ **Cryptographic Audit Trail**: HMAC-SHA256 signatures on all JML events
+- ✅ **Immutable Logs**: Append-only JSON Lines format (`.runtime/audit/jml-events.jsonl`)
+- ✅ **Signature Verification**: `make verify-audit` validates log integrity
+- ✅ **Separate Signing Keys**: Demo vs production keys (`AUDIT_LOG_SIGNING_KEY_DEMO`)
+- ✅ **Tamper Detection**: Modified events fail signature verification
+
+### Defense in Depth
+- ✅ **Principle of Least Privilege**: Service accounts with minimal scopes
+- ✅ **Session Revocation**: Immediate effect when disabling users (Keycloak API)
+- ✅ **Health Checks**: Liveness probes on all services (Docker Compose)
+- ✅ **Graceful Degradation**: Fallback to environment variables if `/run/secrets` unavailable
+- ✅ **Error Handling**: No sensitive data in error messages (production mode)
 - Restrict proxy forwarding with trusted IP allow lists and reject non-HTTPS `X-Forwarded-Proto` headers.
 - **SCIM 2.0 Provisioning API** (`/scim/v2`) for standardized user lifecycle management (RFC 7644)
 - **Immediate session revocation** on user disable (prevents 5-15 minute token validity window)
