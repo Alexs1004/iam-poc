@@ -13,13 +13,13 @@
         <li><strong>Lifecycle orchestration:</strong> promote Alice to <code>iam-operator</code> and elevate Joe to <code>realm-admin</code>.</li>
         <li><strong>Zero secret sprawl:</strong> automation runs through a client-credentialed Keycloak service account.</li>
       </ul>
-      <div class="hero-actions">
+            <p class="intro">Your identity is verified. Check your profile or visit the admin panel.</p>
+      <div class="action-buttons">
         {% if is_authenticated %}
-          <a class="btn-primary" href="{{ url_for('me') }}">View my profile</a>
-          <a class="btn-secondary" href="{{ url_for('admin') }}">Admin area</a>
+          <a class="btn-primary" href="{{ url_for('admin.me') }}">View my profile</a>
+          <a class="btn-secondary" href="{{ url_for('admin.admin_dashboard') }}">Admin area</a>
         {% else %}
-          <a class="btn-primary" href="{{ url_for('login') }}">Sign in with Keycloak</a>
-          <a class="btn-secondary" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
+          <a class="btn-primary" href="{{ url_for('auth.login') }}">Sign in with Keycloak</a>
         {% endif %}
       </div>
     </div>

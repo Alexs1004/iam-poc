@@ -13,7 +13,7 @@
           Open Keycloak Console
         </a>
         {% endif %}
-        <a class="btn-console" href="{{ url_for('admin_audit') }}">
+        <a class="btn-console" href="{{ url_for('admin.admin_audit') }}">
           View Audit Trail
         </a>
       </div>
@@ -121,7 +121,7 @@
               <p class="form-section-subtitle">Create a ready-to-go demo identity in one submit.</p>
             </div>
           </header>
-          <form method="post" action="{{ url_for('admin_joiner') }}" class="form-grid">
+          <form method="post" action="{{ url_for('admin.admin_joiner') }}" class="form-grid">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="form-field">
               <label for="joiner-first">First name</label>
@@ -174,7 +174,7 @@
           </header>
           {% set active_users_for_mover = existing_users | selectattr('enabled', 'equalto', True) | list %}
           {% if active_users_for_mover %}
-            <form method="post" action="{{ url_for('admin_mover') }}" class="form-grid" data-mover-form>
+            <form method="post" action="{{ url_for('admin.admin_mover') }}" class="form-grid" data-mover-form>
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label for="mover-username">User</label>
@@ -228,7 +228,7 @@
           </header>
           {% set active_users = existing_users | selectattr('enabled', 'equalto', True) | list %}
           {% if active_users %}
-            <form method="post" action="{{ url_for('admin_leaver') }}" class="form-grid">
+            <form method="post" action="{{ url_for('admin.admin_leaver') }}" class="form-grid">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <div class="form-field">
                 <label for="leaver-username">User</label>

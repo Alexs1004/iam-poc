@@ -19,8 +19,8 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("DEMO_MODE", "true")
 os.environ.setdefault("APP_BASE_URL", "https://localhost")
 
-from app import provisioning_service
-from app.provisioning_service import (
+from app.core import provisioning_service
+from app.core.provisioning_service import (
     ScimError,
     create_user_scim_like,
     get_user_scim,

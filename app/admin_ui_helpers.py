@@ -9,8 +9,8 @@ This module provides helpers for the admin UI routes to either:
 import os
 import requests
 from flask import session
-from app import provisioning_service
-from app.provisioning_service import ScimError
+from app.core import provisioning_service
+from app.core.provisioning_service import ScimError
 
 # Configuration
 DOGFOOD_SCIM = os.environ.get("DOGFOOD_SCIM", "false").lower() == "true"

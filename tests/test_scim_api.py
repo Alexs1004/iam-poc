@@ -13,7 +13,7 @@ os.environ['DEMO_MODE'] = 'true'
 os.environ['FLASK_SECRET_KEY'] = 'test-secret-key-for-unit-tests'
 
 from app.scim_api import scim
-from app.provisioning_service import keycloak_to_scim, ScimError
+from app.core.provisioning_service import keycloak_to_scim, ScimError
 
 
 @pytest.fixture

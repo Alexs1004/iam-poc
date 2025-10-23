@@ -6,11 +6,11 @@
 <div class="container">
     <div class="header-section">
         <h1>🔍 Audit Trail — JML Events</h1>
-        <div class="breadcrumb">
-            <a href="{{ url_for('index') }}">Home</a> &gt;
-            <a href="{{ url_for('admin') }}">Admin</a> &gt;
+        <nav class="breadcrumb">
+            <a href="{{ url_for('auth.index') }}">Home</a> &gt;
+            <a href="{{ url_for('admin.admin_dashboard') }}">Admin</a> &gt;
             <span>Audit Trail</span>
-        </div>
+        </nav>
     </div>
 
     <div class="audit-summary">
@@ -78,7 +78,7 @@
     {% endif %}
 
     <div class="actions">
-        <a href="{{ url_for('admin') }}" class="btn btn-secondary">← Back to Admin</a>
+        <a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-secondary">← Back to Admin</a>
     </div>
 </div>
 
@@ -198,7 +198,6 @@ details summary {
 details pre {
     margin-top: 0.5rem;
     padding: 0.5rem;
-    background: #f8f9fa;
     border-radius: 4px;
     font-size: 0.85rem;
     overflow-x: auto;

@@ -5,9 +5,25 @@ import argparse
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlparse
+from pathlib import Path
+import json
+import re
 
 import requests
+
+# Add project root to Python path for audit module import
+SCRIPT_DIR = Path(__file__).parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Import audit module (now accessible via sys.path)
+try:
+    from scripts import audit as audit_module
+except ImportError:
+    audit_module = None
 
 REQUEST_TIMEOUT = 5
 
@@ -194,6 +210,142 @@ def create_role(kc_url: str, token: str, realm: str, role_name: str) -> None:
     )
     resp.raise_for_status()
     print(f"[init] Role '{role_name}' created", file=sys.stderr)
+
+
+def get_group_by_path(kc_url: str, token: str, realm: str, group_path: str) -> dict | None:
+    """Retrieve a group by its path (e.g., '/iam-poc-managed')."""
+    resp = requests.get(
+        f"{kc_url}/admin/realms/{realm}/groups",
+        params={"search": group_path.strip("/")},
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    groups = resp.json() or []
+    # Exact match on path
+    for group in groups:
+        if group.get("path") == group_path:
+            return group
+    return None
+
+
+def create_group(kc_url: str, token: str, realm: str, group_name: str, attributes: dict | None = None) -> str:
+    """
+    Idempotently create a group and return its ID.
+    
+    Security guardrails:
+    - Validates group name (alphanumeric, dashes, underscores only)
+    - Adds metadata attributes for audit trail
+    - Returns existing group ID if already exists (idempotent)
+    """
+    # Input validation
+    import re
+    if not re.match(r"^[a-zA-Z0-9_-]{3,64}$", group_name):
+        raise ValueError(f"Invalid group name '{group_name}': must be 3-64 alphanumeric chars, dashes, or underscores")
+    
+    group_path = f"/{group_name}"
+    existing = get_group_by_path(kc_url, token, realm, group_path)
+    
+    if existing:
+        print(f"[init] Group '{group_name}' already exists (id={existing['id']})", file=sys.stderr)
+        return existing["id"]
+    
+    # Add security metadata
+    payload = {
+        "name": group_name,
+        "attributes": attributes or {},
+    }
+    
+    # Add audit metadata
+    if "created_at" not in payload["attributes"]:
+        from datetime import datetime, UTC
+        payload["attributes"]["created_at"] = [datetime.now(UTC).isoformat()]
+    if "created_by" not in payload["attributes"]:
+        payload["attributes"]["created_by"] = ["iam-poc-bootstrap"]
+    
+    resp = requests.post(
+        f"{kc_url}/admin/realms/{realm}/groups",
+        json=payload,
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    
+    # Retrieve the created group to get its ID
+    time.sleep(0.3)  # Small delay for eventual consistency
+    created = get_group_by_path(kc_url, token, realm, group_path)
+    if not created:
+        raise RuntimeError(f"Failed to retrieve group '{group_name}' after creation")
+    
+    print(f"[init] Group '{group_name}' created (id={created['id']})", file=sys.stderr)
+    return created["id"]
+
+
+def add_user_to_group(kc_url: str, token: str, realm: str, user_id: str, group_id: str) -> bool:
+    """
+    Add a user to a group (idempotent).
+    
+    Returns:
+        True if user was added, False if already a member
+    
+    Security guardrails:
+    - Validates user and group exist before adding
+    - Returns success even if already a member (idempotent)
+    """
+    resp = requests.put(
+        f"{kc_url}/admin/realms/{realm}/users/{user_id}/groups/{group_id}",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    
+    if resp.status_code == 204:
+        return True
+    elif resp.status_code == 409:
+        # Already a member
+        return False
+    else:
+        resp.raise_for_status()
+        return False
+
+
+def remove_user_from_group(kc_url: str, token: str, realm: str, user_id: str, group_id: str) -> bool:
+    """
+    Remove a user from a group (idempotent).
+    
+    Returns:
+        True if user was removed, False if not a member
+    
+    Security guardrails:
+    - Safe to call even if user is not a member
+    - Does not fail if group or user doesn't exist
+    """
+    resp = requests.delete(
+        f"{kc_url}/admin/realms/{realm}/users/{user_id}/groups/{group_id}",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    
+    if resp.status_code in (204, 404):
+        return resp.status_code == 204
+    else:
+        resp.raise_for_status()
+        return False
+
+
+def get_group_members(kc_url: str, token: str, realm: str, group_id: str) -> list[dict]:
+    """
+    Retrieve all members of a group.
+    
+    Returns:
+        List of user representations (same format as get_user_by_username)
+    """
+    resp = requests.get(
+        f"{kc_url}/admin/realms/{realm}/groups/{group_id}/members",
+        headers=_auth_headers(token),
+        timeout=REQUEST_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return resp.json() or []
 
 
 def ensure_required_action(kc_url: str, token: str, realm: str, alias: str) -> None:
@@ -397,6 +549,36 @@ def create_user(
     else:
         print(resp.text)
         resp.raise_for_status()
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # Security guardrail: Auto-add to managed group for visibility
+    # ─────────────────────────────────────────────────────────────────────────
+    managed_group = get_group_by_path(kc_url, token, realm, "/iam-poc-managed")
+    if managed_group:
+        was_added = add_user_to_group(kc_url, token, realm, user_id, managed_group["id"])
+        if was_added:
+            print(f"[joiner] Added '{username}' to iam-poc-managed group", file=sys.stderr)
+            # Audit: Log group membership change
+            try:
+                from scripts import audit
+                audit.log_jml_event(
+                    "joiner",
+                    username,
+                    operator="automation",
+                    realm=realm,
+                    details={
+                        "group_added": "iam-poc-managed",
+                        "group_id": managed_group["id"],
+                        "user_id": user_id
+                    },
+                    success=True
+                )
+            except Exception as exc:
+                print(f"[joiner] Warning: Failed to log audit event: {exc}", file=sys.stderr)
+        else:
+            print(f"[joiner] User '{username}' already in iam-poc-managed group", file=sys.stderr)
+    else:
+        print(f"[joiner] Warning: iam-poc-managed group not found, user not added to group", file=sys.stderr)
 
 
 def grant_client_role(
@@ -709,6 +891,28 @@ def disable_user(kc_url: str, token: str, realm: str, username: str) -> None:
     )
     resp.raise_for_status()
     print(f"[leaver] User '{username}' disabled", file=sys.stderr)
+    
+    # ─────────────────────────────────────────────────────────────────────────
+    # ❌ DÉSACTIVÉ: Ne pas retirer du groupe lors de la désactivation
+    # Les utilisateurs désactivés doivent rester visibles dans l'UI avec statut "Disabled"
+    # Si archivage nécessaire, créer un workflow séparé avec groupe "iam-poc-archived"
+    # ─────────────────────────────────────────────────────────────────────────
+    # managed_group = get_group_by_path(kc_url, token, realm, "/iam-poc-managed")
+    # if managed_group:
+    #     was_removed = remove_user_from_group(kc_url, token, realm, user_id, managed_group["id"])
+    #     if was_removed:
+    #         print(f"[leaver] Removed '{username}' from iam-poc-managed group (archived)", file=sys.stderr)
+    
+    # Audit: Log user disable event
+    if audit_module:
+        try:
+            audit_module.append_audit_jsonl(
+                action="user.disabled",
+                username=username,
+                metadata={"user_id": user_id, "archived": False}  # archived=False (reste dans groupe)
+            )
+        except Exception as e:
+            print(f"[leaver] Warning: Failed to log audit event: {e}", file=sys.stderr)
 
 
 def delete_realm(kc_url: str, token: str, realm: str) -> None:
@@ -1031,6 +1235,22 @@ def main() -> None:
         configure_security_admin_console(args.kc_url, token, target_realm)
         for role in ["analyst", "manager", "iam-operator", "realm-admin"]:
             create_role(args.kc_url, token, target_realm, role)
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # Security guardrail: Create managed group for dynamic user discovery
+        # ─────────────────────────────────────────────────────────────────────
+        create_group(
+            args.kc_url,
+            token,
+            target_realm,
+            "iam-poc-managed",
+            attributes={
+                "description": ["Users managed by IAM POC JML workflows"],
+                "managed_by": ["iam-poc"],
+                "purpose": ["dynamic-user-discovery"],
+            },
+        )
+        
         if os.environ.get("ENFORCE_TOTP_REQUIRED_ACTION", "true").lower() == "true":
             ensure_required_action(args.kc_url, token, target_realm, "CONFIGURE_TOTP")
         ensure_required_action(args.kc_url, token, target_realm, "UPDATE_PASSWORD")

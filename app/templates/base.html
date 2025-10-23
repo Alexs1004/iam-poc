@@ -15,17 +15,17 @@
       <span></span>
     </button>
     <nav id="primary-nav" class="nav-actions">
-      <a href="{{ url_for('index') }}">Home</a>
+      <a href="{{ url_for('auth.index') }}">Home</a>
       {% if keycloak_console_url %}
         <a href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
       {% endif %}
       {% if is_authenticated %}
-        <a href="{{ url_for('me') }}">Profile</a>
-        <a href="{{ url_for('admin') }}">Admin</a>
-        <a class="btn-secondary" href="{{ url_for('login', force=1) }}">Login as different user</a>
-        <a class="btn-primary" href="{{ url_for('logout') }}">Logout</a>
+        <a href="{{ url_for('admin.me') }}">Profile</a>
+        <a href="{{ url_for('admin.admin_dashboard') }}">Admin</a>
+        <a class="btn-secondary" href="{{ url_for('auth.login', force=1) }}">Login as different user</a>
+        <a class="btn-primary" href="{{ url_for('auth.logout') }}">Logout</a>
       {% else %}
-        <a class="btn-primary" href="{{ url_for('login') }}">Login</a>
+        <a class="btn-primary" href="{{ url_for('auth.login') }}">Login</a>
       {% endif %}
     </nav>
   </header>

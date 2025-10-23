@@ -59,22 +59,26 @@ KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "demo")
 KEYCLOAK_SERVICE_REALM = os.environ.get("KEYCLOAK_SERVICE_REALM", KEYCLOAK_REALM)
 KEYCLOAK_SERVICE_CLIENT_ID = os.environ.get("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
 
-# Get service client secret with demo fallback
-if DEMO_MODE:
-    KEYCLOAK_SERVICE_CLIENT_SECRET = (
-        os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET") or 
-        os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO") or 
-        "demo-service-secret"
-    )
-else:
-    KEYCLOAK_SERVICE_CLIENT_SECRET = os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
+# NOTE: Secret is loaded dynamically in get_service_token() to ensure
+# it picks up the value from Azure Key Vault after load_settings() runs
+def _get_service_client_secret() -> str:
+    """Get service client secret with demo fallback."""
+    if DEMO_MODE:
+        return (
+            os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET") or 
+            os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO") or 
+            "demo-service-secret"
+        )
+    else:
+        return os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
 
 DEFAULT_ROLE = os.environ.get("SCIM_DEFAULT_ROLE", "analyst")
 
 # Log configuration at module import
 print(f"[provisioning_service] DEMO_MODE={DEMO_MODE}, AZURE_USE_KEYVAULT={os.environ.get('AZURE_USE_KEYVAULT', 'false')}")
 print(f"[provisioning_service] KEYCLOAK_BASE_URL={KEYCLOAK_BASE_URL}, REALM={KEYCLOAK_REALM}")
-print(f"[provisioning_service] CLIENT_ID={KEYCLOAK_SERVICE_CLIENT_ID}, SECRET={'***' if KEYCLOAK_SERVICE_CLIENT_SECRET else 'EMPTY'}")
+secret_preview = _get_service_client_secret()
+print(f"[provisioning_service] CLIENT_ID={KEYCLOAK_SERVICE_CLIENT_ID}, SECRET={'***' if secret_preview else 'EMPTY'}")
 
 # SCIM schemas
 SCIM_USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User"
@@ -290,11 +294,12 @@ def scim_to_keycloak(scim_payload: dict) -> dict:
 def get_service_token() -> str:
     """Obtain service account OAuth token for Keycloak operations."""
     try:
+        secret = _get_service_client_secret()
         return jml.get_service_account_token(
             KEYCLOAK_BASE_URL,
             KEYCLOAK_SERVICE_REALM,
             KEYCLOAK_SERVICE_CLIENT_ID,
-            KEYCLOAK_SERVICE_CLIENT_SECRET,
+            secret,
         )
     except Exception as exc:
         raise ScimError(500, f"Failed to obtain service token: {exc}")

@@ -10,8 +10,8 @@ Architecture:
 from __future__ import annotations
 import os
 from flask import Blueprint, request, jsonify, Response
-from app import provisioning_service
-from app.provisioning_service import ScimError
+from app.core import provisioning_service
+from app.core.provisioning_service import ScimError
 
 # SCIM 2.0 Blueprint
 scim = Blueprint('scim', __name__, url_prefix='/scim/v2')
