@@ -93,80 +93,25 @@ else
   fi
 fi
 
-# Prepare Azure CLI configuration for DefaultAzureCredential (AzureCliCredential).
+# Note: .runtime/azure directory is no longer needed
+# Azure CLI authentication was removed from container runtime
+# Secrets are pre-loaded via 'make load-secrets' and mounted as /run/secrets
+
+# Validate that secrets exist in .runtime/secrets/ (should be loaded via make load-secrets)
 RUNTIME_BASE_DIR="${ROOT_DIR}/.runtime"
-RUNTIME_AZURE_DIR="${RUNTIME_BASE_DIR}/azure"
-HOST_AZURE_DIR="${AZURE_CONFIG_DIR:-${HOME}/.azure}"
-mkdir -p "${RUNTIME_BASE_DIR}"
-
-if [[ "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
-  if [[ ! -d "${HOST_AZURE_DIR}" ]]; then
-    echo "[https] Azure CLI configuration not found at ${HOST_AZURE_DIR}. Run 'az login' locally first." >&2
-    exit 1
-  fi
-  rm -rf "${RUNTIME_AZURE_DIR}"
-  mkdir -p "${RUNTIME_AZURE_DIR}"
-  chmod 700 "${RUNTIME_AZURE_DIR}"
-  cp -a "${HOST_AZURE_DIR}/." "${RUNTIME_AZURE_DIR}/"
-fi
-
-# Resolve Keycloak admin password into runtime secret file.
-OLD_UMASK=$(umask)
-umask 077
 RUNTIME_SECRET_DIR="${RUNTIME_BASE_DIR}/secrets"
-mkdir -p "${RUNTIME_SECRET_DIR}"
-chmod 700 "${RUNTIME_SECRET_DIR}"
-umask "${OLD_UMASK}"
-KEYCLOAK_SECRET_FILE="${RUNTIME_SECRET_DIR}/keycloak-admin-password"
-KEYCLOAK_SERVICE_SECRET_FILE="${RUNTIME_SECRET_DIR}/keycloak-service-client-secret"
-if [[ -d "${KEYCLOAK_SECRET_FILE}" ]]; then
-  rm -rf "${KEYCLOAK_SECRET_FILE}"
-fi
-
-KEYCLOAK_ADMIN_PASSWORD_VALUE="${KEYCLOAK_ADMIN_PASSWORD:-}"
-if [[ -z "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" && "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
-  if ! command -v az >/dev/null 2>&1; then
-    echo "[https] Azure CLI not found but AZURE_USE_KEYVAULT=true; aborting." >&2
+if [[ "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
+  if [[ ! -f "${RUNTIME_SECRET_DIR}/keycloak_admin_password" ]]; then
+    echo "[https] ERROR: Secret files not found in ${RUNTIME_SECRET_DIR}/" >&2
+    echo "[https] Run 'make load-secrets' first to fetch secrets from Azure Key Vault." >&2
     exit 1
   fi
-  echo "[https] Fetching Keycloak admin password from Key Vault '${AZURE_KEY_VAULT_NAME}'..."
-  KEYCLOAK_ADMIN_PASSWORD_VALUE="$(fetch_secret "${AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD}")"
+  echo "[https] ✓ Secrets validated in ${RUNTIME_SECRET_DIR}/"
+elif [[ "${DEMO_MODE,,}" == "true" ]]; then
+  echo "[https] DEMO_MODE: Secrets will use demo defaults"
+else
+  echo "[https] WARNING: Neither AZURE_USE_KEYVAULT nor DEMO_MODE is enabled" >&2
 fi
-# Fallback to demo default if DEMO_MODE=true
-if [[ -z "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" && "${DEMO_MODE,,}" == "true" ]]; then
-  echo "[https] Using demo default for KEYCLOAK_ADMIN_PASSWORD (DEMO_MODE=true)"
-  KEYCLOAK_ADMIN_PASSWORD_VALUE="admin"
-fi
-if [[ -z "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" ]]; then
-  echo "[https] KEYCLOAK_ADMIN_PASSWORD (or the corresponding Key Vault secret) is required; aborting." >&2
-  exit 1
-fi
-printf '%s' "${KEYCLOAK_ADMIN_PASSWORD_VALUE}" > "${KEYCLOAK_SECRET_FILE}"
-chmod 600 "${KEYCLOAK_SECRET_FILE}"
-chown 1000:0 "${KEYCLOAK_SECRET_FILE}" 2>/dev/null || true
-
-KEYCLOAK_SERVICE_SECRET_VALUE="${KEYCLOAK_SERVICE_CLIENT_SECRET:-}"
-if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" && "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
-  if ! command -v az >/dev/null 2>&1; then
-    echo "[https] Azure CLI not found but AZURE_USE_KEYVAULT=true; aborting." >&2
-    exit 1
-  fi
-  echo "[https] Fetching Keycloak service client secret from Key Vault '${AZURE_KEY_VAULT_NAME}'..."
-  KEYCLOAK_SERVICE_SECRET_VALUE="$(fetch_secret "${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}")"
-fi
-# Fallback to demo default if DEMO_MODE=true
-if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" && "${DEMO_MODE,,}" == "true" ]]; then
-  echo "[https] Using demo default for KEYCLOAK_SERVICE_CLIENT_SECRET (DEMO_MODE=true)"
-  KEYCLOAK_SERVICE_SECRET_VALUE="demo-service-secret"
-fi
-if [[ -z "${KEYCLOAK_SERVICE_SECRET_VALUE}" ]]; then
-  echo "[https] KEYCLOAK_SERVICE_CLIENT_SECRET (or corresponding Key Vault secret) is required; aborting." >&2
-  exit 1
-fi
-printf '%s' "${KEYCLOAK_SERVICE_SECRET_VALUE}" > "${KEYCLOAK_SERVICE_SECRET_FILE}"
-chmod 600 "${KEYCLOAK_SERVICE_SECRET_FILE}"
-chown 1000:0 "${KEYCLOAK_SERVICE_SECRET_FILE}" 2>/dev/null || true
-export KEYCLOAK_SERVICE_CLIENT_SECRET="${KEYCLOAK_SERVICE_SECRET_VALUE}"
 
 # Launch containerized services with HTTPS support
 echo "[https] Starting Flask app behind HTTPS proxy..."
@@ -189,38 +134,12 @@ else
   echo "[https] Flask image up to date; skipping build."
 fi
 
-if [[ "${AZURE_USE_KEYVAULT,,}" == "true" ]]; then
-  AZ_CLI=("docker" "compose" "run" "--rm" "--entrypoint" "az" "flask-app")
-  if ! "${AZ_CLI[@]}" account get-access-token --scope https://management.azure.com//.default >/dev/null 2>&1; then
-    echo "[https] Azure CLI login required inside container. Follow the device-code flow below."
-    if ! "${AZ_CLI[@]}" login --use-device-code; then
-      echo "[https] az login inside container failed; aborting." >&2
-      exit 1
-    fi
-    ACCOUNT_INFO=$("${AZ_CLI[@]}" account show --output json 2>/dev/null || true)
-    if [[ -n "${ACCOUNT_INFO}" ]]; then
-      SUBSCRIPTION_ID=$(echo "${ACCOUNT_INFO}" | python -c "import sys,json; data=json.load(sys.stdin); print(data.get('id',''))" 2>/dev/null)
-      if [[ -n "${SUBSCRIPTION_ID}" ]]; then
-        "${AZ_CLI[@]}" account set --subscription "${SUBSCRIPTION_ID}" >/dev/null || true
-      fi
-    fi
-    # Re-test token acquisition to ensure success.
-    if ! "${AZ_CLI[@]}" account get-access-token --scope https://management.azure.com//.default >/dev/null 2>&1; then
-      echo "[https] Unable to obtain access token from Azure CLI after login; aborting." >&2
-      exit 1
-    fi
-  fi
-fi
+# Note: Azure CLI authentication in container is NOT needed anymore
+# Secrets are pre-loaded via 'make load-secrets' and mounted as /run/secrets (read-only)
+# Applications read secrets directly from files, no runtime Azure access required
 
-docker compose up -d reverse-proxy flask-app keycloak
+docker compose up -d keycloak flask-app reverse-proxy
 
-echo "[https] Waiting for Keycloak to report healthy before cleaning secrets..."
-if docker compose ps --services --filter "status=running" | grep -q "^keycloak$"; then
-  until docker compose ps keycloak --format json | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('Status',''))" 2>/dev/null | grep -q "healthy"; do
-    sleep 2
-  done
-fi
-
-echo "[https] Keycloak healthy; removing local admin secret copy."
-rm -f "${KEYCLOAK_SECRET_FILE}"
-rm -f "${KEYCLOAK_SERVICE_SECRET_FILE}"
+echo "[https] ✓ Services started successfully"
+echo "[https] Keycloak: http://localhost:8080"
+echo "[https] Flask App: https://localhost"

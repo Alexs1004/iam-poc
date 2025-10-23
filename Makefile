@@ -46,9 +46,62 @@ WITH_ENV := set -a; source .env; set +a; \
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | sed 's/:.*##/: /'
 
+.PHONY: ensure-env
+ensure-env: ## Copy .env.demo to .env if .env doesn't exist (zero-config demo mode)
+	@if [ ! -f .env ]; then \
+		echo "[ensure-env] .env not found, copying from .env.demo..."; \
+		cp .env.demo .env; \
+		echo "[ensure-env] ✓ .env created from .env.demo (demo mode ready)"; \
+	else \
+		echo "[ensure-env] ✓ .env already exists"; \
+	fi
+
+.PHONY: ensure-secrets
+ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (idempotent)
+	@echo "[ensure-secrets] Checking secrets in .env..." >&2
+	@if ! grep -qE "^FLASK_SECRET_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
+		SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
+		if grep -q "^FLASK_SECRET_KEY=" .env; then \
+			sed -i "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$$SECRET|" .env; \
+		else \
+			echo "FLASK_SECRET_KEY=$$SECRET" >> .env; \
+		fi; \
+		echo "[ensure-secrets] ✓ Generated FLASK_SECRET_KEY" >&2; \
+	else \
+		echo "[ensure-secrets] ✓ FLASK_SECRET_KEY already set" >&2; \
+	fi
+	@if ! grep -qE "^AUDIT_LOG_SIGNING_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
+		SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(48))"); \
+		if grep -q "^AUDIT_LOG_SIGNING_KEY=" .env; then \
+			sed -i "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=$$SECRET|" .env; \
+		else \
+			echo "AUDIT_LOG_SIGNING_KEY=$$SECRET" >> .env; \
+		fi; \
+		echo "[ensure-secrets] ✓ Generated AUDIT_LOG_SIGNING_KEY" >&2; \
+	else \
+		echo "[ensure-secrets] ✓ AUDIT_LOG_SIGNING_KEY already set" >&2; \
+	fi
+
+.PHONY: reset-demo
+reset-demo: ## Reset .env to demo defaults (requires confirmation)
+	@echo "⚠️  WARNING: This will overwrite .env with .env.demo defaults." >&2
+	@echo "Any custom configuration will be lost." >&2
+	@read -p "Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		cp .env.demo .env; \
+		echo "[reset-demo] ✓ .env reset to demo defaults" >&2; \
+		echo "[reset-demo] Run 'make quickstart' to generate new secrets" >&2; \
+	else \
+		echo "[reset-demo] Cancelled" >&2; \
+	fi
+
 .PHONY: validate-env
-validate-env: ## Validate and auto-correct .env (DEMO_MODE=true forces AZURE_USE_KEYVAULT=false)
+validate-env: ensure-env ## Validate and auto-correct .env (DEMO_MODE=true forces AZURE_USE_KEYVAULT=false)
 	@./scripts/validate_env.sh
+
+.PHONY: load-secrets
+load-secrets: ## Load secrets from Azure Key Vault into .env.runtime
+	@bash scripts/load_secrets_from_keyvault.sh
 
 .PHONY: require-service-secret
 require-service-secret:
@@ -166,9 +219,30 @@ check-azure: ## Test DefaultAzureCredential token acquisition inside the Flask c
 	@docker compose exec flask-app python3 -c "from azure.identity import DefaultAzureCredential; print(DefaultAzureCredential().get_token('https://management.azure.com/.default').token[:20])"
 
 .PHONY: clean-secrets
-clean-secrets: ## Remove local runtime secrets and azure cache
-	@rm -rf .runtime/secrets .runtime/azure
-	@echo "[clean] Removed .runtime/secrets and .runtime/azure"
+clean-secrets: ## Remove secrets only (keep audit logs)
+	@rm -rf .runtime/secrets || true
+	@chmod -R u+w .runtime/azure 2>/dev/null || true
+	@rm -rf .runtime/azure || true
+	@echo "[clean-secrets] Removed .runtime/secrets and .runtime/azure (audit logs preserved)"
+
+.PHONY: clean-all
+clean-all: ## Remove runtime data (secrets + audit logs)
+	@rm -rf .runtime/secrets || true
+	@chmod -R u+w .runtime/azure 2>/dev/null || true
+	@rm -rf .runtime/azure || true
+	@rm -rf .runtime/audit/*.jsonl || true
+	@echo "[clean-all] Removed .runtime/ (secrets, azure cache, audit logs)"
+
+.PHONY: archive-audit
+archive-audit: ## Archive current audit log with timestamp
+	@if [ -f .runtime/audit/jml-events.jsonl ]; then \
+		timestamp=$$(date +%Y%m%d_%H%M%S); \
+		mkdir -p .runtime/audit/archive; \
+		cp .runtime/audit/jml-events.jsonl .runtime/audit/archive/jml-events_$$timestamp.jsonl; \
+		echo "[archive] Audit log archived to .runtime/audit/archive/jml-events_$$timestamp.jsonl"; \
+	else \
+		echo "[archive] No audit log to archive"; \
+	fi
 
 .PHONY: demo-mode
 demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la valeur
@@ -179,12 +253,23 @@ demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la v
 	@echo "[demo-mode] fresh-demo exécuté en mode démo, configuration restaurée."
 
 .PHONY: quickstart
-quickstart: validate-env ## Run stack + demo_jml.sh (which handles bootstrap)
+quickstart: validate-env ensure-secrets ## Run stack + demo_jml.sh (which handles bootstrap)
+	@set -a; source .env; set +a; \
+	if [[ "$${AZURE_USE_KEYVAULT,,}" == "true" ]]; then \
+		echo "[quickstart] Loading secrets from Azure Key Vault..."; \
+		$(MAKE) load-secrets; \
+	fi
 	@./scripts/run_https.sh
 	@$(WITH_ENV) ./scripts/demo_jml.sh
 
 .PHONY: fresh-demo
-fresh-demo: validate-env ## Reset everything then run quickstart
+fresh-demo: validate-env ## Reset everything then run quickstart (clean secrets + audit)
+	@docker compose down -v || true
+	@$(MAKE) clean-all
+	@$(MAKE) quickstart
+
+.PHONY: fresh-demo-keep-audit
+fresh-demo-keep-audit: validate-env ## Reset but preserve audit logs
 	@docker compose down -v || true
 	@$(MAKE) clean-secrets
 	@$(MAKE) quickstart

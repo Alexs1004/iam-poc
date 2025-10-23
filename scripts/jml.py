@@ -906,10 +906,13 @@ def disable_user(kc_url: str, token: str, realm: str, username: str) -> None:
     # Audit: Log user disable event
     if audit_module:
         try:
-            audit_module.append_audit_jsonl(
-                action="user.disabled",
-                username=username,
-                metadata={"user_id": user_id, "archived": False}  # archived=False (reste dans groupe)
+            audit_module.log_jml_event(
+                "leaver",
+                username,
+                operator="automation",
+                realm=realm,
+                details={"user_id": user_id, "action": "disabled", "archived": False},
+                success=True
             )
         except Exception as e:
             print(f"[leaver] Warning: Failed to log audit event: {e}", file=sys.stderr)

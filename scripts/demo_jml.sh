@@ -12,6 +12,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 cd "${PROJECT_ROOT}"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Load secrets from .runtime/secrets/ (same location mounted as /run/secrets)
+# ─────────────────────────────────────────────────────────────────────────────
+load_secret_from_local_file() {
+  local secret_name="$1"
+  local secret_file="${PROJECT_ROOT}/.runtime/secrets/${secret_name}"
+  
+  if [[ -f "$secret_file" ]]; then
+    cat "$secret_file"
+    return 0
+  fi
+  return 1
+}
+
 # Allow overriding the python interpreter via $PYTHON, defaulting to python3.
 PYTHON_BIN=${PYTHON:-python3}
 JML_CMD="${PYTHON_BIN} ${SCRIPT_DIR}/jml.py"
@@ -21,6 +35,34 @@ if [[ -f "${PROJECT_ROOT}/.env" ]]; then
   set -a
   source "${PROJECT_ROOT}/.env"
   set +a
+else
+  # No .env file: Set demo mode defaults
+  echo "[demo] No .env file found, using hardcoded demo defaults"
+  export DEMO_MODE="${DEMO_MODE:-true}"
+  export AZURE_USE_KEYVAULT="${AZURE_USE_KEYVAULT:-false}"
+  
+  # Keycloak URLs and configuration
+  export KEYCLOAK_URL_HOST="${KEYCLOAK_URL_HOST:-http://127.0.0.1:8080}"
+  export KEYCLOAK_REALM="${KEYCLOAK_REALM:-demo}"
+  export KEYCLOAK_SERVICE_REALM="${KEYCLOAK_SERVICE_REALM:-demo}"
+  export KEYCLOAK_SERVICE_CLIENT_ID="${KEYCLOAK_SERVICE_CLIENT_ID:-automation-cli}"
+  export KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
+  
+  # OIDC configuration
+  export OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-flask-app}"
+  export OIDC_REDIRECT_URI="${OIDC_REDIRECT_URI:-https://localhost/callback}"
+  export POST_LOGOUT_REDIRECT_URI="${POST_LOGOUT_REDIRECT_URI:-https://localhost/}"
+  
+  # Demo secrets (hardcoded for demo mode only)
+  export KEYCLOAK_ADMIN_PASSWORD_DEMO="${KEYCLOAK_ADMIN_PASSWORD_DEMO:-admin}"
+  export KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO="${KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO:-demo-service-secret}"
+  export AUDIT_LOG_SIGNING_KEY_DEMO="${AUDIT_LOG_SIGNING_KEY_DEMO:-demo-audit-signing-key-change-in-production}"
+  
+  # Demo user passwords
+  export ALICE_TEMP_PASSWORD_DEMO="${ALICE_TEMP_PASSWORD_DEMO:-Passw0rd!}"
+  export BOB_TEMP_PASSWORD_DEMO="${BOB_TEMP_PASSWORD_DEMO:-Passw0rd!}"
+  export CAROL_TEMP_PASSWORD_DEMO="${CAROL_TEMP_PASSWORD_DEMO:-Passw0rd!}"
+  export JOE_TEMP_PASSWORD_DEMO="${JOE_TEMP_PASSWORD_DEMO:-Passw0rd!}"
 fi
 
 # Enforce DEMO_MODE consistency: Demo mode must never use Azure Key Vault
@@ -34,11 +76,26 @@ if [[ "${DEMO_MODE,,}" == "true" ]]; then
 fi
 
 # Priority order for sensitive data:
-# 1. Environment variables (if already set)
-# 2. Demo defaults (if DEMO_MODE=true)
-# 3. Azure Key Vault (if AZURE_USE_KEYVAULT=true and variables still unset)
+# 1. .runtime/secrets/ (if files exist - loaded by load_secrets_from_keyvault.sh)
+# 2. Environment variables (if already set)
+# 3. Demo defaults (if DEMO_MODE=true)
+# 4. Azure Key Vault inline fetch (legacy fallback)
 
-# Step 1: Apply demo defaults if DEMO_MODE=true
+# Step 1: Load from .runtime/secrets/ if available (production mode with make load-secrets)
+if [[ -d "${PROJECT_ROOT}/.runtime/secrets" ]]; then
+  KEYCLOAK_ADMIN_PASSWORD=$(load_secret_from_local_file "keycloak_admin_password" || echo "")
+  KEYCLOAK_SERVICE_CLIENT_SECRET=$(load_secret_from_local_file "keycloak_service_client_secret" || echo "")
+  ALICE_TEMP_PASSWORD=$(load_secret_from_local_file "alice_temp_password" || echo "")
+  BOB_TEMP_PASSWORD=$(load_secret_from_local_file "bob_temp_password" || echo "")
+  CAROL_TEMP_PASSWORD=$(load_secret_from_local_file "carol_temp_password" || echo "")
+  JOE_TEMP_PASSWORD=$(load_secret_from_local_file "joe_temp_password" || echo "")
+  
+  if [[ -n "${KEYCLOAK_ADMIN_PASSWORD}" ]]; then
+    echo "[production] Secrets loaded from .runtime/secrets/ (Azure Key Vault cache)"
+  fi
+fi
+
+# Step 2: Apply demo defaults if DEMO_MODE=true
 if [[ "${DEMO_MODE,,}" == "true" ]]; then
   # Priority: 1. Already set env var, 2. *_DEMO var, 3. Hardcoded fallback
   ALICE_TEMP_PASSWORD="${ALICE_TEMP_PASSWORD:-${ALICE_TEMP_PASSWORD_DEMO:-Passw0rd!}}"
@@ -132,6 +189,17 @@ else
   fi
 fi
 
+# Load audit signing key for event signatures
+if [[ -f "${PROJECT_ROOT}/.runtime/secrets/audit_log_signing_key" ]]; then
+  AUDIT_LOG_SIGNING_KEY=$(cat "${PROJECT_ROOT}/.runtime/secrets/audit_log_signing_key")
+  export AUDIT_LOG_SIGNING_KEY
+elif [[ "${DEMO_MODE,,}" == "true" ]]; then
+  # Demo mode: Use demo default signing key
+  AUDIT_LOG_SIGNING_KEY="${AUDIT_LOG_SIGNING_KEY_DEMO:-demo-audit-signing-key-change-in-production}"
+  export AUDIT_LOG_SIGNING_KEY
+  echo "[demo] Using demo audit signing key"
+fi
+
 KC_URL=${KEYCLOAK_URL_HOST:?Variable KEYCLOAK_URL_HOST required}
 KC_SERVICE_REALM=${KEYCLOAK_SERVICE_REALM:-demo}
 KC_SERVICE_CLIENT_ID=${KEYCLOAK_SERVICE_CLIENT_ID:?Variable KEYCLOAK_SERVICE_CLIENT_ID required}
@@ -166,10 +234,10 @@ if [[ "${DEMO_MODE,,}" == "true" ]]; then
   # Use the admin token to set the client secret back to the demo default
   ADMIN_TOKEN=$(curl -s -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "username=${KEYCLOAK_ADMIN}" \
-    -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
-    -d "grant_type=password" \
-    -d "client_id=admin-cli" | ${PYTHON_BIN} -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+    --data-urlencode "username=${KEYCLOAK_ADMIN}" \
+    --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD}" \
+    --data-urlencode "grant_type=password" \
+    --data-urlencode "client_id=admin-cli" | ${PYTHON_BIN} -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
   
   # Get the client's internal ID and current representation
   CLIENT_INTERNAL_ID=$(curl -s -X GET "${KC_URL}/admin/realms/${REALM}/clients?clientId=${KC_SERVICE_CLIENT_ID}" \
@@ -199,12 +267,29 @@ else
   export KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:?KEYCLOAK_ADMIN required}"
   export KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD required}"
   
-  ADMIN_TOKEN=$(curl -s -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "username=${KEYCLOAK_ADMIN}" \
-    -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
-    -d "grant_type=password" \
-    -d "client_id=admin-cli" | ${PYTHON_BIN} -c "import sys,json; print(json.load(sys.stdin).get('access_token', ''))" 2>/dev/null)
+  # Wait for Keycloak to be fully ready (retry up to 30 seconds)
+  echo "[production] Waiting for Keycloak to be fully ready..."
+  ADMIN_TOKEN=""
+  for i in {1..30}; do
+    ADMIN_TOKEN=$(curl -s -X POST "${KC_URL}/realms/master/protocol/openid-connect/token" \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      --data-urlencode "username=${KEYCLOAK_ADMIN}" \
+      --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD}" \
+      --data-urlencode "grant_type=password" \
+      --data-urlencode "client_id=admin-cli" 2>/dev/null | ${PYTHON_BIN} -c "import sys,json; print(json.load(sys.stdin).get('access_token', ''))" 2>/dev/null || echo "")
+    
+    if [[ -n "${ADMIN_TOKEN}" ]]; then
+      echo "[production] ✓ Keycloak admin API is ready (attempt $i)"
+      break
+    fi
+    
+    if [[ $i -eq 30 ]]; then
+      echo "[production] ✗ Timeout: Keycloak admin API not responding after 30 seconds" >&2
+      exit 1
+    fi
+    
+    sleep 1
+  done
   
   if [[ -n "${ADMIN_TOKEN}" ]]; then
     # Check if realm exists first
@@ -255,9 +340,9 @@ else
       NEEDS_BOOTSTRAP=true
     fi
   else
-    # Can't check, assume everything exists and use Key Vault secret
-    echo "[production] Using service account secret from Key Vault"
-    KC_SERVICE_CLIENT_SECRET="${KEYCLOAK_SERVICE_CLIENT_SECRET:?KEYCLOAK_SERVICE_CLIENT_SECRET required from Key Vault}"
+    # This should never happen now with retry logic above
+    echo "[production] ✗ Failed to authenticate to Keycloak admin API" >&2
+    exit 1
   fi
 fi
 
@@ -283,6 +368,13 @@ if [[ "${NEEDS_BOOTSTRAP:-false}" == "true" ]]; then
     --value "${NEW_SECRET}" \
     --only-show-errors >/dev/null 2>&1; then
     echo "[production] ✅ Azure Key Vault updated successfully"
+    
+    # Update the local secret file so Flask can use it
+    echo "[production] Updating local secret file .runtime/secrets/keycloak_service_client_secret..."
+    chmod 600 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"  # Temporarily allow write
+    echo -n "${NEW_SECRET}" > "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"
+    chmod 400 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"  # Back to read-only
+    echo "[production] ✅ Local secret file updated"
     echo "[production] Restart Flask to load the new secret: make restart-flask"
   else
     echo "[production] ❌ Failed to update Azure Key Vault" >&2

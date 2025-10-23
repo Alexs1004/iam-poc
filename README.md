@@ -2,6 +2,30 @@
 
 > TODO: CI badge · TODO: Documentation link
 
+## 🎯 Quick Demo Mode (Zero Configuration)
+
+Try the complete IAM stack in 3 commands — no Azure setup required:
+
+```bash
+make quickstart    # Auto-generates secrets, starts stack, runs JML demo
+make demo-jml      # Rerun Joiner/Mover/Leaver demo anytime
+make reset-demo    # Reset to clean slate (requires confirmation)
+```
+
+**What happens:**
+- `make quickstart` copies `.env.demo` if `.env` doesn't exist
+- Generates strong secrets automatically if `FLASK_SECRET_KEY` or `AUDIT_LOG_SIGNING_KEY` are empty
+- Idempotent: safe to run multiple times (no duplicate changes)
+- Demo mode uses in-memory secrets (no Azure Key Vault needed)
+- JML automation runs at startup to show provisioning workflows
+
+**Access the stack:**
+- Admin UI: https://localhost:8443/admin (alice/alice, enable MFA)
+- Keycloak: https://localhost:8443/keycloak (admin/admin)
+- SCIM API: https://localhost:8443/scim/v2 (OAuth 2.0 bearer token)
+
+To switch to production mode with Azure Key Vault, see [🔐 Configuration & Secrets](#-configuration--secrets).
+
 ## Table of Contents
 1. [🚀 Elevator Pitch](#-elevator-pitch)
 2. [💡 Project Highlights](#-project-highlights)

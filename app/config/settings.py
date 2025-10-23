@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 # Azure imports (optional)
@@ -18,6 +19,43 @@ except ImportError:
     KeyClient = None
     ResourceNotFoundError = Exception
     AZURE_AVAILABLE = False
+
+
+def _load_secret_from_file(secret_name: str, env_var: str | None = None) -> str | None:
+    """
+    Load secret from /run/secrets (Docker secrets pattern).
+    
+    Priority:
+    1. /run/secrets/{secret_name} (Docker secrets mount)
+    2. Environment variable (fallback)
+    
+    Args:
+        secret_name: Name of the secret file in /run/secrets
+        env_var: Optional environment variable name to check as fallback
+    
+    Returns:
+        Secret value or None if not found
+    """
+    secret_file = Path("/run/secrets") / secret_name
+    
+    # Priority 1: Read from /run/secrets
+    if secret_file.exists() and secret_file.is_file():
+        try:
+            secret_value = secret_file.read_text().strip()
+            if secret_value:
+                print(f"[settings] ✓ Loaded {secret_name} from /run/secrets")
+                return secret_value
+        except Exception as e:
+            print(f"[settings] ✗ Failed to read /run/secrets/{secret_name}: {e}")
+    
+    # Priority 2: Fallback to environment variable
+    if env_var:
+        secret_value = os.getenv(env_var)
+        if secret_value:
+            print(f"[settings] ✓ Loaded {env_var} from environment (fallback)")
+            return secret_value
+    
+    return None
 
 
 @dataclass
@@ -178,31 +216,70 @@ def _get_or_generate(var_name: str, demo_default: Optional[str] = None, required
 
 
 def load_settings() -> AppConfig:
-    """Load application settings from environment and Azure Key Vault."""
+    """Load application settings from environment, /run/secrets, and Azure Key Vault."""
     # Enforce DEMO_MODE consistency first
     _enforce_demo_mode_consistency()
-    
-    # Load from Azure Key Vault if enabled
-    _load_secrets_from_azure()
     
     # Determine mode
     demo_mode = os.environ.get("DEMO_MODE", "false").lower() == "true"
     azure_use_keyvault = os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true"
     
-    # Ensure AUDIT_LOG_SIGNING_KEY exists in demo mode
-    if demo_mode and not os.environ.get("AUDIT_LOG_SIGNING_KEY"):
-        print("[demo-mode] Generating temporary AUDIT_LOG_SIGNING_KEY")
-        os.environ["AUDIT_LOG_SIGNING_KEY"] = secrets.token_urlsafe(48)
+    # ─────────────────────────────────────────────────────────────────────────
+    # Load secrets from /run/secrets (Docker secrets pattern)
+    # Priority: /run/secrets > Azure Key Vault > environment variables
+    # ─────────────────────────────────────────────────────────────────────────
     
     # Flask secret key
-    secret_key = os.environ.get("FLASK_SECRET_KEY")
+    secret_key = _load_secret_from_file("flask_secret_key", "FLASK_SECRET_KEY")
     if not secret_key:
         if demo_mode:
             secret_key = secrets.token_urlsafe(48)
             os.environ["FLASK_SECRET_KEY"] = secret_key
             print("[demo-mode] Generated temporary FLASK_SECRET_KEY")
-        else:
-            raise RuntimeError("FLASK_SECRET_KEY is required when DEMO_MODE is false.")
+        elif azure_use_keyvault:
+            # Fallback to Azure Key Vault (legacy support)
+            _load_secrets_from_azure()
+            secret_key = os.environ.get("FLASK_SECRET_KEY")
+        
+        if not secret_key:
+            raise RuntimeError("FLASK_SECRET_KEY not found in /run/secrets, Azure Key Vault, or environment")
+    
+    # Keycloak service client secret
+    keycloak_service_client_secret = _load_secret_from_file(
+        "keycloak_service_client_secret", 
+        "KEYCLOAK_SERVICE_CLIENT_SECRET"
+    )
+    if keycloak_service_client_secret:
+        os.environ["KEYCLOAK_SERVICE_CLIENT_SECRET"] = keycloak_service_client_secret
+    
+    # Keycloak admin password
+    keycloak_admin_password = _load_secret_from_file(
+        "keycloak_admin_password",
+        "KEYCLOAK_ADMIN_PASSWORD"
+    )
+    if keycloak_admin_password:
+        os.environ["KEYCLOAK_ADMIN_PASSWORD"] = keycloak_admin_password
+    
+    # Audit log signing key
+    audit_log_signing_key = _load_secret_from_file(
+        "audit_log_signing_key",
+        "AUDIT_LOG_SIGNING_KEY"
+    )
+    if audit_log_signing_key:
+        os.environ["AUDIT_LOG_SIGNING_KEY"] = audit_log_signing_key
+    elif demo_mode:
+        # Use demo default key (must match the key used by scripts/demo_jml.sh)
+        demo_key = os.environ.get("AUDIT_LOG_SIGNING_KEY_DEMO", "demo-audit-signing-key-change-in-production")
+        os.environ["AUDIT_LOG_SIGNING_KEY"] = demo_key
+        print(f"[demo-mode] Using demo AUDIT_LOG_SIGNING_KEY: {demo_key[:20]}...")
+    
+    # User temporary passwords (optional)
+    for user in ["alice", "bob", "carol", "joe"]:
+        secret_name = f"{user}_temp_password"
+        env_var = f"{user.upper()}_TEMP_PASSWORD"
+        temp_password = _load_secret_from_file(secret_name, env_var)
+        if temp_password:
+            os.environ[env_var] = temp_password
     
     secret_key_fallbacks = [
         key.strip()

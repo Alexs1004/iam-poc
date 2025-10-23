@@ -24,10 +24,36 @@ import re
 import os
 import secrets
 import string
+from pathlib import Path
 from typing import Any, Optional
 from scripts import jml
 from scripts import audit
 import requests
+
+
+def _load_secret_from_file(secret_name: str, env_var: str | None = None) -> str | None:
+    """
+    Load secret from /run/secrets (Docker secrets pattern).
+    
+    Priority:
+    1. /run/secrets/{secret_name}
+    2. Environment variable (fallback)
+    
+    Returns:
+        Secret value or None if not found
+    """
+    secret_file = Path("/run/secrets") / secret_name
+    
+    if secret_file.exists() and secret_file.is_file():
+        try:
+            return secret_file.read_text().strip()
+        except Exception:
+            pass
+    
+    if env_var:
+        return os.getenv(env_var)
+    
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,18 +85,24 @@ KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "demo")
 KEYCLOAK_SERVICE_REALM = os.environ.get("KEYCLOAK_SERVICE_REALM", KEYCLOAK_REALM)
 KEYCLOAK_SERVICE_CLIENT_ID = os.environ.get("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
 
-# NOTE: Secret is loaded dynamically in get_service_token() to ensure
-# it picks up the value from Azure Key Vault after load_settings() runs
+# NOTE: Secret is loaded from /run/secrets with fallback to environment
 def _get_service_client_secret() -> str:
-    """Get service client secret with demo fallback."""
+    """Get service client secret from /run/secrets or environment with demo fallback."""
+    # Try /run/secrets first (production pattern)
+    secret = _load_secret_from_file("keycloak_service_client_secret", "KEYCLOAK_SERVICE_CLIENT_SECRET")
+    
+    if secret:
+        return secret
+    
+    # Demo mode fallback
     if DEMO_MODE:
         return (
             os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET") or 
             os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO") or 
             "demo-service-secret"
         )
-    else:
-        return os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
+    
+    return ""
 
 DEFAULT_ROLE = os.environ.get("SCIM_DEFAULT_ROLE", "analyst")
 

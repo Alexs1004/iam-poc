@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 20
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KC_HOSTNAME_URL: https://localhost
       KC_HOSTNAME_STRICT: "false"
       KC_PROXY: edge
@@ -34,6 +34,7 @@ services:
     container_name: flask-app
     working_dir: /srv/app
     environment:
+      # Configuration (non-sensitive)
       DEMO_MODE: ${DEMO_MODE}
       AZURE_USE_KEYVAULT: ${AZURE_USE_KEYVAULT}
       AZURE_KEY_VAULT_NAME: ${AZURE_KEY_VAULT_NAME}
@@ -60,13 +61,13 @@ services:
       KEYCLOAK_SERVER_URL: http://keycloak:8080/realms/${KEYCLOAK_REALM}
       KEYCLOAK_PUBLIC_ISSUER: ${KEYCLOAK_PUBLIC_ISSUER}
       KEYCLOAK_SERVICE_CLIENT_ID: ${KEYCLOAK_SERVICE_CLIENT_ID}
-      KEYCLOAK_SERVICE_CLIENT_SECRET: ${KEYCLOAK_SERVICE_CLIENT_SECRET}
+      # Secrets loaded from /run/secrets (see app/config/settings.py)
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
       POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI}
     volumes: # in production mount must be deleted to use image content only
       - .:/srv/app
-      - ./.runtime/azure:/root/.azure:rw
+      - ./.runtime/secrets:/run/secrets:ro
     restart: unless-stopped
     healthcheck:
       test:
