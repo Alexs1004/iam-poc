@@ -78,7 +78,7 @@ class TestSCIMSchemaEndpoints:
             None
         )
         assert user_resource is not None
-        assert user_resource['endpoint'] == '/Users'
+        assert user_resource['endpoint'] == '/scim/v2/Users'  # Full path including prefix
         
     def test_schemas(self, client):
         """Test /Schemas returns User schema definition"""

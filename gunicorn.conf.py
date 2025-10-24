@@ -1,11 +1,32 @@
-"""Gunicorn configuration file with post-fork hook for Azure Key Vault secrets."""
+"""Gunicorn configuration file with intelligent secret loading.
+
+Secret Loading Priority (post_fork hook):
+1. /run/secrets (Docker secrets - cached from Azure Key Vault or generated locally)
+   → Used when AZURE_USE_KEYVAULT=true and secrets pre-loaded via load_secrets_from_keyvault.sh
+   → No live Azure connection needed in workers (performance + resilience)
+
+2. Azure Key Vault direct access (fallback for hot-reload scenarios)
+   → Only triggered if /run/secrets is empty AND AZURE_USE_KEYVAULT=true
+   → Requires live Azure authentication (DefaultAzureCredential)
+
+This design allows:
+- AZURE_USE_KEYVAULT=true with cached secrets (dev/staging with Azure KV cache)
+- AZURE_USE_KEYVAULT=true with live Azure KV (production with hot-reload)
+- AZURE_USE_KEYVAULT=false with Docker secrets (pure local dev)
+"""
 import os
 
 
 def post_fork(server, worker):
     """
     Called just after a worker has been forked.
-    Load secrets from Azure Key Vault in each worker process.
+    
+    Priority for secret loading:
+    1. /run/secrets (Docker secrets - already loaded from Azure KV or generated)
+    2. Azure Key Vault direct access (fallback for hot-reload scenarios)
+    
+    This design allows AZURE_USE_KEYVAULT=true to work with cached secrets
+    without requiring live Azure connection in every worker.
     """
     # Enforce DEMO_MODE consistency: Demo mode must never use Azure Key Vault
     # This is a safety guard; normally validate_env.sh should correct .env before Docker starts
@@ -15,9 +36,20 @@ def post_fork(server, worker):
         worker.log.info("Forcing AZURE_USE_KEYVAULT=false | Run 'make validate-env' to fix .env permanently")
         os.environ["AZURE_USE_KEYVAULT"] = "false"
     
+    # Check if secrets are already available in /run/secrets (Docker mount)
+    from pathlib import Path
+    secrets_dir = Path("/run/secrets")
+    if secrets_dir.exists() and secrets_dir.is_dir():
+        secret_files = list(secrets_dir.glob("*"))
+        if secret_files:
+            worker.log.info(f"Found {len(secret_files)} secrets in /run/secrets (using cached secrets)")
+            # Secrets already loaded by settings.py, no need to reload from Azure KV
+            return
+    
+    # Fallback: Load from Azure Key Vault if enabled and /run/secrets not available
     use_kv = os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true"
     if not use_kv:
-        worker.log.info("Skipping Azure Key Vault (AZURE_USE_KEYVAULT=false)")
+        worker.log.info("Skipping Azure Key Vault direct access (AZURE_USE_KEYVAULT=false)")
         return
     
     try:

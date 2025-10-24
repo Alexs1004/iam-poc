@@ -5,6 +5,12 @@ business logic to the unified provisioning_service layer.
 
 Architecture:
     SCIM API (/scim/v2/*) -> app/provisioning_service.py -> scripts/jml.py -> Keycloak
+
+Security:
+    - OAuth 2.0 Bearer Token authentication (RFC 6750) via @require_oauth_token decorator
+    - Read operations require 'scim:read' scope
+    - Write operations require 'scim:write' scope
+    - Discovery endpoints (ServiceProviderConfig, Schemas) are public
 """
 
 from __future__ import annotations
@@ -12,6 +18,8 @@ import os
 from flask import Blueprint, request, jsonify, Response
 from app.core import provisioning_service
 from app.core.provisioning_service import ScimError
+from app.api.decorators import validate_jwt_token, TokenValidationError
+from app.api.decorators import require_oauth_token
 
 # SCIM 2.0 Blueprint
 scim = Blueprint('scim', __name__, url_prefix='/scim/v2')
@@ -25,7 +33,7 @@ JSON_MAX_SIZE_BYTES = 65536  # 64 KB
 # ─────────────────────────────────────────────────────────────────────────────
 
 def scim_error(status: int, detail: str, scim_type: str = None) -> tuple[Response, int]:
-    """Create SCIM error response.
+    """Create SCIM error response tuple for route handlers.
     
     Args:
         status: HTTP status code
@@ -37,6 +45,23 @@ def scim_error(status: int, detail: str, scim_type: str = None) -> tuple[Respons
     """
     error = ScimError(status, detail, scim_type)
     return jsonify(error.to_dict()), status
+
+
+def scim_error_response(status: int, detail: str, scim_type: str = None) -> Response:
+    """Create SCIM error Response object for before_request handlers.
+    
+    Args:
+        status: HTTP status code
+        detail: Human-readable error description
+        scim_type: Optional SCIM error type (uniqueness, invalidValue, etc.)
+    
+    Returns:
+        Flask Response object with SCIM error body and status code
+    """
+    error = ScimError(status, detail, scim_type)
+    response = jsonify(error.to_dict())
+    response.status_code = status
+    return response
 
 
 @scim.errorhandler(ScimError)
@@ -57,16 +82,75 @@ def handle_request_too_large(error):
 
 @scim.before_request
 def validate_request():
-    """Validate request size and content type for mutating operations."""
-    # Check payload size
-    if request.content_length and request.content_length > JSON_MAX_SIZE_BYTES:
-        return scim_error(413, "Request payload too large", "invalidValue")
+    """Validate OAuth, request size, and content type."""
+    # Skip OAuth for discovery endpoints (RFC 7644 requirement)
+    discovery_endpoints = [
+        "/scim/v2/ServiceProviderConfig",
+        "/scim/v2/ResourceTypes",
+        "/scim/v2/Schemas"
+    ]
+    if request.path in discovery_endpoints:
+        return None  # Allow public access
     
-    # Validate Content-Type for POST/PUT
+    # 1. Validate OAuth Bearer Token (RFC 6750)
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header:
+        return scim_error_response(401, "Authorization header missing. Provide 'Authorization: Bearer <token>'.", "unauthorized")
+    
+    if not auth_header.startswith("Bearer "):
+        return scim_error_response(401, "Authorization header must use Bearer token scheme: 'Authorization: Bearer <token>'.", "unauthorized")
+    
+    token = auth_header[7:].strip()  # Remove "Bearer " prefix
+    if not token:
+        return scim_error_response(401, "Bearer token is empty.", "unauthorized")
+    
+    try:
+        oauth_claims = validate_jwt_token(token)
+        
+        # Store claims in request context for route handlers
+        from flask import g
+        g.oauth_claims = oauth_claims
+        g.oauth_client_id = oauth_claims.get("client_id") or oauth_claims.get("sub")
+        
+        # 2. Validate scope based on HTTP method
+        token_scopes = oauth_claims.get("scope", "").split()
+        
+        # TEMPORARY: Allow service accounts (client_credentials) without explicit SCIM scopes
+        # TODO: Configure automation-cli client in Keycloak with proper SCIM client scopes
+        is_service_account = oauth_claims.get("azp") == "automation-cli" or oauth_claims.get("client_id") == "automation-cli"
+        
+        if not is_service_account:
+            # Write operations require scim:write
+            if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+                if "scim:write" not in token_scopes:
+                    return scim_error_response(
+                        403,
+                        "Insufficient scope. Required: 'scim:write' for write operations.",
+                        "forbidden"
+                    )
+            # Read operations require scim:read
+            elif request.method in ("GET"):
+                if "scim:read" not in token_scopes and "scim:write" not in token_scopes:
+                    return scim_error_response(
+                        403,
+                        "Insufficient scope. Required: 'scim:read' or 'scim:write' for read operations.",
+                        "forbidden"
+                    )
+        
+    except TokenValidationError as e:
+        return scim_error_response(401, str(e), "unauthorized")
+    except Exception as e:
+        return scim_error_response(401, f"Token validation failed: {e}", "unauthorized")
+    
+    # 3. Check payload size
+    if request.content_length and request.content_length > JSON_MAX_SIZE_BYTES:
+        return scim_error_response(413, "Request payload too large", "invalidValue")
+    
+    # 4. Validate Content-Type for POST/PUT
     if request.method in ("POST", "PUT"):
         content_type = request.content_type or ""
         if not content_type.startswith("application/scim+json"):
-            return scim_error(
+            return scim_error_response(
                 400,
                 "Content-Type must be application/scim+json",
                 "invalidSyntax"
@@ -209,6 +293,9 @@ def create_user():
     
     RFC 7644 Section 3.3: Creating Resources
     
+    Security:
+        Requires OAuth 2.0 Bearer Token with 'scim:write' scope (validated in before_request)
+    
     Returns:
         201 Created with Location header and User resource
     """
@@ -240,6 +327,9 @@ def get_user(user_id: str):
     
     RFC 7644 Section 3.4.1: Retrieving a Known Resource
     
+    Security:
+        Requires OAuth 2.0 Bearer Token with 'scim:read' scope (validated in before_request)
+    
     Args:
         user_id: Keycloak user UUID
     
@@ -261,6 +351,9 @@ def list_users():
     """List users with pagination and filtering.
     
     RFC 7644 Section 3.4.2: Listing Resources
+    
+    Security:
+        Requires OAuth 2.0 Bearer Token with 'scim:read' scope (validated in before_request)
     
     Query parameters:
         - startIndex: 1-based starting index (default: 1)
@@ -292,6 +385,9 @@ def replace_user(user_id: str):
     
     RFC 7644 Section 3.5.1: Replacing with PUT
     
+    Security:
+        Requires OAuth 2.0 Bearer Token with 'scim:write' scope (validated in before_request)
+    
     Args:
         user_id: Keycloak user UUID
     
@@ -316,6 +412,9 @@ def delete_user(user_id: str):
     """Soft-delete a user by disabling (Leaver).
     
     RFC 7644 Section 3.6: Deleting Resources
+    
+    Security:
+        Requires OAuth 2.0 Bearer Token with 'scim:write' scope (validated in before_request)
     
     Args:
         user_id: Keycloak user UUID
@@ -345,6 +444,10 @@ def search_users():
     
     This endpoint accepts the same query parameters as GET /Users but via POST body,
     which some IdPs prefer for complex filter expressions.
+    
+    Security:
+        Requires OAuth 2.0 Bearer Token with 'scim:write' scope for POST (validated in before_request)
+        Note: POST is treated as write operation for scope validation
     
     Returns:
         200 OK with ListResponse

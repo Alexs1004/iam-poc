@@ -44,7 +44,7 @@ WITH_ENV := set -a; source .env; set +a; \
 
 .PHONY: help
 help:
-	@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | sed 's/:.*##/: /'
+	@grep -E '^[a-zA-Z0-9_-]+:.*##' Makefile | sed 's/:.*##/: /'
 
 .PHONY: ensure-env
 ensure-env: ## Copy .env.demo to .env if .env doesn't exist (zero-config demo mode)
@@ -353,24 +353,114 @@ doctor: ## Check az login, Key Vault access and docker compose version
 	@docker compose version >/dev/null || (echo "[doctor] docker compose not available." >&2; exit 1)
 	@echo "[doctor] Environment looks good."
 
+.PHONY: ensure-stack
+ensure-stack: ## Ensure stack is running (start if needed)
+	@if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q keycloak; then \
+		echo "[ensure-stack] Stack not running, starting with quickstart..."; \
+		$(MAKE) quickstart; \
+		echo "[ensure-stack] Waiting for services to be healthy (30s)..."; \
+		sleep 30; \
+	else \
+		echo "[ensure-stack] ✓ Stack already running"; \
+	fi
+
 .PHONY: pytest
-pytest: ## Run unit tests
+pytest: ## Run unit tests only (fast, no infrastructure needed)
 	@python3 -m venv venv >/dev/null 2>&1 || true
 	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest
+	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest -m "not integration" $(ARGS)
+
+.PHONY: pytest-all
+pytest-all: ensure-stack ## Run ALL tests (unit + E2E, auto-starts stack if needed)
+	@echo "[pytest-all] Running all tests (unit + E2E)..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && python3 -m pytest $(ARGS)
 
 .PHONY: pytest-unit
 pytest-unit: ## Run unit tests only (skip integration tests)
 	@python3 -m venv venv >/dev/null 2>&1 || true
 	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest -m "not integration"
+	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest -m "not integration" $(ARGS)
 
 .PHONY: pytest-e2e
-pytest-e2e: ## Run E2E integration tests (requires running stack)
+pytest-e2e: ensure-stack ## Run E2E integration tests (auto-starts stack if needed)
 	@echo "[pytest-e2e] Running integration tests against live stack..."
 	@python3 -m venv venv >/dev/null 2>&1 || true
 	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && $(WITH_ENV) python3 -m pytest tests/test_integration_e2e.py -v -m integration
+	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v -m integration
+
+.PHONY: pytest-e2e-comprehensive
+pytest-e2e-comprehensive: ensure-stack ## Run comprehensive E2E tests (auto-starts stack if needed)
+	@echo "[pytest-e2e-comprehensive] Running comprehensive E2E test suite..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v
+
+.PHONY: pytest-e2e-critical
+pytest-e2e-critical: ensure-stack ## Run only critical E2E tests (auto-starts stack if needed)
+	@echo "[pytest-e2e-critical] Running critical E2E tests only..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v -m critical
+
+.PHONY: pytest-e2e-scim
+pytest-e2e-scim: ensure-stack ## Run SCIM E2E tests (auto-starts stack if needed)
+	@echo "[pytest-e2e-scim] Running SCIM E2E tests..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v -m scim
+
+.PHONY: pytest-e2e-full
+pytest-e2e-full: ensure-stack ## Run ALL E2E tests (auto-starts stack if needed)
+	@echo "[pytest-e2e-full] Running all E2E test suites..."
+	@$(MAKE) pytest-e2e
+	@$(MAKE) pytest-e2e-comprehensive
+	@echo "[pytest-e2e-full] ✅ All E2E test suites completed"
+
+.PHONY: pytest-security
+pytest-security: ## Run P0 critical security tests (OIDC/JWT, secrets, SCIM, headers)
+	@echo "[pytest-security] Running P0 critical security tests..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest -m critical -v
+
+.PHONY: pytest-oidc
+pytest-oidc: ## Run OIDC/JWT validation tests (issuer, exp, alg:none, PKCE, JWKS rotation)
+	@echo "[pytest-oidc] Running OIDC/JWT security tests..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest tests/test_oidc_jwt_validation.py -v
+
+.PHONY: pytest-secrets
+pytest-secrets: ## Run secrets security tests (logs, HTTP, rotation, permissions)
+	@echo "[pytest-secrets] Running secrets security tests..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest tests/test_secrets_security.py -v
+
+.PHONY: pytest-scim-revocation
+pytest-scim-revocation: ## Run SCIM session revocation tests (requires running stack)
+	@echo "[pytest-scim-revocation] Running SCIM session revocation tests..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && DEMO_MODE=true RUN_INTEGRATION_TESTS=1 python3 -m pytest tests/test_scim_session_revocation.py -v -m integration
+
+.PHONY: pytest-nginx-headers
+pytest-nginx-headers: ensure-stack ## Run Nginx/TLS/headers security tests (auto-starts stack if needed)
+	@echo "[pytest-nginx-headers] Running Nginx/TLS/headers security tests..."
+	@python3 -m venv venv >/dev/null 2>&1 || true
+	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
+	@. venv/bin/activate && python3 -m pytest tests/test_nginx_security_headers.py -v -m integration
+
+.PHONY: pytest-p0
+pytest-p0: ## Run all P0 critical security tests (unit + integration)
+	@echo "[pytest-p0] Running all P0 critical security tests..."
+	@$(MAKE) pytest-oidc
+	@$(MAKE) pytest-secrets
+	@echo "[pytest-p0] Integration tests require running stack. Run 'make up' first, then:"
+	@echo "  - make pytest-scim-revocation"
+	@echo "  - make pytest-nginx-headers"
 
 .PHONY: verify-audit
 verify-audit: ## Verify integrity of audit log signatures

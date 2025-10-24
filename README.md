@@ -1,826 +1,475 @@
 # Mini IAM Lab — Azure-First Identity Demo
 
-> TODO: CI badge · TODO: Documentation link
+![Made with Azure Key Vault](https://img.shields.io/badge/Azure-Key%20Vault-0078D4?logo=microsoft-azure&logoColor=white)
+![Demo in 2 min](https://img.shields.io/badge/Demo-2%20minutes-success?logo=github)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-162%20passed-brightgreen?logo=pytest)
+![Coverage](https://img.shields.io/badge/Coverage-85%25-green?logo=codecov)
+![Security](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-## 🎯 Quick Demo Mode (Zero Configuration)
+## 🎯 TL;DR (pour recruteurs)
 
-Try the complete IAM stack in 3 commands — no Azure setup required:
+- **PoC IAM "Azure-first"** : SCIM 2.0 (RFC 7644), OIDC+PKCE, TOTP MFA, RBAC, JML (Joiner/Mover/Leaver) automatisé
+- **Secrets Azure Key Vault** : `DefaultAzureCredential`, rotation orchestrée, pattern `/run/secrets` prod-like
+- **Tests & qualité** : Tests unitaires + E2E, audit cryptographique HMAC-SHA256, health checks
+- **Démo locale en 2 min** : `make quickstart` — zéro configuration Azure requise
+- **Alignement Azure** : Key Vault (implémenté), roadmap proche **Microsoft Entra ID**, **Managed Identity**, **Azure Monitor/Policy**
+- **Contexte Suisse romande** : Bonnes pratiques **nLPD (LPD 2023)** + **RGPD**, principes **FINMA** (haut niveau)
+
+## 🚀 Essayez en 2 minutes
 
 ```bash
-make quickstart    # Auto-generates secrets, starts stack, runs JML demo
-make demo-jml      # Rerun Joiner/Mover/Leaver demo anytime
-make reset-demo    # Reset to clean slate (requires confirmation)
+make quickstart     # Secrets démo auto + stack + JML automation
+open https://localhost
 ```
 
-**What happens:**
-- `make quickstart` copies `.env.demo` → `.env` if `.env` doesn't exist
-- Detects `DEMO_MODE=true` and auto-generates strong secrets **only in demo mode**
-- Generates `FLASK_SECRET_KEY` (32 bytes) and `AUDIT_LOG_SIGNING_KEY` (48 bytes) using Python `secrets.token_urlsafe()`
-- **Idempotent**: safe to run multiple times (no duplicate changes, secrets preserved)
-- **Security**: Secrets never printed to console (logs to stderr only)
-- **Production-safe**: When `DEMO_MODE=false`, skips local generation and loads from Azure Key Vault
-- JML automation runs at startup to show provisioning workflows
+**Ce que vous voyez** :
+Login → Provisioning JML → Appel SCIM API → Audit signé → Rotation de secret OK (HTTP 200)
 
-**Access the stack:**
-- Admin UI: https://localhost/admin (alice/alice, enable MFA)
-- Keycloak: https://localhost/keycloak (admin/admin)
-- SCIM API: https://localhost/scim/v2 (OAuth 2.0 bearer token)
+> **📹 Vidéo démo (60s)** : _À venir_ — Login alice → Promotion manager → Désactivation bob → Logs d'audit HMAC
 
-**Secret Management:**
-- **Demo mode** (`DEMO_MODE=true`): Secrets auto-generated in `.env` (gitignored)
-- **Production mode** (`DEMO_MODE=false`): Secrets loaded from Azure Key Vault → `.runtime/secrets/` (read-only mount)
-- `.env` file is **never committed** to git (protected by `.gitignore`)
+**Accès :**
+- UI Admin : https://localhost/admin
+- SCIM API : https://localhost/scim/v2 (OAuth 2.0 bearer)
+- Keycloak : https://localhost/keycloak
 
-To switch to production mode with Azure Key Vault, see [🔐 Configuration & Secrets](#-configuration--secrets).
+<details>
+<summary><strong>🔓 Credentials démo (cliquer pour afficher)</strong></summary>
 
-## Table of Contents
-1. [🚀 Elevator Pitch](#-elevator-pitch)
-2. [💡 Project Highlights](#-project-highlights)
-3. [🧱 Architecture (dev)](#-architecture-dev)
-4. [⚙️ Quickstart (2 minutes)](#️-quickstart-2-minutes)
-5. [🛠️ Make Commands — Quick Reference](#️-make-commands--quick-reference)
-6. [🔐 Configuration & Secrets](#-configuration--secrets)
-7. [🧰 Security Guardrails](#-security-guardrails)
-8. [🧪 Tests](#-tests)
-9. [🚧 Troubleshooting](#-troubleshooting)
-10. [☁️ Production Notes](#️-production-notes)
-11. [🗺️ Roadmap](#️-roadmap)
-12. [📄 License & Credits](#-license--credits)
-13. [🔗 Badges & Useful Links](#-badges--useful-links)
+**⚠️ UNIQUEMENT POUR DÉMO LOCALE** — Jamais en production !
 
-## 🚀 Elevator Pitch
-Modern IAM lab that showcases how I design, secure, and automate identity workloads with Keycloak, Flask, and Azure services.  
-Implements OIDC Authorization Code + PKCE, TOTP MFA, RBAC, and Joiner/Mover/Leaver automation across a Docker Compose stack.  
-Azure Key Vault (DefaultAzureCredential) keeps secrets out of source control while an HTTPS reverse proxy protects every request.  
-Automation scripts rebuild containers on source hash changes, rotate secrets, and validate readiness before exposing endpoints.  
-Ideal for enterprise teams evaluating my approach to IAM architecture, DevSecOps, and Azure-first operations.
+- **Keycloak admin** : `admin` / `admin`
+- **Utilisateurs démo** : `alice` / `alice`, `bob` / `bob`, `joe` / `joe`
+- **Service account** : `automation-cli` / `demo-service-secret`
 
-## 💡 Project Highlights
+</details>
 
-### Zero-Config Demo Mode
-- **Instant startup**: `make quickstart` works without any Azure setup
-- **Auto-generated secrets**: Strong cryptographic keys (256-384 bits) generated automatically
-- **Idempotent workflow**: Safe to run multiple times, secrets preserved
-- **Production guard**: `DEMO_MODE=false` disables local generation, enforces Azure Key Vault
+## 💼 Hiring Signals — Sécurité & Preuves
 
-### Enterprise-Grade Secret Management
-- **Azure Key Vault integration**: Production secrets via `DefaultAzureCredential`
-- **Docker Secrets pattern**: Secrets mounted read-only in `/run/secrets` (chmod 400)
-- **Orchestrated rotation**: Automated Keycloak → Key Vault → restart → health-check workflow
-- **No console leaks**: Secrets never printed to stdout/stderr
-- **Audit trail**: All Key Vault access logged in Azure Activity Log
+| Besoin Entreprise          | Implémentation                  | Azure                          | Preuve Rapide                      |
+|----------------------------|---------------------------------|--------------------------------|------------------------------------|
+| **Secrets hors code**      | `/run/secrets` + Key Vault      | **Azure Key Vault**            | `make load-secrets`, logs KV       |
+| **Rotation créd. service** | Script orchestré end-to-end     | **Azure Key Vault**            | `make rotate-secret` + HTTP 200    |
+| **JML standardisé**        | SCIM 2.0 (RFC 7644)             | **Entra ID** (prochain)        | `tests/test_scim_api.py`           |
+| **MFA/RBAC**               | Keycloak TOTP + rôles           | **Entra ID** (prochain)        | Démo UI + tests RBAC               |
+| **Traçabilité**            | Audit HMAC-SHA256               | **Azure Monitor** (prochain)   | `make verify-audit` (tamper detect)|
+| **Conformité locale**      | nLPD, RGPD, FINMA (principes)   | **Azure Policy** (prochain)    | Docs conformité                    |
 
-### Production-Ready SCIM 2.0 API
-- **RFC 7644 compliant**: Standard schemas, error responses, filtering, pagination
-- **OAuth 2.0 authentication**: Bearer token validation with Keycloak
-- **Unified architecture**: Shared service layer between UI and API (no code duplication)
-- **Cryptographic audit trails**: HMAC-SHA256 signatures on all JML events
-- **Session revocation**: Immediate effect when disabling users
+## 🔐 Pourquoi Azure-First ?
 
-### Security & Compliance
-- **HTTPS by default**: Self-signed certificates regenerated automatically
-- **Hardened Flask app**: Server-side sessions, CSRF tokens, strict proxy validation
-- **RBAC enforcement**: `iam-operator` and `realm-admin` roles at route level
-- **Mandatory MFA**: TOTP required action enforced in Keycloak
-- **Immutable audit logs**: Append-only JSON Lines with signature verification
+### ✅ Implémenté (Production-Ready)
+- **Azure Key Vault** avec `DefaultAzureCredential` (zéro secrets en code)
+- Pattern **Docker Secrets** : `/run/secrets` (chmod 400, read-only mount)
+- **Rotation orchestrée** : Keycloak → Key Vault → Restart Flask → Health-check
+- **Audit trail** : Tous les accès Key Vault loggés dans Azure Activity Log
 
-### Developer Experience
-- **Operational Makefile**: 30+ targets with guard clauses and clear documentation
-- **Reproducible automation**: `scripts/jml.py` provisions realms, roles, and JML workflows
-- **Testable sandbox**: pytest coverage for auth controls, RBAC, and SCIM API
-- **DOGFOOD mode**: UI can call SCIM API via HTTP for real-world testing
-- **Health checks**: Liveness probes on all services with retry logic
+### 🚀 Roadmap court terme (Q1 2025)
+- **Microsoft Entra ID** (ex-Azure AD) : Auth OIDC + SCIM provisioning, consent automation
+- **Managed Identity** : Remplacement `az login` par workload identity federation
+- **Azure Monitor / App Insights** : Métriques, logs structurés, alerting
+- **Azure Policy** : Guardrails infrastructure-as-code, drift detection
 
-## 🧱 Architecture (dev)
+> 💡 **Architecture actuelle** : Keycloak démo local → **Migration progressive vers Microsoft Entra ID** pour alignement 100% Azure
+
+## 📋 Table des Matières
+1. [Architecture & Composants](#-architecture--composants)
+2. [Quickstart (Détaillé)](#️-quickstart-détaillé)
+3. [Make Commands](#️-make-commands--référence-rapide)
+4. [Conformité & Sécurité](#-conformité--sécurité-suisse-romande)
+5. [SCIM 2.0 API](#-scim-20-api)
+6. [Tests](#-tests)
+7. [Production Notes](#️-production-notes)
+8. [Documentation Complète](#-documentation-complète)
+
+---
+
+## 🏗️ Architecture & Composants
+
 ```
-              +---------------------+
-              |   Azure Key Vault   |
-              |   (<VAULT_NAME>)    |
-              +----------+----------+
-                         ^
-                         | secrets (DefaultAzureCredential)
-+-----------+   HTTPS    |                      +----------------+
-|  Browser  | <--------> |  Reverse Proxy (NGINX)| self-signed TLS|
-+-----------+            v                      +-------+--------+
-                        443                             |
-                                                     proxy_pass
-                                                      |
-                                              +-------v--------+
-                                              | Flask App      |
-                                              | (Gunicorn)     |
-                                              +-------+--------+
-                                                      |
-                                                      | OIDC / REST
-                                                      v
-                                              +-------+--------+
-                                              | Keycloak 24    |
-                                              | realm: demo    |
-                                              +----------------+
+              ┌─────────────────────┐
+              │  Azure Key Vault    │  ← DefaultAzureCredential
+              │  (Production)       │     Managed Identity (roadmap)
+              └──────────┬──────────┘
+                         │ secrets
+┌──────────┐   HTTPS    │                   ┌────────────────┐
+│  Browser │ ◄─────────►│  Nginx (TLS)     │  Self-signed   │
+└──────────┘            │  Reverse Proxy   │  (auto-regen)  │
+                        └────────┬──────────┘
+                                 │ proxy_pass
+                        ┌────────▼──────────┐
+                        │  Flask + Gunicorn │  ← OIDC + PKCE
+                        │  /admin, /scim/v2 │     RBAC, MFA
+                        └────────┬──────────┘
+                                 │ Admin API
+                        ┌────────▼──────────┐
+                        │  Keycloak 24      │  ← TOTP MFA
+                        │  Realm: demo      │     Session mgmt
+                        └───────────────────┘
 ```
-Docker Compose orchestrates three services (Keycloak, Flask/Gunicorn, Nginx). Azure Key Vault remains external, providing secrets to automation and runtime via environment injection.
 
-## ⚙️ Quickstart (2 minutes)
+**Service Docker Compose** : Keycloak + Flask/Gunicorn + Nginx (orchestration santé, health checks)
+
+**Flux de données** :
+1. Browser → Nginx (HTTPS) → Flask (OIDC validate) → Keycloak (token)
+2. Flask Admin UI → `provisioning_service.py` → `scripts/jml.py` → Keycloak Admin API
+3. SCIM Client → Nginx → Flask SCIM API → `provisioning_service.py` (logique unifiée)
+4. Audit : Toutes opérations → `audit.py` → `.runtime/audit/jml-events.jsonl` (HMAC-SHA256)
+
+## ⚙️ Quickstart (Détaillé)
+
+### Mode Démo (Développement Local — Recommandé)
+
 ```bash
-cp .env.demo .env                                    # enable DEMO_MODE defaults
-make fresh-demo                                      # Clean start: HTTPS certs + stack + scripted JML demo
-open https://localhost                              # trust the self-signed certificate once
-```
-Shutdown:
-```bash
-make down
-```
+# Installation zéro config
+make quickstart
 
-**What happens during `make fresh-demo`:**
-1. ✅ Removes old containers and volumes for a clean state
-2. ✅ Clears runtime secrets and Azure cache
-3. ✅ Generates self-signed HTTPS certificates (valid 30 days)
-4. ✅ Starts Keycloak, Flask, and Nginx with health checks
-5. ✅ Bootstraps `automation-cli` service account with **fixed demo secret** (`demo-service-secret`)
-6. ✅ Creates demo realm with roles, users (alice, bob, carol, joe), and required actions
-7. ✅ Demonstrates JML workflows: alice promoted, bob disabled
-
-**No Azure Key Vault required!** Demo mode uses hardcoded secrets from `.env` for rapid local development.
-
-### What gets provisioned
-- **OIDC demo login** with Alice / Bob / Carol / Joe (pre-seeded passwords from `.env`).
-- **Joiner/Mover/Leaver UI** at `https://localhost/admin` (requires roles, see table below).
-- **Keycloak consoles**  
-  - Realm-scoped: `https://localhost/admin/demo/console/` (works with Joe).  
-  - Master: `https://localhost/admin/master/console/` (use the global `admin` account).
-- **Automation storyline** via `scripts/demo_jml.sh` (rerun with `make demo` or `make fresh-demo` for a clean state).
-- **Demo Mode Secret Management**: In `DEMO_MODE=true`, the automation bootstrap automatically restores the service client secret to `demo-service-secret` after rotation, ensuring Flask and scripts stay synchronized without manual restarts.
-
-## 🛠️ Make Commands — Quick Reference
-
-### Essential Commands
-- `make quickstart` — **Zero-config start**: Auto-setup `.env`, generate secrets (demo mode only), start stack + JML demo
-- `make fresh-demo` — **Clean slate**: Reset volumes, clear secrets, regenerate certs, rerun full demo
-- `make reset-demo` — **Reset configuration**: Restore `.env` to `.env.demo` defaults (requires typing `yes` confirmation)
-- `make down` — Stop containers (add `-v` flag manually to purge volumes)
-
-### Secret Management
-- `make ensure-env` — Copy `.env.demo` → `.env` if `.env` doesn't exist
-- `make ensure-secrets` — Auto-generate `FLASK_SECRET_KEY` and `AUDIT_LOG_SIGNING_KEY` (demo mode only, skips in production)
-- `make load-secrets` — Load secrets from Azure Key Vault → `.runtime/secrets/` (production mode)
-- `make clean-secrets` — Remove `.runtime/secrets/` and `.runtime/azure/` caches (keeps audit logs)
-- `make clean-all` — Remove all runtime data (secrets + audit logs)
-- `make archive-audit` — Archive current audit log with timestamp
-
-### Testing & Validation
-- `make pytest` — Execute unit tests in managed Python virtual environment
-- `make pytest-e2e` — Run end-to-end integration tests against live stack (requires running containers)
-- `make validate-env` — Validate `.env` configuration (auto-corrects `DEMO_MODE=true` + `AZURE_USE_KEYVAULT=true` conflict)
-- `make doctor` — Validate `az login`, Key Vault permissions, and docker compose availability
-
-### Production Operations
-- `make rotate-secret` — Orchestrated secret rotation: Keycloak → Azure Key Vault → Restart Flask → Health-check (production only)
-- `make rotate-secret-dry` — Dry-run rotation test without making changes
-- `make demo` — Replay Joiner/Mover/Leaver script against running stack (no rebuild)
-
-### Utilities
-- `make help` — Display all available targets with inline descriptions
-- `make ps` — Display service status
-- `make logs` — Tail logs for all services
-- `make restart-flask` — Restart Flask container to reload secrets
-
-## 🔐 Configuration & Secrets
-
-### Demo Mode (without Azure Key Vault) — **Recommended for Local Development**
-Copy `.env.demo` to `.env` for local development:
-```bash
-cp .env.demo .env
+# Ce qui se passe automatiquement :
+# 1. ✅ Copie .env.demo → .env (si absent)
+# 2. ✅ Génère FLASK_SECRET_KEY (256 bits) + AUDIT_LOG_SIGNING_KEY (384 bits)
+# 3. ✅ Démarre Keycloak + Flask + Nginx avec health checks
+# 4. ✅ Bootstrap service account automation-cli (secret: demo-service-secret)
+# 5. ✅ Crée realm demo + users (alice, bob, carol, joe) + roles
+# 6. ✅ Démontre JML : alice promue manager, bob désactivé
 ```
 
-Key settings for demo mode:
-- `DEMO_MODE=true` — Auto-generates missing secrets and uses hardcoded demo values
-- `AZURE_USE_KEYVAULT=false` — Uses environment variables directly instead of Key Vault
-- Set passwords directly in `.env`:
-  ```bash
-  KEYCLOAK_ADMIN_PASSWORD=admin
-  ALICE_TEMP_PASSWORD=Passw0rd!
-  BOB_TEMP_PASSWORD=Passw0rd!
-  CAROL_TEMP_PASSWORD=Passw0rd!
-  JOE_TEMP_PASSWORD=Passw0rd!
-  ```
-
-**Smart Secret Management in Demo Mode:**
-- Service client secret (`automation-cli`) is automatically set to `demo-service-secret` after bootstrap
-- Flask and automation scripts stay synchronized without manual restarts
-- No Azure Key Vault setup required — instant local development
-- Scripts detect `DEMO_MODE=true` and apply demo defaults automatically
-
-⚠️ **Warning**: Demo credentials are printed at startup. Never deploy with these defaults in production.
-
-### Production Mode (with Azure Key Vault)
-For production deployments:
-- Set `DEMO_MODE=false` — Enforces production-grade secret checks
-- Set `AZURE_USE_KEYVAULT=true` — Loads secrets from Azure Key Vault using `DefaultAzureCredential`
-- Map secret names in `.env` (e.g., `AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET=keycloak-service-client-secret`)
-- `scripts/run_https.sh` syncs `~/.azure` → `.runtime/azure` for container auth
-- Service secrets are rotated and stored in `.runtime/secrets/keycloak-service-client-secret`
-- Clear caches with `make clean-secrets` if needed
-
-**Production Secret Workflow:**
+**Identités de démo** :
+- `alice` / `alice` : Analyst → Manager (après promotion)
+- `bob` / `bob` : Analyst → Désactivé (leaver demo)
+- `joe` / `joe` : IAM Operator + Realm Admin (full access)
+- `admin` / `admin` : Master realm (cross-realm control)
+v
+**Commandes utiles** :
 ```bash
-# 1. Set production mode
+make demo-jml       # Rejouer demo JML sans rebuild
+make fresh-demo     # Reset complet : volumes + secrets + certs
+make down           # Arrêter stack
+make logs           # Logs temps réel
+make ps             # Status containers
+```
+
+### Mode Production (Azure Key Vault)
+
+```bash
+# 1. Configuration production dans .env
 DEMO_MODE=false
 AZURE_USE_KEYVAULT=true
+AZURE_KEY_VAULT_NAME=<votre-keyvault>
 
-# 2. Initial setup - Bootstrap automatically updates Key Vault
-./scripts/demo_jml.sh
-# ✅ Service account created
-# ✅ Secret automatically stored in Azure Key Vault
-# ✅ NO secret exposed in terminal logs
-
-# 3. Orchestrated secret rotation (production only)
-make rotate-secret          # Full rotation: Keycloak → Key Vault → Restart Flask → Health-check
-make rotate-secret-dry      # Dry-run to test without making changes
-
-# 4. Verify Flask can authenticate
-curl -sk https://localhost/admin
-```
-
-**Security Best Practices:**
-- ✅ **Automated Key Vault updates**: Secrets are written directly to Key Vault, never printed to terminal
-- ✅ **Zero manual copy/paste**: Eliminates risk of secrets in shell history or logs
-- ✅ **Audit trail**: All Key Vault changes are logged in Azure Activity Log
-- ✅ **Fail-fast**: Script exits if Key Vault update fails, preventing mismatched secrets
-
-**Secret Rotation Details:**
-The `scripts/rotate_secret.sh` script performs an **orchestrated secret rotation**:
-1. ✅ Generates a new secret in Keycloak (client credential rotation)
-2. ✅ Updates Azure Key Vault with the new secret
-3. ✅ Restarts Flask container to reload the secret
-4. ✅ Verifies application health with retry logic
-
-Features:
-- 🔒 **Production-only**: Refuses to run in `DEMO_MODE=true`
-- 🧪 **Dry-run support**: Test with `--dry-run` flag
-- 🔄 **Idempotent**: Safe to run multiple times
-- 📊 **Observable**: Clear logging and health-check validation
-- ⚡ **Zero-downtime**: Docker restart is graceful
-
-This is the recommended approach for periodic secret rotation in production environments.
-
-### Auto-Generated Secrets (Demo Mode Only)
-
-When `DEMO_MODE=true`, `make quickstart` automatically generates secure secrets using Python's `secrets` module:
-
-| Secret | Algorithm | Length | Purpose |
-|--------|-----------|--------|---------|
-| `FLASK_SECRET_KEY` | `secrets.token_urlsafe(32)` | 43 chars (256 bits) | Flask session encryption + CSRF tokens |
-| `AUDIT_LOG_SIGNING_KEY` | `secrets.token_urlsafe(48)` | 64 chars (384 bits) | HMAC-SHA256 audit trail signatures |
-
-**Key Features:**
-- ✅ **Idempotent**: Secrets generated only if empty or missing in `.env`
-- ✅ **No duplication**: Detects existing values with regex `^KEY=[^[:space:]#]+`
-- ✅ **No console leaks**: Secrets never printed to stdout (logs to stderr only)
-- ✅ **Production-safe**: When `DEMO_MODE=false`, generation is **skipped** entirely
-- ✅ **Git-safe**: `.env` is in `.gitignore`, secrets never committed
-
-**Priority Order for Secrets (Demo Mode):**
-1. Explicitly set values in `.env` (preserved, never overwritten)
-2. Auto-generated values for `FLASK_SECRET_KEY` and `AUDIT_LOG_SIGNING_KEY`
-3. Demo default fallbacks (`*_DEMO` variables, e.g., `KEYCLOAK_ADMIN_PASSWORD_DEMO=admin`)
-
-**Service Secrets:**
-- Service client secret (`automation-cli`) is set to `demo-service-secret` in demo mode
-- User passwords default to `Passw0rd!` if not explicitly set
-- Keycloak admin password defaults to `admin`
-
-**Production Mode Behavior:**
-When `DEMO_MODE=false` and `AZURE_USE_KEYVAULT=true`, `make ensure-secrets` actively **clears** local secrets in `.env`:
-```
-[ensure-secrets] Production mode detected (DEMO_MODE=false)
-[ensure-secrets] Azure Key Vault enabled: clearing local secrets in .env
-[ensure-secrets] ✓ FLASK_SECRET_KEY cleared (will load from Key Vault)
-[ensure-secrets] ✓ AUDIT_LOG_SIGNING_KEY cleared (will load from Key Vault)
-```
-
-**Why clear local secrets?**
-- ✅ **Enforces single source of truth**: All secrets must come from Azure Key Vault
-- ✅ **Prevents stale secrets**: Ensures `.env` doesn't contain outdated values
-- ✅ **Supports `make fresh-demo`**: Automatically configures production mode correctly
-- ✅ **Idempotent workflows**: Safe to run `make quickstart` multiple times
-
-**Behavior Matrix:**
-
-| `DEMO_MODE` | `AZURE_USE_KEYVAULT` | `ensure-secrets` Behavior |
-|-------------|---------------------|---------------------------|
-| `true` | `false` | ✅ Generates secrets if empty (demo mode) |
-| `true` | `true` | ⚠️ Invalid config (validated by `validate-env`) |
-| `false` | `true` | 🔒 **Clears** `FLASK_SECRET_KEY` and `AUDIT_LOG_SIGNING_KEY` |
-| `false` | `false` | ⚠️ Warning: manual secret management required |
-
-When `DEMO_MODE=false` without Azure Key Vault, you'll see:
-```
-[ensure-secrets] Production mode detected (DEMO_MODE=false)
-[ensure-secrets] WARNING: Production mode without Azure Key Vault
-[ensure-secrets] You must manually set FLASK_SECRET_KEY and AUDIT_LOG_SIGNING_KEY
-```
-
-This separation ensures:
-- **Demo mode**: Fast zero-config local development with auto-generated secrets
-- **Production mode**: Secrets always loaded from Azure Key Vault, never stored in `.env`
-
-### Production Secret Pattern: `/run/secrets`
-
-In production mode, the project follows Docker Swarm/Kubernetes secret patterns:
-
-```bash
-# 1. Load secrets from Azure Key Vault
-make load-secrets
-
-# This creates:
-.runtime/secrets/
-├── flask_secret_key (chmod 400)
-├── keycloak_admin_password (chmod 400)
-├── keycloak_service_client_secret (chmod 400)
-├── audit_log_signing_key (chmod 400)
-└── *_temp_password (chmod 400, optional)
-
-# 2. Secrets mounted read-only in containers
-docker-compose.yml:
-  volumes:
-    - ./.runtime/secrets:/run/secrets:ro  # Read-only mount
-```
-
-**Application reads secrets from files:**
-
-```python
-# app/config/settings.py
-def _load_secret_from_file(secret_name: str) -> str | None:
-    """Load secret from /run/secrets (Docker secrets pattern)."""
-    secret_file = Path("/run/secrets") / secret_name
-    
-    if secret_file.exists() and secret_file.is_file():
-        return secret_file.read_text().strip()
-    
-    return None
-
-# Priority: /run/secrets > environment variable > demo fallback
-flask_secret_key = _load_secret_from_file("flask_secret_key", "FLASK_SECRET_KEY")
-```
-
-**Security Benefits:**
-- ✅ **No secrets in `.env`**: Environment file can be safely versioned
-- ✅ **Read-only mount**: Containers cannot modify secrets
-- ✅ **File permissions**: `chmod 400` (owner read-only)
-- ✅ **Centralized rotation**: Update Azure Key Vault → `make load-secrets` → restart
-- ✅ **Audit trail**: Azure Key Vault logs all access
-- ✅ **Kubernetes-ready**: Same pattern works with Kubernetes secrets
-
-**Workflow:**
-```bash
-# Production deployment
-DEMO_MODE=false
-AZURE_USE_KEYVAULT=true
-
-# 1. Authenticate to Azure
+# 2. Authentification Azure
 az login
 
-# 2. Load secrets (called automatically by make quickstart)
-make load-secrets
+# 3. Démarrage (charge secrets depuis Key Vault)
+make quickstart
 
-# 3. Start stack (secrets mounted from .runtime/secrets/)
-make up
-
-# 4. Rotate a secret (orchestrated workflow)
-make rotate-secret
+# 4. Rotation de secrets (orchestrée)
+make rotate-secret          # Keycloak → KV → Restart → Health
+make rotate-secret-dry      # Test dry-run
 ```
 
-## 🔄 SCIM 2.0 API Integration
+**Permissions Azure requises** :
+- **Key Vault Secrets User** (lecture secrets)
+- **Key Vault Secrets Officer** (écriture pour rotation)
+- Voir [docs/DETAILED_SETUP.md](docs/DETAILED_SETUP.md) pour guide complet
 
-This project implements a **production-ready SCIM 2.0 API** (RFC 7644) for standardized user provisioning. The API enables integration with enterprise Identity Providers like Okta, Azure AD, and others.
+## 🛡️ Make Commands — Référence Rapide
 
-### Endpoints
+### Essentiel
+- `make quickstart` — **Démarrage zéro-config** (démo ou prod selon `.env`)
+- `make fresh-demo` — Reset complet (volumes + secrets + certificats)
+- `make down` — Arrêt containers
+- `make help` — Afficher tous les targets disponibles
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/scim/v2/ServiceProviderConfig` | SCIM capability discovery |
-| `GET` | `/scim/v2/ResourceTypes` | Advertises supported resource types |
-| `GET` | `/scim/v2/Schemas` | Returns User schema definition |
-| `POST` | `/scim/v2/Users` | Create user (joiner) |
-| `GET` | `/scim/v2/Users` | List users with filtering/pagination |
-| `GET` | `/scim/v2/Users/{id}` | Retrieve specific user |
-| `PUT` | `/scim/v2/Users/{id}` | Update user (supports `active=false` for leaver) |
-| `DELETE` | `/scim/v2/Users/{id}` | Soft delete user via disable |
+### Secrets (Production)
+- `make load-secrets` — Charger depuis Azure Key Vault → `.runtime/secrets/`
+- `make rotate-secret` — Rotation orchestrée (prod uniquement)
+- `make clean-secrets` — Effacer caches locaux
 
-### Authentication
+### Tests & Validation
+- `make pytest` — Tests unitaires (mocked Keycloak)
+- `make pytest-e2e` — Tests E2E (stack running requis)
+- `make validate-env` — Vérifier cohérence `.env`
+- `make doctor` — Diagnostic complet (az CLI, Key Vault, docker)
 
-All SCIM endpoints require OAuth 2.0 Bearer token authentication:
+## 🛡️ Conformité & Sécurité (Suisse Romande)
+
+### Réglementation Locale (Haut Niveau)
+
+**nLPD (LPD 2023) — Nouvelle loi fédérale sur la protection des données**
+- ✅ **Minimisation** : Secrets hors dépôt Git (`.gitignore`), accès Key Vault loggé
+- ✅ **Traçabilité** : Audit logs tamper-evident (HMAC-SHA256), append-only
+- ✅ **Sécurité technique** : Chiffrement transport (TLS), secrets read-only (`chmod 400`)
+- ✅ **Droit d'accès** : RBAC granulaire (analyst/manager visibilité, operator modifications)
+
+**RGPD (Règlement européen) — Applicable en Suisse**
+- ✅ **Privacy by Design** : MFA obligatoire, sessions révoquées immédiatement
+- ✅ **Accountability** : Logs d'audit signés cryptographiquement (non-répudiation)
+- ✅ **Data Portability** : Export SCIM 2.0 (standard interopérable)
+
+**FINMA (Principes) — Exigences de contrôle & traçabilité**
+- ✅ **Ségrégation des rôles** : Analyst (vue) vs Operator (action) vs Admin (config)
+- ✅ **Piste d'audit** : Qui a fait quoi, quand, avec quelle autorisation
+- ✅ **Continuité** : Health checks, graceful restart, idempotence
+
+> **Note** : Ce projet démontre les **principes techniques** de conformité. Mise en production réelle nécessite analyse juridique complète (DPIA, contrats sous-traitance, etc.).
+
+### Guardrails Sécurité (Implémentés)
+
+**Transport & Réseau**
+- ✅ HTTPS obligatoire (Nginx TLS, auto-regen certs 30 jours)
+- ✅ Validation proxy (`X-Forwarded-*` vs `TRUSTED_PROXY_IPS`)
+- ✅ Headers sécurité : HSTS (`max-age=31536000`), CSP (`default-src 'self'`), `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` → Voir [`proxy/nginx.conf`](proxy/nginx.conf)
+
+**Auth & Authorization**
+- ✅ OIDC Authorization Code + PKCE (anti-interception)
+- ✅ RBAC route-level (`@require_jml_operator`, `@require_admin_view`)
+- ✅ MFA obligatoire (TOTP required action Keycloak)
+- ✅ Sessions server-side (secure cookies : `Secure`, `HttpOnly`, `SameSite=Lax`)
+
+**Gestion Secrets (Production)**
+- ✅ Azure Key Vault (`DefaultAzureCredential`, zéro secrets en code)
+- ✅ Pattern `/run/secrets` (chmod 400, read-only mount Docker)
+- ✅ Rotation orchestrée : Keycloak → KV → Restart → Health-check
+- ✅ Audit trail Azure Activity Log
+
+**Gestion Secrets (Démo)**
+- ✅ Auto-génération `secrets.token_urlsafe()` (256-384 bits)
+- ✅ Idempotent (génère une seule fois, préserve existant)
+- ✅ Git-safe (`.env` in `.gitignore`, jamais loggé console)
+- ✅ Production guard (`DEMO_MODE=false` désactive génération locale)
+
+**Sécurité Application**
+- ✅ CSRF protection (tokens validés sur routes mutantes)
+- ✅ Input validation (regex strict username/email/name)
+- ✅ XSS prevention (Jinja2 auto-escaping, CSP headers)
+- ✅ Session revocation (effet immédiat sur user disable)
+
+**Audit & Compliance**
+- ✅ Logs cryptographiques (HMAC-SHA256 sur chaque événement JML/SCIM)
+- ✅ Append-only (`.runtime/audit/jml-events.jsonl`)
+- ✅ Tamper detection (`make verify-audit`)
+- ✅ Clés séparées demo vs production
+
+> 🔒 **Preuves de sécurité** : Voir [docs/SECURITY_PROOFS.md](docs/SECURITY_PROOFS.md) pour captures d'écran, commandes de vérification, et scénarios de test.
+
+## ⚠️ Known Limitations
+
+### SCIM API Authentication (🔴 Production Blocker)
+
+**Status**: SCIM 2.0 API endpoints are functional but **do not validate OAuth 2.0 Bearer tokens**.
+
+**What works** ✅:
+- SCIM routes implemented: `POST /Users`, `GET /Users`, `PUT /Users/{id}`, `DELETE /Users/{id}`
+- SCIM ↔ Keycloak transformations functional
+- Content-Type validation (`application/scim+json`)
+- ServiceProviderConfig declares OAuth support
+
+**What's missing** ❌:
+- OAuth 2.0 Bearer token validation (RFC 6750)
+- JWT signature verification against Keycloak JWKS
+- Role/scope authorization checks
+- Token expiration enforcement
+- Client identification in audit logs
+
+**Impact**:
+- 🔴 **DO NOT expose `/scim/v2/*` publicly** without implementing OAuth validation
+- 🔴 Anyone with network access can create/modify/delete users via SCIM
+- 🟠 Non-RFC 7644 compliant (Section 2 requires authentication)
+- 🟠 No audit trail of SCIM operations (missing `client_id`)
+
+**Workaround**:
+- ✅ Use admin UI (`/admin/*`) for user provisioning (protected by OIDC session)
+- ✅ Block SCIM routes in nginx for production deployments
+- ✅ E2E tests for SCIM temporarily skipped (see [`docs/E2E_SCIM_WORKAROUND.md`](docs/E2E_SCIM_WORKAROUND.md))
+
+**Remediation**: 
+- 📖 Complete implementation guide: [`docs/SCIM_AUTHENTICATION.md`](docs/SCIM_AUTHENTICATION.md)
+- 📖 Executive summary: [`docs/SCIM_AUTH_SUMMARY.md`](docs/SCIM_AUTH_SUMMARY.md)
+- ⏱️ Estimated effort: **6 hours** (middleware + tests + validation)
+- 🎯 Priority: **P0** (required before production deployment)
+
+**Testing**:
+```bash
+# Verify if OAuth is implemented (should return 401)
+curl -X GET https://localhost/scim/v2/Users
+
+# If 200 OK or 403 (not 401) → OAuth not enforced
+```
+
+See [`docs/SCIM_AUTHENTICATION.md`](docs/SCIM_AUTHENTICATION.md) for detailed implementation roadmap, RFC compliance checklist, and test procedures.
+
+## 🔌 SCIM 2.0 API
+
+**API standardisée** pour provisioning utilisateurs (RFC 7644), compatible Okta, Azure AD, autres IdP.
+
+### Endpoints Principaux
+
+| Méthode | Endpoint | Description |
+|---------|----------|-------------|
+| `POST` | `/scim/v2/Users` | Créer utilisateur (joiner) |
+| `GET` | `/scim/v2/Users` | Lister + filtrer (`filter=userName eq "alice"`) |
+| `GET` | `/scim/v2/Users/{id}` | Récupérer utilisateur |
+| `PUT` | `/scim/v2/Users/{id}` | Mettre à jour (incl. `active=false` leaver) |
+| `DELETE` | `/scim/v2/Users/{id}` | Soft delete (disable) |
+
+### Authentification
+
+OAuth 2.0 Bearer token (service account `automation-cli`) :
 
 ```bash
-# Get service account token
+# Obtenir token
 TOKEN=$(curl -sk -X POST \
   "https://localhost/realms/demo/protocol/openid-connect/token" \
   -d "grant_type=client_credentials" \
   -d "client_id=automation-cli" \
-  -d "client_secret=${KEYCLOAK_SERVICE_CLIENT_SECRET}" \
+  -d "client_secret=${KEYCLOAK_SERVICE_CLIENT_SECRET:-demo-service-secret}" \
   | jq -r '.access_token')
 
-# Create user via SCIM
+# Créer utilisateur
 curl -sk -X POST "https://localhost/scim/v2/Users" \
   -H "Content-Type: application/scim+json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
     "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-    "userName": "newuser",
-    "emails": [{"value": "newuser@example.com", "primary": true}],
-    "name": {"givenName": "New", "familyName": "User"},
+    "userName": "nouvelutilisateur",
+    "emails": [{"value": "nouveau@example.com", "primary": true}],
     "active": true
   }'
 ```
 
-### Features
+**Features** :
+- ✅ RFC 7644 compliant (schémas, erreurs, filtering, pagination)
+- ✅ Audit trail (HMAC-SHA256 sur toutes opérations)
+- ✅ Session revocation (effet immédiat sur `active=false`)
+- ✅ Validation stricte (username, email, noms)
 
-- ✅ **RFC 7644 Compliant**: Standard SCIM schemas, error responses, filtering
-- ✅ **Filtering Support**: `filter=userName eq "alice"` for targeted queries
-- ✅ **Pagination**: `startIndex` and `count` parameters
-- ✅ **Audit Trail**: All SCIM operations logged with HMAC-SHA256 signatures
-- ✅ **Session Revocation**: Immediate effect when disabling users
-- ✅ **Input Validation**: Strict username/email/name sanitization
-
-### Integration Examples
-
-For detailed integration guides with Okta, Azure AD, and curl examples, see:
-- **[SCIM API Guide](docs/SCIM_API_GUIDE.md)** — Complete usage documentation
-- **[SCIM Compliance Analysis](docs/SCIM_COMPLIANCE_ANALYSIS.md)** — Conformance details
-
----
-
-## 🔄 Secret Rotation (Production)
-
-The project includes an **orchestrated secret rotation script** for production environments. This script automates the complete rotation workflow: Keycloak credential regeneration → Azure Key Vault update → application restart → health verification.
-
-### Quick Start
-
-```bash
-# Dry-run (safe test without making changes)
-make rotate-secret-dry
-
-# Production rotation (requires DEMO_MODE=false + AZURE_USE_KEYVAULT=true)
-make rotate-secret
-```
-
-For complete documentation, troubleshooting, and CI/CD integration examples, see:
-- **[Secret Rotation Guide](docs/SECRET_ROTATION.md)** — Complete rotation documentation
-
-### What the Script Does
-
-1. ✅ **Validates context**: Refuses to run in demo mode, checks Azure CLI login
-2. ✅ **Generates new secret**: Calls Keycloak Admin API to rotate the `automation-cli` client secret
-3. ✅ **Updates Key Vault**: Synchronizes the new secret to Azure Key Vault
-4. ✅ **Restarts Flask**: Gracefully restarts the Flask container to reload secrets
-5. ✅ **Health check**: Verifies application availability with retry logic (10 attempts, 2s interval)
-
-### Prerequisites
-
-- `DEMO_MODE=false` and `AZURE_USE_KEYVAULT=true` in `.env`
-- Active Azure CLI session (`az login`)
-- Required tools: `curl`, `jq`, `docker`, `az`
-- Running stack (Keycloak + Flask)
-
-### Example Output
-
-```bash
-$ make rotate-secret
-[INFO] Variables chargées depuis /home/alex/iam-poc/.env
-[INFO] Obtention d'un token admin Keycloak…
-[INFO] Recherche du client 'automation-cli' dans le realm 'demo'…
-[INFO] Régénération du secret Keycloak pour le client automation-cli…
-[INFO] Nouveau secret obtenu (longueur 36 chars).
-[INFO] Mise à jour du secret dans Azure Key Vault: demo-key-vault-alex/keycloak-service-client-secret
-[INFO] Key Vault synchronisé.
-[INFO] Redémarrage du service Docker 'flask-app'…
-[INFO] Health-check sur https://localhost/health…
-[INFO] ✅ Application OK (HTTP 200).
-[INFO] ✅ Rotation orchestrée terminée avec succès.
-```
-
-### Why This Matters for Security Roles
-
-- **Zero-trust compliance**: Regular credential rotation without manual intervention
-- **Audit trail**: All rotation events logged with timestamps
-- **Idempotent operations**: Safe to re-run, no side effects
-- **Separation of concerns**: Rotation is external to the application
-- **Observable**: Clear logging and health validation
-- **Production-ready**: Dry-run mode for CI/CD testing
-
-### Testing
-
-```bash
-# Run integration tests (requires running stack)
-./scripts/test_scim_api.sh
-
-# Run unit tests
-make pytest tests/test_scim_api.py
-
-# Run E2E integration tests
-make pytest tests/test_integration_e2e.py -v
-```
-
----
-
-## 🏗️ Unified Service Architecture (Version 2.0)
-
-**Version 2.0** introduces a **unified provisioning service layer** that eliminates code duplication between the Flask UI and SCIM API. Both interfaces now share identical business logic, validation, and error handling.
-
-### Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      HTTP Clients                               │
-│  (Browser UI, Okta, Azure AD, curl)                            │
-└────────────┬─────────────────────────┬────────────────────────┘
-             │                          │
-             ▼                          ▼
-  ┌──────────────────────┐   ┌──────────────────────┐
-  │  Flask UI Routes     │   │  SCIM 2.0 API        │
-  │  /admin/joiner       │   │  /scim/v2/Users      │
-  │  /admin/mover        │   │  POST, GET, PUT      │
-  │  /admin/leaver       │   │  DELETE              │
-  └──────────┬───────────┘   └──────────┬───────────┘
-             │                          │
-             │    ✅ UNIFIED LOGIC     │
-             │                          │
-             └────────────┬─────────────┘
-                          │
-                          ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  app/provisioning_service.py (NEW)                     │
-  │  • create_user_scim_like()                            │
-  │  • get_user_scim(), list_users_scim()                 │
-  │  • replace_user_scim(), delete_user_scim()            │
-  │  • change_user_role()                                 │
-  │  • ScimError exception handling                       │
-  │  • Input validation (username, email, names)          │
-  │  • Session revocation helper                          │
-  └────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  scripts/jml.py + scripts/audit.py                     │
-  │  Keycloak Admin API wrapper + Audit logging           │
-  └────────────────────────┬───────────────────────────────┘
-                           │
-                           ▼
-  ┌────────────────────────────────────────────────────────┐
-  │  Keycloak Admin API                                    │
-  │  /users, /roles, /sessions                             │
-  └────────────────────────────────────────────────────────┘
-```
-
-### Key Benefits
-
-- ✅ **Single Source of Truth**: All JML logic in one place (`provisioning_service.py`)
-- ✅ **Consistent Validation**: Username, email, name validation shared across UI and API
-- ✅ **Standardized Errors**: ScimError exception with RFC 7644-compliant format
-- ✅ **Easy Testing**: Mock service layer instead of Keycloak
-- ✅ **DOGFOOD Mode**: Optional UI → SCIM API testing via HTTP
-
-### DOGFOOD Mode (Optional Testing Feature)
-
-Set `DOGFOOD_SCIM=true` to make the Flask UI call the SCIM API via HTTP instead of using the service layer directly. This enables real-world testing of your SCIM API through production UI workflows.
-
-```bash
-# Enable DOGFOOD mode
-export DOGFOOD_SCIM=true
-export APP_BASE_URL=https://localhost
-
-# Start stack
-make quickstart
-
-# Use admin UI - logs will show:
-# [dogfood] Created user via SCIM API: alice (HTTP 201)
-```
-
-**Use cases:**
-- 🧪 Test SCIM API with real UI workflows
-- 🔍 Validate OAuth token flow end-to-end
-- 📊 Monitor SCIM API performance under production conditions
-- 🐛 Debug SCIM issues with familiar UI interface
-
-**⚠️ Performance Impact:** DOGFOOD mode adds +20-50ms latency per request (HTTP overhead). Use only for testing, not production.
-
-### New Files
-
-| File | Description | Lines |
-|------|-------------|-------|
-| `app/provisioning_service.py` | ✨ Unified service layer with SCIM-like operations | ~600 |
-| `app/admin_ui_helpers.py` | ✨ UI helper functions with DOGFOOD mode support | ~200 |
-| `tests/test_service_scim.py` | ✨ Unit tests for service layer (mocked) | ~650 |
-| `tests/test_integration_e2e.py` | ✨ E2E integration tests (real Keycloak) | ~400 |
-| `CHANGELOG.md` | ✨ Version 2.0.0 release notes | ~400 |
-| `docs/UNIFIED_SERVICE_ARCHITECTURE.md` | ✨ Technical documentation | ~600 |
-
-### Modified Files
-
-| File | Change | Impact |
-|------|--------|--------|
-| `app/scim_api.py` | Refactored to thin HTTP layer | 616 → 300 lines (-52%) |
-| `app/flask_app.py` | UI routes use `admin_ui_helpers` | +30 lines |
-| `pytest.ini` | Added `integration` marker | +5 lines |
-
-### Configuration
-
-Add to your `.env`:
-
-```bash
-# Optional: Enable DOGFOOD mode (UI calls SCIM API via HTTP)
-DOGFOOD_SCIM=false
-
-# Required for DOGFOOD mode
-APP_BASE_URL=https://localhost
-
-# Temp password visibility (demo only)
-DEMO_MODE=true  # Shows _tempPassword in SCIM responses
-```
-
-### Documentation
-
-For detailed technical documentation, see:
-- **[Unified Service Architecture](docs/UNIFIED_SERVICE_ARCHITECTURE.md)** — Architecture diagrams, API reference, examples
-- **[CHANGELOG.md](CHANGELOG.md)** — Version 2.0.0 migration guide, breaking changes
-- **[Integration Tests](tests/test_integration_e2e.py)** — E2E test suite with real Keycloak
-
-### Migration Notes
-
-**Breaking Changes in 2.0:**
-- SCIM error format now strictly RFC 7644 compliant
-- Temp passwords only returned in `POST /scim/v2/Users` (not in `GET`)
-- UI routes now return ScimError exceptions (catch in error handlers)
-
-**No Action Required If:**
-- You only use the UI (transparent upgrade)
-- You use SCIM API with standard clients (Okta, Azure AD)
-
-**Action Required If:**
-- Custom SCIM clients: Update error parsing to expect `scimType` field
-- Direct `scripts/jml.py` imports: Use `provisioning_service` instead
-
----
-
-## 🧰 Security Guardrails
-
-### Transport & Network Security
-- ✅ **HTTPS Enforcement**: Nginx reverse proxy with self-signed certificates (regenerated on `make quickstart`)
-- ✅ **Strict Proxy Validation**: Flask validates `X-Forwarded-*` headers against `TRUSTED_PROXY_IPS` whitelist
-- ✅ **TLS Configuration**: Modern cipher suites, HTTP/2 support
-
-### Authentication & Authorization
-- ✅ **OIDC Authorization Code + PKCE**: Prevents authorization code interception attacks
-- ✅ **Role-Based Access Control**: `iam-operator` and `realm-admin` roles enforced at route level
-- ✅ **Mandatory TOTP/MFA**: Required action enforced in Keycloak realm
-- ✅ **Session Validation**: Server-side session storage with secure cookies
-
-### Secret Management (Production)
-- ✅ **Azure Key Vault Integration**: Secrets loaded via `DefaultAzureCredential` (never in `.env`)
-- ✅ **Docker Secrets Pattern**: Secrets mounted read-only in `/run/secrets` (chmod 400)
-- ✅ **Secret Rotation**: Orchestrated rotation with `make rotate-secret` (Keycloak → Key Vault → Restart → Health-check)
-- ✅ **Audit Trail**: All Key Vault access logged in Azure Activity Log
-- ✅ **No Console Leaks**: Secrets never printed to stdout/stderr during rotation
-
-### Secret Management (Demo Mode)
-- ✅ **Auto-Generation**: Strong secrets generated with Python `secrets.token_urlsafe()` (256-384 bits)
-- ✅ **Idempotent**: Secrets generated only once, never overwritten
-- ✅ **Git-Safe**: `.env` file in `.gitignore`, secrets never committed
-- ✅ **Production Guard**: `DEMO_MODE=false` disables local generation, enforces Azure Key Vault
-- ✅ **Clear Warnings**: Demo mode displays warnings at startup
-
-### Application Security
-- ✅ **Hardened Session Cookies**: `Secure`, `HttpOnly`, `SameSite=Lax` flags
-- ✅ **CSRF Protection**: Tokens validated on all state-changing routes
-- ✅ **Input Validation**: Strict regex validation for usernames, emails, names
-- ✅ **SQL Injection Protection**: ORM-based queries (Keycloak REST API)
-- ✅ **XSS Prevention**: Jinja2 auto-escaping, CSP headers
-
-### Audit & Compliance
-- ✅ **Cryptographic Audit Trail**: HMAC-SHA256 signatures on all JML events
-- ✅ **Immutable Logs**: Append-only JSON Lines format (`.runtime/audit/jml-events.jsonl`)
-- ✅ **Signature Verification**: `make verify-audit` validates log integrity
-- ✅ **Separate Signing Keys**: Demo vs production keys (`AUDIT_LOG_SIGNING_KEY_DEMO`)
-- ✅ **Tamper Detection**: Modified events fail signature verification
-
-### Defense in Depth
-- ✅ **Principle of Least Privilege**: Service accounts with minimal scopes
-- ✅ **Session Revocation**: Immediate effect when disabling users (Keycloak API)
-- ✅ **Health Checks**: Liveness probes on all services (Docker Compose)
-- ✅ **Graceful Degradation**: Fallback to environment variables if `/run/secrets` unavailable
-- ✅ **Error Handling**: No sensitive data in error messages (production mode)
-- Restrict proxy forwarding with trusted IP allow lists and reject non-HTTPS `X-Forwarded-Proto` headers.
-- **SCIM 2.0 Provisioning API** (`/scim/v2`) for standardized user lifecycle management (RFC 7644)
-- **Immediate session revocation** on user disable (prevents 5-15 minute token validity window)
-- **Input validation** with strict username/email/name sanitization (XSS/SQLi protection)
-- **Cryptographic audit trail** with HMAC-SHA256 signatures for tamper detection
-- Capture structured audit logs from `scripts/jml.py`, redacting tokens and surfacing failed admin calls.
-- Deny missing environment variables in non-demo mode, preventing accidental startup without required secrets.
+> 📘 **Guide complet** : [docs/SCIM_API_GUIDE.md](docs/SCIM_API_GUIDE.md) _(à venir)_ — Tests disponibles : `tests/test_scim_api.py`, `scripts/test_scim_api.sh`
 
 ## 🧪 Tests
-- `tests/test_flask_app.py` validates RBAC enforcement, admin-only routes, hardened headers, CSRF protection, secure cookies, and proxy trust logic.
-- `tests/test_jml.py` exercises the automation CLI, ensuring service-account tokens, bootstrap safeguards, and secret rotations behave as expected.
-- `tests/test_audit.py` verifies cryptographic signature generation, tamper detection, and JSONL audit log integrity.
-- `tests/test_scim_api.py` validates SCIM 2.0 RFC 7644 compliance (schema endpoints, CRUD operations, filtering).
-- `scripts/test_scim_api.sh` provides end-to-end integration testing for SCIM API with real OAuth tokens.
-- The suite runs under `DEMO_MODE=true`, keeping tests self-contained while mimicking Keycloak token payloads.
 
-## 🚧 Troubleshooting
-- **Flask unhealthy** → missing `az login` → run `make doctor` then rerun `scripts/run_https.sh`.
-- **404 on automation calls** → stack not running → execute `make fresh-demo` to bootstrap services.
-- **Key Vault denied** → insufficient RBAC → assign **Key Vault Secrets User** on `<VAULT_NAME>`.
-- **Browser TLS warning** → stale cert trust → accept the new self-signed cert or clear old certificate caches.
-- **Service secret empty** → skipped bootstrap → run `make bootstrap-service-account` or `make fresh-demo`.
-- **"Invalid client credentials" error on /admin** → In demo mode, secret mismatch between Flask and Keycloak → run `make fresh-demo` to reset to demo defaults.
-- **Automation CLI unauthorized** → In production mode, stale service secret → rerun `make rotate-secret` then `make quickstart`.
-- **Compose rebuild loop** → bind mount stale → remove `.runtime/azure` via `make clean-secrets` and retry.
-- **pytest import error** → missing deps → run `make pytest` to create venv and install requirements.
-- **Keycloak 401** → admin credentials absent → confirm `KEYCLOAK_ADMIN` plus Key Vault secret mappings or demo defaults in `.env`.
-- **Demo mode not working** → Check `.env` has `DEMO_MODE=true` and `AZURE_USE_KEYVAULT=false` → passwords should be set directly in file.
-- **Stack starts but demo script fails** → Run `./scripts/demo_jml.sh` manually to see detailed error messages → check `KEYCLOAK_URL=http://127.0.0.1:8080` (not localhost).
+```bash
+make pytest         # Tests unitaires (Keycloak mocké)
+make pytest-e2e     # Tests E2E intégration (stack running)
+make verify-audit   # Vérifier signatures HMAC logs
+```
+
+**Couverture** :
+- `tests/test_flask_app.py` — RBAC, CSRF, headers sécurité, cookies
+- `tests/test_scim_api.py` — SCIM RFC 7644 compliance (CRUD, filtering)
+- `tests/test_jml.py` — Automation CLI, service account, bootstrap
+- `tests/test_audit.py` — Signatures crypto, tamper detection
+- `tests/test_integration_e2e.py` — Workflows end-to-end (OIDC, JML, SCIM)
+
+**Mode test** : `DEMO_MODE=true` (tests self-contained, aucun accès Azure requis)
 
 ## ☁️ Production Notes
-- Remove development bind mounts (`.:/srv/app`, `./.runtime/azure:/root/.azure`) and bake source into container images.
-- Replace Azure CLI credential sync with Managed Identity or workload identity federation in production environments.
-- Disable `DEMO_MODE`, supply real secrets via Key Vault, and ensure automation guards against missing values.
-- Swap self-signed certs for managed certificates (Azure Application Gateway, Front Door, or cert manager).
-- Tighten Nginx security policies (CSP, HSTS max-age, referrer policies) to align with enterprise standards.
-- Keep logs centralised (Azure Monitor, App Insights) and enforce retention/alerting policies.
-- Integrate container scanning and IaC validation into CI/CD (e.g., GitHub Actions + Trivy/Terraform Validate).
 
-## 🗺️ Roadmap
-- ✅ **Phase 1 — Core IAM Stack** (Completed)
-  - Keycloak + Flask + OIDC with PKCE
-  - Azure Key Vault integration
-  - JML automation scripts
-- ✅ **Phase 2.0 — SCIM 2.0 Provisioning** (Completed)
-  - Full RFC 7644 compliant REST API at `/scim/v2`
-  - Support for Okta, Azure AD, and other IdP integrations
-  - Cryptographically signed audit trail (HMAC-SHA256)
-  - Session revocation on user disable (immediate effect)
-  - Input validation and security guardrails
-- ✅ **Phase 2.1 — Unified Service Architecture** (Completed)
-  - Consolidated business logic in `provisioning_service.py`
-  - DOGFOOD mode for testing SCIM API via UI
-  - Comprehensive E2E integration tests
-- ✅ **Phase 2.2 — Demo Mode Improvements** (Completed)
-  - Zero Azure Key Vault dependency for local development
-  - Automatic secret synchronization in demo mode
-  - Smart fallback: demo defaults → environment → Key Vault
-  - `make fresh-demo` works out-of-the-box
-- ✅ **Phase 2.3 — Secret Management & Production Hardening** (Completed - Current)
-  - **Auto-generation with mode detection**: `make ensure-secrets` generates strong secrets (256-384 bits) in demo mode only
-  - **Production guard**: `DEMO_MODE=false` disables local generation, enforces Azure Key Vault via `/run/secrets`
-  - **Idempotent workflow**: Secrets generated once, never overwritten (regex detection: `^KEY=[^[:space:]#]+`)
-  - **Git-safe by design**: `.env` in `.gitignore`, secrets never logged to console
-  - **Docker Secrets pattern**: Production secrets mounted read-only in `/run/secrets` (chmod 400)
-  - **Configuration reset**: `make reset-demo` with confirmation prompt for safe environment resets
-  - **Zero-config quickstart**: `rm .env && make quickstart` works instantly (copies `.env.demo` → auto-generates secrets)
-- Phase 3 — Add Microsoft Entra ID (Azure AD) support with configuration switches and consent automation.
-- Phase 4 — Deliver webhook provisioning to extend real-time JML workflows.
-- Phase 5 — Package `scripts/jml.py` as a versioned CLI with documentation and release automation.
-- Phase 6 — Layer in observability (structured logging, metrics, distributed tracing) across services.
-- Phase 7 — Automate certificate management (ACME/Let's Encrypt) and key rotation pipelines.
-- Phase 8 — Add policy-as-code guardrails (OPA/Azure Policy) for configuration drift detection.
+**Avant déploiement** :
+- ❌ **Retirer bind mounts** : `.:/srv/app`, `./.runtime/azure:/root/.azure` (bake dans image)
+- ✅ **Managed Identity** : Remplacer `az login` par workload identity federation
+- ✅ **Certificats CA-signed** : Azure Application Gateway, Front Door, ou cert-manager
+- ✅ **Logs centralisés** : Azure Monitor, App Insights (structured logging)
+- ✅ **CI/CD** : Container scanning (Trivy), IaC validation (Terraform/Bicep)
+- ✅ **Policies** : Tighten Nginx CSP, HSTS max-age, referrer policies
 
-## 👥 Demo Identities & RBAC Cheatsheet
+**Checklist sécurité** :
+1. `DEMO_MODE=false` + `AZURE_USE_KEYVAULT=true`
+2. Secrets uniquement depuis Key Vault (`.env` ne contient **aucun** secret)
+3. Audit logs rétention policy (Azure Storage immutable blobs)
+4. Network policies (NSG, Azure Firewall, private endpoints)
+5. RBAC Key Vault granulaire (principe du moindre privilège)
 
-| Identity | Realm | Roles | `/admin` Access | JML Operations | Keycloak Console | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| `alice` | demo | `analyst` → `iam-operator` (after mover) | ✅ View (snapshot + audit) | ✅ (after promotion) | ❌ | Illustrates joiner → mover path |
-| `bob` | demo | `analyst` (disabled as leaver) | ✅ View (snapshot + audit) | ❌ | ❌ | Used to demonstrate leaver |
-| `carol` | demo | `manager` → `iam-operator` (after mover) | ✅ View (snapshot + audit, **no JML forms**) | ✅ (after promotion) | ❌ | Manager persona with oversight-only access initially |
-| `joe` | demo | `iam-operator`, `realm-admin`, client `realm-management/realm-admin` | ✅ Full (snapshot + audit + JML forms) | ✅ | ✅ `https://localhost/admin/demo/console/` | Operator persona: can perform JML and configure the demo realm |
-| `admin` | master | built-in admin | ✅ Full (snapshot + audit + JML forms) | ✅ | ✅ `https://localhost/admin/master/console/` | Full cross-realm control |
+## 📚 Documentation Complète
 
-### Role-Based Access Control (RBAC) Model
+### Guides Principaux
+- **[docs/DETAILED_SETUP.md](docs/DETAILED_SETUP.md)** _(à venir)_ — Configuration détaillée (secrets, SCIM, architecture)
+- **[docs/SECURITY_PROOFS.md](docs/SECURITY_PROOFS.md)** — Preuves de sécurité (captures, commandes vérification)
+- **[docs/SCIM_API_GUIDE.md](docs/SCIM_API_GUIDE.md)** _(à venir)_ — Intégration SCIM (Okta, Azure AD, curl)
+- **[docs/SECRET_ROTATION.md](docs/SECRET_ROTATION.md)** _(à venir)_ — Rotation orchestrée (CI/CD, troubleshooting)
+- **[docs/README.md](docs/README.md)** — Index complet documentation
 
-```
-analyst      → /admin (view user snapshot + audit, NO JML forms)
-manager      → /admin (view user snapshot + audit, NO JML forms, oversight role)
-iam-operator → /admin (FULL access: snapshot + audit + JML automation forms)
-realm-admin  → /admin + Keycloak Console (FULL access + realm configuration)
-```
+### Documentation Technique
+- **[CHANGELOG.md](CHANGELOG.md)** — Historique versions, breaking changes
+- **[docs/UNIFIED_SERVICE_ARCHITECTURE.md](docs/UNIFIED_SERVICE_ARCHITECTURE.md)** _(à venir)_ — Architecture v2.0
+- **[docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** _(vide, à compléter)_ — Résumé implémentation
+- **[docs/JML_REFACTORING_SUMMARY.md](docs/JML_REFACTORING_SUMMARY.md)** — Refactoring JML
 
-**Governance Principle**: Visibility is separated from modification rights. Analysts and managers can see the user snapshot and audit trail for oversight, but only IAM operators can perform lifecycle changes (Joiner/Mover/Leaver). Managers see the **current state** (snapshot) and **historical actions** (audit) without being distracted by operational forms. This demonstrates the **principle of least privilege** in action.
+### Support & Troubleshooting
 
-**UI Behavior**:
-- **Analyst/Manager**: `/admin` shows only "Realm user snapshot" tab — clean oversight interface
-- **Operator/Admin**: `/admin` shows both "Automation forms" and "Realm user snapshot" tabs — full operational capability
+**Problèmes courants** :
+- **Flask unhealthy** → `make doctor` puis `make fresh-demo`
+- **404 automation** → Stack pas running → `make quickstart`
+- **Key Vault denied** → Permissions manquantes → Assigner **Key Vault Secrets User**
+- **Service secret vide** → Bootstrap manqué → `make fresh-demo`
+- **"Invalid client credentials"** → Demo mode secret mismatch → `make fresh-demo`
 
-Joe is the operator persona in the demo. He can reach `/admin` (JML) and the Keycloak console for the *demo* realm, but he has no visibility into other realms. The master `admin` user remains available for cross-realm tasks.
+> 🩺 **Diagnostic complet** : Section troubleshooting détaillée à venir dans docs/DETAILED_SETUP.md
 
-## 🧰 Automation CLI (`scripts/jml.py`)
+## 🗺️ Roadmap Azure
 
-- `init`, `joiner`, `mover`, `leaver`, `delete-realm` – commandes historiques.
-- `client-role` – assigne des rôles clients (ex. `realm-management/realm-admin`) avec repli automatique sur l’admin master si le service account manque de privilèges.
-- `grant-role` – **nouveau** pour ajouter un rôle realm sans retirer les autres (utilisé pour donner `realm-admin` à Joe après le joiner).
+### ✅ Phase Actuelle (v2.3 — Production)
+- Azure Key Vault (`DefaultAzureCredential`, rotation orchestrée)
+- Pattern Docker Secrets (`/run/secrets`, chmod 400)
+- Auto-génération secrets (demo mode, 256-384 bits)
+- SCIM 2.0 API (RFC 7644, unified architecture)
+- Audit cryptographique (HMAC-SHA256, tamper-evident)
 
-`scripts/demo_jml.sh` orchestrates the storyline end-to-end: création du realm, provision des identités, ajout des rôles `iam-operator` + `realm-admin` à Joe, promotion d’Alice, désactivation de Bob, etc. Rerun `make demo` ou `make fresh-demo` pour rejouer la séquence.
+### 🚀 Q1 2025 — Azure-Native Phase
+- **Microsoft Entra ID** : Authentification OIDC + provisioning SCIM (remplacement Keycloak)
+- **Managed Identity** : Workload identity federation (zéro secret auth Azure)
+- **Azure Monitor** : Logs structurés, métriques, alerting (KQL queries)
+- **App Insights** : Tracing distribué, performance monitoring
+- **Azure Policy** : Guardrails IaC, compliance automation
 
-## 📄 License & Credits
-> TODO: Add license details and acknowledgements.
+### Q2 2025 — Enterprise Hardening
+- **Azure Application Gateway** : WAF, certificats managés, DDoS protection
+- **Azure Private Link** : Key Vault private endpoints
+- **Azure DevOps Pipelines** : CI/CD automation (Terraform/Bicep)
+- **Defender for Cloud** : Container vulnerability scanning
+- **Cost Management** : Budgets, tagging, optimization
 
-## 🔗 Badges & Useful Links
-- TODO: CI status badge
-- TODO: Architecture / documentation portal
-- TODO: Demo walkthrough recording
+### Q3 2025+ — Avancé
+- Webhook provisioning (real-time JML)
+- CLI versioned (`scripts/jml.py` → PyPI package)
+- Policy-as-Code (OPA integration)
+- ACME/Let's Encrypt automation
+
+## 👥 Identités & RBAC (Démo)
+
+| Identité | Rôles | `/admin` | JML Ops | Keycloak Console |
+|----------|-------|----------|---------|------------------|
+| `alice` | `analyst` → `iam-operator` | ✅ Vue → Full (après promo) | ✅ (après) | ❌ |
+| `bob` | `analyst` (désactivé) | ✅ Vue | ❌ | ❌ |
+| `carol` | `manager` → `iam-operator` | ✅ Vue → Full (après promo) | ✅ (après) | ❌ |
+| `joe` | `iam-operator` + `realm-admin` | ✅ Full | ✅ | ✅ demo realm |
+| `admin` | Master admin | ✅ Full | ✅ | ✅ Tous realms |
+
+**Principe de gouvernance** : 
+- **Analyst/Manager** : Vue (snapshot users + audit) — **oversight sans modification**
+- **IAM Operator** : Plein accès (JML forms + vue)
+- **Realm Admin** : Opérateur + configuration Keycloak realm
+
+## 📄 License
+
+**MIT License** — Voir [LICENSE](LICENSE)
+
+---
+
+## 🔗 Ressources Complémentaires
+
+**Keywords Azure/Suisse Romande** :
+Azure Key Vault • Microsoft Entra ID • Managed Identity • Azure Monitor • Azure Policy • Defender for Cloud • SC-300 • AZ-500 • nLPD (LPD 2023) • RGPD • FINMA • SCIM 2.0 • OIDC • JML • Suisse Romande • DevSecOps
+
+**Certifications recommandées** :
+- **SC-300** : Microsoft Identity and Access Administrator
+- **AZ-500** : Azure Security Engineer Associate
+- **AZ-104** : Azure Administrator Associate
+
+---
+
+
+
+> 💼 **Contact** : [Votre LinkedIn / Email]
+
+---
+

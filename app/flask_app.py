@@ -130,8 +130,15 @@ def _register_middleware(app: Flask, trusted_proxy_networks: list):
     
     @app.before_request
     def enforce_csrf() -> None:
-        """Validate CSRF token for state-changing requests."""
+        """Validate CSRF token for state-changing requests.
+        
+        Note: SCIM endpoints (/scim/v2/*) use OAuth Bearer tokens, not CSRF.
+        """
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return
+        
+        # Skip CSRF for SCIM API (OAuth-protected)
+        if request.path.startswith("/scim/v2"):
             return
         
         submitted_token = (

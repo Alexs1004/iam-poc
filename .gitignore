@@ -21,3 +21,5 @@ Thumbs.db
 .runtime/secrets/
 *.log
 *.zip
+
+copilot_context.md

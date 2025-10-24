@@ -28,6 +28,9 @@ bp = Blueprint("admin", __name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Role-based Access Control Decorators
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
 # Decorators
 # ─────────────────────────────────────────────────────────────────────────────
 def require_any_role(*required_roles):
@@ -36,7 +39,8 @@ def require_any_role(*required_roles):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             if not is_authenticated():
-                return redirect(url_for("auth.login"))
+                # Explicit redirect to login page (not back to admin)
+                return redirect(url_for("auth.login"), code=302)
             
             cfg = current_app.config["APP_CONFIG"]
             _, _, _, roles = current_user_context()
@@ -58,13 +62,29 @@ def require_admin_view(fn):
     """Allow viewing admin dashboard (analyst, manager, iam-operator, realm-admin)."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        if not is_authenticated():
+            # Explicit redirect to login page (not back to admin)
+            return redirect(url_for("auth.login"), code=302)
+        
         cfg = current_app.config["APP_CONFIG"]
-        return require_any_role(
+        _, _, _, roles = current_user_context()
+        
+        allowed_roles = [
             "analyst",
             "manager",
             cfg.realm_admin_role,
             cfg.iam_operator_role
-        )(fn)(*args, **kwargs)
+        ]
+        
+        if not any(role.lower() in [r.lower() for r in roles] for role in allowed_roles):
+            return render_template(
+                "403.html",
+                title="Forbidden",
+                is_authenticated=True,
+                required_role="analyst, manager, iam-operator, or realm-admin",
+            ), 403
+        
+        return fn(*args, **kwargs)
     return wrapper
 
 
@@ -72,8 +92,24 @@ def require_jml_operator(fn):
     """Restrict JML operations to operators only (iam-operator, realm-admin)."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        if not is_authenticated():
+            # Explicit redirect to login page (not back to admin)
+            return redirect(url_for("auth.login"), code=302)
+        
         cfg = current_app.config["APP_CONFIG"]
-        return require_any_role(cfg.realm_admin_role, cfg.iam_operator_role)(fn)(*args, **kwargs)
+        _, _, _, roles = current_user_context()
+        
+        allowed_roles = [cfg.realm_admin_role, cfg.iam_operator_role]
+        
+        if not any(role.lower() in [r.lower() for r in roles] for role in allowed_roles):
+            return render_template(
+                "403.html",
+                title="Forbidden",
+                is_authenticated=True,
+                required_role="iam-operator or realm-admin",
+            ), 403
+        
+        return fn(*args, **kwargs)
     return wrapper
 
 

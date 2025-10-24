@@ -21,10 +21,9 @@ def temp_audit_dir(monkeypatch):
         monkeypatch.setattr(audit, "AUDIT_LOG_DIR", audit_dir)
         monkeypatch.setattr(audit, "AUDIT_LOG_FILE", audit_file)
         
-        # Set signing key for tests
+        # Set signing key for tests (loaded by _get_signing_key() from environment)
         test_key = "test-signing-key-for-audit-trail"
         monkeypatch.setenv("AUDIT_LOG_SIGNING_KEY", test_key)
-        monkeypatch.setattr(audit, "AUDIT_SIGNING_KEY", test_key.encode("utf-8"))
         
         yield audit_dir, audit_file
 
@@ -158,7 +157,6 @@ def test_verify_audit_log_detects_tampering(temp_audit_dir):
 def test_log_event_without_signing_key(temp_audit_dir, monkeypatch):
     """Test logging when no signing key is configured."""
     monkeypatch.setenv("AUDIT_LOG_SIGNING_KEY", "")
-    monkeypatch.setattr(audit, "AUDIT_SIGNING_KEY", b"")
     
     _, audit_file = temp_audit_dir
     

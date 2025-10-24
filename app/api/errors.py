@@ -83,5 +83,10 @@ def register_error_handlers(app):
 def _wants_json():
     """Check if the client wants a JSON response."""
     from flask import request
+    
+    # SCIM endpoints always return JSON (RFC 7644)
+    if request.path.startswith("/scim/v2"):
+        return True
+    
     return request.accept_mimetypes.accept_json and \
            not request.accept_mimetypes.accept_html
