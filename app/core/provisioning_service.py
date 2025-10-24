@@ -7,7 +7,7 @@ logic, validation, and error handling across all interfaces.
 
 Architecture:
     UI Admin (/admin/*) ──┐
-                          ├──> provisioning_service.py ──> scripts/jml.py ──> Keycloak
+                          ├──> provisioning_service.py ──> app.core.keycloak ──> Keycloak
     SCIM API (/scim/v2/*) ┘
 
 Features:
@@ -26,7 +26,18 @@ import secrets
 import string
 from pathlib import Path
 from typing import Any, Optional
-from scripts import jml
+
+# Import refactored Keycloak services
+from app.core.keycloak import (
+    get_service_account_token,
+    get_user_by_username,
+    create_user,
+    disable_user,
+    change_role,
+    add_realm_role,
+    get_group_by_path,
+    get_group_members,
+)
 from scripts import audit
 import requests
 
@@ -85,24 +96,16 @@ KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "demo")
 KEYCLOAK_SERVICE_REALM = os.environ.get("KEYCLOAK_SERVICE_REALM", KEYCLOAK_REALM)
 KEYCLOAK_SERVICE_CLIENT_ID = os.environ.get("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
 
-# NOTE: Secret is loaded from /run/secrets with fallback to environment
+# Import SCIM transformer
+from app.core.scim_transformer import ScimTransformer
+
+# Import settings for centralized secret management
+from app.config.settings import settings
+
+# Use centralized secret resolution (handles demo mode, Docker secrets, env vars)
 def _get_service_client_secret() -> str:
-    """Get service client secret from /run/secrets or environment with demo fallback."""
-    # Try /run/secrets first (production pattern)
-    secret = _load_secret_from_file("keycloak_service_client_secret", "KEYCLOAK_SERVICE_CLIENT_SECRET")
-    
-    if secret:
-        return secret
-    
-    # Demo mode fallback
-    if DEMO_MODE:
-        return (
-            os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET") or 
-            os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET_DEMO") or 
-            "demo-service-secret"
-        )
-    
-    return ""
+    """Get service client secret via centralized settings."""
+    return settings.service_client_secret_resolved
 
 DEFAULT_ROLE = os.environ.get("SCIM_DEFAULT_ROLE", "analyst")
 
@@ -250,6 +253,8 @@ def validate_scim_user_payload(payload: dict) -> None:
 def keycloak_to_scim(kc_user: dict, base_url: str = None) -> dict:
     """Convert Keycloak user representation to SCIM User format.
     
+    Delegates to ScimTransformer for consistent transformation logic.
+    
     Args:
         kc_user: Keycloak user dict (id, username, email, firstName, lastName, enabled, etc.)
         base_url: Base URL for location meta (e.g., "https://localhost")
@@ -257,49 +262,14 @@ def keycloak_to_scim(kc_user: dict, base_url: str = None) -> dict:
     Returns:
         SCIM User dict with schemas, id, userName, emails, name, active, meta
     """
-    user_id = kc_user.get("id", "")
-    username = kc_user.get("username", "")
-    email = kc_user.get("email", "")
-    first_name = kc_user.get("firstName", "")
-    last_name = kc_user.get("lastName", "")
-    enabled = kc_user.get("enabled", True)
-    
-    # Convert timestamp to ISO 8601
-    created_ts = kc_user.get("createdTimestamp")
-    if created_ts:
-        created_dt = datetime.datetime.fromtimestamp(created_ts / 1000, tz=datetime.timezone.utc)
-        created_iso = created_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    else:
-        created_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    # Build SCIM user
-    scim_user = {
-        "schemas": [SCIM_USER_SCHEMA],
-        "id": user_id,
-        "userName": username,
-        "emails": [{"value": email, "primary": True}] if email else [],
-        "name": {
-            "givenName": first_name,
-            "familyName": last_name,
-            "formatted": f"{first_name} {last_name}".strip()
-        },
-        "active": enabled,
-        "meta": {
-            "resourceType": "User",
-            "created": created_iso,
-            "lastModified": created_iso
-        }
-    }
-    
-    # Add location if base_url provided
-    if base_url:
-        scim_user["meta"]["location"] = f"{base_url}/scim/v2/Users/{user_id}"
-    
-    return scim_user
+    scim_base = base_url if base_url else "/scim/v2"
+    return ScimTransformer.keycloak_to_scim(kc_user, scim_base)
 
 
 def scim_to_keycloak(scim_payload: dict) -> dict:
     """Convert SCIM User payload to Keycloak user creation format.
+    
+    Delegates to ScimTransformer for consistent transformation logic.
     
     Args:
         scim_payload: SCIM User dict
@@ -307,16 +277,7 @@ def scim_to_keycloak(scim_payload: dict) -> dict:
     Returns:
         Dict with username, email, firstName, lastName, enabled
     """
-    emails = scim_payload.get("emails", [])
-    name = scim_payload.get("name", {})
-    
-    return {
-        "username": scim_payload.get("userName", ""),
-        "email": emails[0]["value"] if emails else "",
-        "firstName": name.get("givenName", ""),
-        "lastName": name.get("familyName", ""),
-        "enabled": scim_payload.get("active", True)
-    }
+    return ScimTransformer.scim_to_keycloak(scim_payload)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -327,7 +288,7 @@ def get_service_token() -> str:
     """Obtain service account OAuth token for Keycloak operations."""
     try:
         secret = _get_service_client_secret()
-        return jml.get_service_account_token(
+        return get_service_account_token(
             KEYCLOAK_BASE_URL,
             KEYCLOAK_SERVICE_REALM,
             KEYCLOAK_SERVICE_CLIENT_ID,
@@ -368,7 +329,7 @@ def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -
     token = get_service_token()
     
     # Check if user already exists (idempotence)
-    existing = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    existing = get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
     if existing:
         raise ScimError(409, f"User with userName '{username}' already exists", "uniqueness")
     
@@ -378,9 +339,9 @@ def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -
     # Generate secure temporary password
     temp_password = generate_temp_password()
     
-    # Create user via jml.py
+    # Create user via app.core.keycloak
     try:
-        jml.create_user(
+        create_user(
             KEYCLOAK_BASE_URL,
             token,
             KEYCLOAK_REALM,
@@ -397,7 +358,7 @@ def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -
         raise ScimError(500, f"Failed to create user: {exc}")
     
     # Retrieve created user to get user_id
-    kc_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    kc_user = get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
     if not kc_user:
         raise ScimError(500, "User created but not found in Keycloak")
     
@@ -550,7 +511,7 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
     
     # Check if user exists
     token = get_service_token()
-    kc_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, payload.get("userName", ""))
+    kc_user = get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, payload.get("userName", ""))
     
     if not kc_user:
         raise ScimError(404, f"User with id '{user_id}' not found")
@@ -564,10 +525,10 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
     # Handle deactivation (Leaver)
     if not payload.get("active", True):
         try:
-            # Disable user (jml.disable_user already revokes sessions)
-            jml.disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+            # Disable user (pass operator for correct audit logging)
+            disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username, operator="scim-api")
             
-            # Log to audit trail
+            # Additional SCIM-specific audit log
             audit.log_jml_event(
                 "scim_disable_user",
                 username,
@@ -589,7 +550,7 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
     # For now, we'll just update basic attributes
     
     # Refresh user state (re-query to get updated enabled status)
-    kc_user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    kc_user = get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
     if not kc_user:
         raise ScimError(500, "User state could not be refreshed")
     
@@ -609,7 +570,7 @@ def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None
     token = get_service_token()
     
     # Find user by ID - we need to get all users and filter by ID
-    # since jml.get_user_by_username requires username
+    # since get_user_by_username requires username
     try:
         resp = requests.get(
             f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
@@ -622,9 +583,9 @@ def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None
     except Exception:
         raise ScimError(404, f"User with id '{user_id}' not found")
     
-    # Disable user (idempotent, jml.disable_user already revokes sessions)
+    # Disable user (pass operator for correct audit logging)
     try:
-        jml.disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+        disable_user(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username, operator="scim-api")
     except Exception as exc:
         # Idempotent: if already disabled, don't error
         if "already disabled" not in str(exc).lower():
@@ -664,13 +625,13 @@ def change_user_role(username: str, source_role: str, target_role: str, correlat
     token = get_service_token()
     
     # Check if user exists
-    user = jml.get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
+    user = get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)
     if not user:
         raise ScimError(404, f"User with userName '{username}' not found")
     
-    # Perform role change via jml.py
+    # Perform role change via app.core.keycloak
     try:
-        jml.change_role(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username, source_role, target_role)
+        change_role(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username, source_role, target_role)
     except Exception as exc:
         raise ScimError(500, f"Failed to change role: {exc}")
     

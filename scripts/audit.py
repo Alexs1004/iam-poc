@@ -82,6 +82,54 @@ def log_jml_event(
     AUDIT_LOG_FILE.chmod(0o600)
 
 
+def safe_log_jml_event(
+    event_type: EventType,
+    username: str,
+    *,
+    operator: str = "system",
+    realm: str = "demo",
+    details: dict[str, Any] | None = None,
+    success: bool = True,
+) -> bool:
+    """Log JML event with automatic error handling (never raises exceptions).
+    
+    This is a safe wrapper around log_jml_event() that catches all exceptions
+    and logs them to stderr instead of propagating them. Use this in production
+    code where audit failures should not break application functionality.
+    
+    Args:
+        event_type: Type of JML event (joiner, mover, leaver, etc.)
+        username: Username affected by the event
+        operator: Who triggered the event (username, "cli", "scim-api", etc.)
+        realm: Keycloak realm where event occurred
+        details: Additional event-specific metadata (optional)
+        success: Whether the operation succeeded
+        
+    Returns:
+        True if event was logged successfully, False if logging failed
+        
+    Note:
+        Failures are logged to stderr but never raise exceptions
+    """
+    import sys
+    try:
+        log_jml_event(
+            event_type,
+            username,
+            operator=operator,
+            realm=realm,
+            details=details,
+            success=success
+        )
+        return True
+    except Exception as e:
+        print(
+            f"[audit] Warning: Failed to log {event_type} event for {username}: {e}",
+            file=sys.stderr
+        )
+        return False
+
+
 def verify_audit_log() -> tuple[int, int]:
     """Verify all signatures in the audit log.
     

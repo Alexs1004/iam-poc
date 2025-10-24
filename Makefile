@@ -61,8 +61,16 @@ ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (demo mod
 	@set -a; source .env 2>/dev/null || true; set +a; \
 	if [[ "$${DEMO_MODE,,}" == "false" ]]; then \
 		echo "[ensure-secrets] Production mode detected (DEMO_MODE=false)" >&2; \
-		echo "[ensure-secrets] Secrets will be loaded from Azure Key Vault via /run/secrets" >&2; \
-		echo "[ensure-secrets] Skipping local secret generation" >&2; \
+		if [[ "$${AZURE_USE_KEYVAULT,,}" == "true" ]]; then \
+			echo "[ensure-secrets] Azure Key Vault enabled: clearing local secrets in .env" >&2; \
+			sed -i "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=|" .env; \
+			sed -i "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=|" .env; \
+			echo "[ensure-secrets] ✓ FLASK_SECRET_KEY cleared (will load from Key Vault)" >&2; \
+			echo "[ensure-secrets] ✓ AUDIT_LOG_SIGNING_KEY cleared (will load from Key Vault)" >&2; \
+		else \
+			echo "[ensure-secrets] WARNING: Production mode without Azure Key Vault" >&2; \
+			echo "[ensure-secrets] You must manually set FLASK_SECRET_KEY and AUDIT_LOG_SIGNING_KEY" >&2; \
+		fi; \
 	else \
 		echo "[ensure-secrets] Demo mode: checking secrets in .env..." >&2; \
 		if ! grep -qE "^FLASK_SECRET_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
@@ -101,6 +109,30 @@ reset-demo: ## Reset .env to demo defaults (requires confirmation)
 	else \
 		echo "[reset-demo] Cancelled" >&2; \
 	fi
+
+.PHONY: init-production
+init-production: ## Initialize .env for production mode with Azure Key Vault
+	@if [ -f .env ]; then \
+		echo "⚠️  WARNING: .env already exists." >&2; \
+		echo "This will overwrite it with production defaults." >&2; \
+		read -p "Type 'yes' to confirm: " confirm; \
+		if [ "$$confirm" != "yes" ]; then \
+			echo "[init-production] Cancelled" >&2; \
+			exit 1; \
+		fi; \
+	fi; \
+	if [ ! -f .env.production ]; then \
+		echo "[init-production] ERROR: .env.production template not found" >&2; \
+		exit 1; \
+	fi; \
+	cp .env.production .env; \
+	echo "[init-production] ✓ .env initialized for production mode" >&2; \
+	echo "[init-production] Next steps:" >&2; \
+	echo "  1. Edit .env and set AZURE_KEY_VAULT_NAME=<your-vault>" >&2; \
+	echo "  2. Update URLs (KEYCLOAK_ISSUER, OIDC_REDIRECT_URI, etc.)" >&2; \
+	echo "  3. Run 'make validate-env' to check configuration" >&2; \
+	echo "  4. Run 'make ensure-secrets' to clear local secrets" >&2; \
+	echo "  5. Run 'make load-secrets' to load from Azure Key Vault" >&2;
 
 .PHONY: validate-env
 validate-env: ensure-env ## Validate and auto-correct .env (DEMO_MODE=true forces AZURE_USE_KEYVAULT=false)

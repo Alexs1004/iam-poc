@@ -1,24 +1,10 @@
-"""Settings loader with environment variable and Azure Key Vault integration."""
+"""Settings loader with environment variable and Docker secrets integration."""
 from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
-
-# Azure imports (optional)
-try:
-    from azure.identity import DefaultAzureCredential
-    from azure.keyvault.secrets import SecretClient
-    from azure.keyvault.keys import KeyClient
-    from azure.core.exceptions import ResourceNotFoundError
-    AZURE_AVAILABLE = True
-except ImportError:
-    DefaultAzureCredential = None
-    SecretClient = None
-    KeyClient = None
-    ResourceNotFoundError = Exception
-    AZURE_AVAILABLE = False
 
 
 def _load_secret_from_file(secret_name: str, env_var: str | None = None) -> str | None:
@@ -103,6 +89,48 @@ class AppConfig:
     
     # Demo passwords (for reference)
     demo_passwords: dict[str, str] = field(default_factory=dict)
+    
+    @property
+    def service_client_secret_resolved(self) -> str:
+        """Get Keycloak service account client secret with smart fallback.
+        
+        Priority:
+        1. Demo mode: hardcoded "demo-service-secret"
+        2. Configured value in keycloak_service_client_secret
+        3. Docker secrets: /run/secrets/keycloak-service-client-secret
+        4. Environment variable: KEYCLOAK_SERVICE_CLIENT_SECRET
+        
+        Returns:
+            Client secret string
+            
+        Raises:
+            ValueError: If secret not found in production mode
+        """
+        # Priority 1: Demo mode always uses hardcoded secret
+        if self.demo_mode:
+            return "demo-service-secret"
+        
+        # Priority 2: Already configured value
+        if self.keycloak_service_client_secret:
+            return self.keycloak_service_client_secret
+        
+        # Priority 3: Try Docker secrets (both naming conventions)
+        for secret_name in ["keycloak_service_client_secret", "keycloak-service-client-secret"]:
+            secret_path = Path("/run/secrets") / secret_name
+            if secret_path.exists():
+                secret = secret_path.read_text().strip()
+                if secret:
+                    return secret
+        
+        # Priority 4: Environment variable
+        secret = os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET")
+        if secret:
+            return secret
+        
+        raise ValueError(
+            "KEYCLOAK_SERVICE_CLIENT_SECRET not found. "
+            "Set DEMO_MODE=true or provide secret via Docker secrets or environment variable."
+        )
 
 
 def _enforce_demo_mode_consistency() -> None:
@@ -115,87 +143,6 @@ def _enforce_demo_mode_consistency() -> None:
         print("[settings] WARNING: DEMO_MODE=true requires AZURE_USE_KEYVAULT=false (runtime guard)")
         print("[settings] Forcing AZURE_USE_KEYVAULT=false | Run 'make validate-env' to fix .env permanently")
         os.environ["AZURE_USE_KEYVAULT"] = "false"
-
-
-def _load_secrets_from_azure() -> None:
-    """Load secrets from Azure Key Vault if enabled."""
-    use_kv = os.environ.get("AZURE_USE_KEYVAULT", "false").lower() == "true"
-    print(f"[settings._load_secrets_from_azure] AZURE_USE_KEYVAULT={os.environ.get('AZURE_USE_KEYVAULT')}, use_kv={use_kv}")
-    
-    if not use_kv:
-        print("[settings._load_secrets_from_azure] Skipping Key Vault (AZURE_USE_KEYVAULT=false)")
-        return
-    
-    if not AZURE_AVAILABLE:
-        raise RuntimeError("Azure Key Vault integration requested but azure-keyvault-secrets is not installed.")
-    
-    vault_name = os.environ.get("AZURE_KEY_VAULT_NAME")
-    if not vault_name:
-        raise RuntimeError("AZURE_KEY_VAULT_NAME is required when AZURE_USE_KEYVAULT=true.")
-    
-    vault_uri = f"https://{vault_name}.vault.azure.net"
-    credential = DefaultAzureCredential()
-    secret_client = SecretClient(vault_url=vault_uri, credential=credential)
-    
-    secret_mapping = {
-        "FLASK_SECRET_KEY": os.environ.get("AZURE_SECRET_FLASK_SECRET_KEY", "flask-secret-key"),
-        "FLASK_SECRET_KEY_FALLBACKS": os.environ.get("AZURE_SECRET_FLASK_SECRET_KEY_FALLBACKS", ""),
-        "KEYCLOAK_SERVICE_CLIENT_SECRET": os.environ.get(
-            "AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET", "keycloak-service-client-secret"
-        ),
-        "KEYCLOAK_ADMIN_PASSWORD": os.environ.get("AZURE_SECRET_KEYCLOAK_ADMIN_PASSWORD", "keycloak-admin-password"),
-        "ALICE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_ALICE_TEMP_PASSWORD", "alice-temp-password"),
-        "BOB_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_BOB_TEMP_PASSWORD", "bob-temp-password"),
-        "CAROL_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_CAROL_TEMP_PASSWORD", "carol-temp-password"),
-        "JOE_TEMP_PASSWORD": os.environ.get("AZURE_SECRET_JOE_TEMP_PASSWORD", "joe-temp-password"),
-        "AUDIT_LOG_SIGNING_KEY": os.environ.get("AZURE_SECRET_AUDIT_LOG_SIGNING_KEY", "audit-log-signing-key"),
-    }
-    
-    key_mapping = {
-        "FLASK_SECRET_KEY": os.environ.get("AZURE_KEY_FLASK_SECRET_KEY", "").strip(),
-    }
-    
-    # Load keys if configured
-    key_client = None
-    if any(value for value in key_mapping.values()):
-        if KeyClient is None:
-            raise RuntimeError("AZURE_KEY_* variables defined but azure-keyvault-keys is not installed.")
-        key_client = KeyClient(vault_url=vault_uri, credential=credential)
-    
-    if key_client:
-        for env_name, key_name in key_mapping.items():
-            if os.environ.get(env_name):
-                continue
-            key_name = key_name.strip()
-            if not key_name:
-                continue
-            try:
-                import base64
-                key_bundle = key_client.get_key(key_name)
-                key_material = getattr(key_bundle, "key", None)
-                key_value = getattr(key_material, "k", None) if key_material else None
-                if not key_value:
-                    continue
-                padding = "=" * (-len(key_value) % 4)
-                decoded = base64.urlsafe_b64decode(f"{key_value}{padding}".encode("ascii"))
-                os.environ[env_name] = base64.urlsafe_b64encode(decoded).decode("ascii")
-            except ResourceNotFoundError:
-                continue
-            except Exception as exc:
-                raise RuntimeError(f"Failed to retrieve key '{key_name}' from Key Vault: {exc}") from exc
-    
-    # Load secrets
-    for env_name, secret_name in secret_mapping.items():
-        if os.environ.get(env_name):
-            continue
-        secret_name = secret_name.strip()
-        if not secret_name:
-            continue
-        try:
-            secret = secret_client.get_secret(secret_name)
-            os.environ[env_name] = secret.value
-        except Exception as exc:
-            raise RuntimeError(f"Failed to retrieve secret '{secret_name}' from Key Vault: {exc}") from exc
 
 
 def _get_or_generate(var_name: str, demo_default: Optional[str] = None, required: bool = True, demo_mode: bool = False) -> str:
@@ -237,12 +184,16 @@ def load_settings() -> AppConfig:
             os.environ["FLASK_SECRET_KEY"] = secret_key
             print("[demo-mode] Generated temporary FLASK_SECRET_KEY")
         elif azure_use_keyvault:
-            # Fallback to Azure Key Vault (legacy support)
-            _load_secrets_from_azure()
-            secret_key = os.environ.get("FLASK_SECRET_KEY")
+            # In production with Key Vault, secrets MUST be pre-loaded via make load-secrets
+            # and mounted as /run/secrets. DO NOT call Azure Key Vault from container.
+            raise RuntimeError(
+                "FLASK_SECRET_KEY not found in /run/secrets. "
+                "Run 'make load-secrets' on the host to populate .runtime/secrets/, "
+                "then restart containers to mount them."
+            )
         
         if not secret_key:
-            raise RuntimeError("FLASK_SECRET_KEY not found in /run/secrets, Azure Key Vault, or environment")
+            raise RuntimeError("FLASK_SECRET_KEY not found in /run/secrets or environment")
     
     # Keycloak service client secret
     keycloak_service_client_secret = _load_secret_from_file(
@@ -418,3 +369,7 @@ def load_settings() -> AppConfig:
         audit_log_signing_key=audit_log_signing_key,
         demo_passwords=demo_passwords,
     )
+
+
+# Global settings instance (loaded lazily on first import)
+settings: AppConfig = load_settings()

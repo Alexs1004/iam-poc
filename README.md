@@ -289,11 +289,34 @@ When `DEMO_MODE=true`, `make quickstart` automatically generates secure secrets 
 - Keycloak admin password defaults to `admin`
 
 **Production Mode Behavior:**
-When `DEMO_MODE=false`, `make ensure-secrets` outputs:
+When `DEMO_MODE=false` and `AZURE_USE_KEYVAULT=true`, `make ensure-secrets` actively **clears** local secrets in `.env`:
 ```
 [ensure-secrets] Production mode detected (DEMO_MODE=false)
-[ensure-secrets] Secrets will be loaded from Azure Key Vault via /run/secrets
-[ensure-secrets] Skipping local secret generation
+[ensure-secrets] Azure Key Vault enabled: clearing local secrets in .env
+[ensure-secrets] ✓ FLASK_SECRET_KEY cleared (will load from Key Vault)
+[ensure-secrets] ✓ AUDIT_LOG_SIGNING_KEY cleared (will load from Key Vault)
+```
+
+**Why clear local secrets?**
+- ✅ **Enforces single source of truth**: All secrets must come from Azure Key Vault
+- ✅ **Prevents stale secrets**: Ensures `.env` doesn't contain outdated values
+- ✅ **Supports `make fresh-demo`**: Automatically configures production mode correctly
+- ✅ **Idempotent workflows**: Safe to run `make quickstart` multiple times
+
+**Behavior Matrix:**
+
+| `DEMO_MODE` | `AZURE_USE_KEYVAULT` | `ensure-secrets` Behavior |
+|-------------|---------------------|---------------------------|
+| `true` | `false` | ✅ Generates secrets if empty (demo mode) |
+| `true` | `true` | ⚠️ Invalid config (validated by `validate-env`) |
+| `false` | `true` | 🔒 **Clears** `FLASK_SECRET_KEY` and `AUDIT_LOG_SIGNING_KEY` |
+| `false` | `false` | ⚠️ Warning: manual secret management required |
+
+When `DEMO_MODE=false` without Azure Key Vault, you'll see:
+```
+[ensure-secrets] Production mode detected (DEMO_MODE=false)
+[ensure-secrets] WARNING: Production mode without Azure Key Vault
+[ensure-secrets] You must manually set FLASK_SECRET_KEY and AUDIT_LOG_SIGNING_KEY
 ```
 
 This separation ensures:

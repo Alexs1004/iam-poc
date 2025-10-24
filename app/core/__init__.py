@@ -1,40 +1,10 @@
-"""Core business logic modules."""
-from .provisioning_service import (
-    create_user_scim_like,
-    get_user_scim,
-    list_users_scim,
-    replace_user_scim,
-    delete_user_scim,
-    change_user_role,
-    get_service_token,
-    generate_temp_password,
-    validate_username,
-    validate_email,
-    validate_name,
-    validate_scim_user_payload,
-    keycloak_to_scim,
-    scim_to_keycloak,
-    ScimError,
-)
-from . import rbac
-from . import validators
+"""Core business logic modules.
 
-__all__ = [
-    "create_user_scim_like",
-    "get_user_scim",
-    "list_users_scim",
-    "replace_user_scim",
-    "delete_user_scim",
-    "change_user_role",
-    "get_service_token",
-    "generate_temp_password",
-    "validate_username",
-    "validate_email",
-    "validate_name",
-    "validate_scim_user_payload",
-    "keycloak_to_scim",
-    "scim_to_keycloak",
-    "ScimError",
-    "rbac",
-    "validators",
-]
+Note: rbac, validators, and provisioning_service are NOT auto-imported
+to avoid Flask dependencies when using only keycloak services.
+
+To use these modules, import them explicitly:
+    from app.core.provisioning_service import create_user_scim_like
+    from app.core import rbac
+    from app.core import validators
+"""

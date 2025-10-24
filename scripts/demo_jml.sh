@@ -391,6 +391,7 @@ COMMON_FLAGS=(
   "--auth-realm" "${REALM}"
   "--svc-client-id" "${KC_SERVICE_CLIENT_ID}"
   "--svc-client-secret" "${KC_SERVICE_CLIENT_SECRET}"
+  "--operator" "demo-script"
 )
 
 # Always run init to create client, roles, and required actions

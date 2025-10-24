@@ -2,20 +2,24 @@ import os
 import pathlib
 import sys
 
-import pytest
-import requests
-import scripts.jml as jml
-import app.flask_app as flask_module
-
 # Add project root to Python path so pytest can import the Flask app package.
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Set DEMO_MODE before any app imports
 os.environ.setdefault("DEMO_MODE", "true")
 
-from app import app as flask_app
-from app.flask_app import IAM_OPERATOR_ROLE, REALM_ADMIN_ROLE
+import pytest
+import requests
+import app.core.keycloak as keycloak
+import app.flask_app as flask_module
+
+from app.flask_app import create_app
+
+# Role constants for tests
+IAM_OPERATOR_ROLE = "iam-operator"
+REALM_ADMIN_ROLE = "realm-admin"
 
 
 def _authenticate_with_roles(client, roles, username="alice"):
@@ -48,6 +52,7 @@ def _get_csrf_token(client):
 # Provide a test client so each test can exercise routes without running a server.
 @pytest.fixture()
 def client(monkeypatch):
+    flask_app = create_app()
     flask_app.config.update(TESTING=True)
 
     class _StubResponse:
@@ -69,8 +74,11 @@ def client(monkeypatch):
             return _StubResponse({"keys": []})
         raise RuntimeError(f"Unexpected network access in tests: {url}")
 
-    monkeypatch.setattr(flask_module.requests, "get", _stub_get)
-    monkeypatch.setattr(flask_module.oidc, "load_server_metadata", lambda: {"jwks_uri": "http://localhost:8080/realms/demo/protocol/openid-connect/certs"})
+    monkeypatch.setattr(requests, "get", _stub_get)
+    # Also stub the oidc module's load_server_metadata
+    import app.flask_app as flask_app_module
+    if hasattr(flask_app_module, 'oidc'):
+        monkeypatch.setattr(flask_app_module.oidc, "load_server_metadata", lambda: {"jwks_uri": "http://localhost:8080/realms/demo/protocol/openid-connect/certs"})
 
     with flask_app.test_client() as client:
         with flask_app.app_context():
@@ -157,7 +165,7 @@ def test_admin_joiner_invokes_create_user(monkeypatch, client):
             "require_password_update": require_password_update,
         }
 
-    monkeypatch.setattr(jml, "create_user", fake_create_user)
+    monkeypatch.setattr(keycloak, "create_user", fake_create_user)
 
     response = client.post(
         "/admin/joiner",
@@ -191,7 +199,7 @@ def test_admin_joiner_blocks_operator_from_sensitive_role(monkeypatch, client):
     def fail_if_called(*args, **kwargs):
         called["called"] = True
 
-    monkeypatch.setattr(jml, "create_user", fail_if_called)
+    monkeypatch.setattr(keycloak, "create_user", fail_if_called)
 
     response = client.post(
         "/admin/joiner",
@@ -216,7 +224,7 @@ def test_admin_mover_invokes_change_role(monkeypatch, client):
     csrf_token = _get_csrf_token(client)
 
     monkeypatch.setattr(flask_module, "_get_service_token", lambda: "token")
-    monkeypatch.setattr(jml, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
+    monkeypatch.setattr(keycloak, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
     monkeypatch.setattr(flask_module, "_user_roles", lambda token, user_id: ["analyst"])
 
     recorded = {}
@@ -224,7 +232,7 @@ def test_admin_mover_invokes_change_role(monkeypatch, client):
     def fake_change_role(kc_url, token, realm, username, from_role, to_role):
         recorded["args"] = (kc_url, token, realm, username, from_role, to_role)
 
-    monkeypatch.setattr(jml, "change_role", fake_change_role)
+    monkeypatch.setattr(keycloak, "change_role", fake_change_role)
 
     assert IAM_OPERATOR_ROLE in flask_module.ASSIGNABLE_ROLES
 
@@ -253,7 +261,7 @@ def test_admin_leaver_invokes_disable_user(monkeypatch, client):
     csrf_token = _get_csrf_token(client)
 
     monkeypatch.setattr(flask_module, "_get_service_token", lambda: "token")
-    monkeypatch.setattr(jml, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
+    monkeypatch.setattr(keycloak, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
     monkeypatch.setattr(flask_module, "_user_roles", lambda token, user_id: ["analyst"])
 
     recorded = {}
@@ -261,7 +269,7 @@ def test_admin_leaver_invokes_disable_user(monkeypatch, client):
     def fake_disable_user(kc_url, token, realm, username):
         recorded["args"] = (kc_url, token, realm, username)
 
-    monkeypatch.setattr(jml, "disable_user", fake_disable_user)
+    monkeypatch.setattr(keycloak, "disable_user", fake_disable_user)
 
     response = client.post(
         "/admin/leaver",
@@ -285,7 +293,7 @@ def test_admin_mover_blocks_self_change(monkeypatch, client):
     def fail_if_called(*args, **kwargs):
         called["called"] = True
 
-    monkeypatch.setattr(jml, "change_role", fail_if_called)
+    monkeypatch.setattr(keycloak, "change_role", fail_if_called)
 
     response = client.post(
         "/admin/mover",
@@ -307,7 +315,7 @@ def test_admin_mover_requires_realm_admin_for_sensitive_roles(monkeypatch, clien
     csrf_token = _get_csrf_token(client)
 
     monkeypatch.setattr(flask_module, "_get_service_token", lambda: "token")
-    monkeypatch.setattr(jml, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
+    monkeypatch.setattr(keycloak, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
     monkeypatch.setattr(flask_module, "_user_roles", lambda token, user_id: [IAM_OPERATOR_ROLE])
 
     called = {}
@@ -315,7 +323,7 @@ def test_admin_mover_requires_realm_admin_for_sensitive_roles(monkeypatch, clien
     def fail_if_called(*args, **kwargs):
         called["called"] = True
 
-    monkeypatch.setattr(jml, "change_role", fail_if_called)
+    monkeypatch.setattr(keycloak, "change_role", fail_if_called)
 
     response = client.post(
         "/admin/mover",
@@ -353,7 +361,7 @@ def test_admin_leaver_requires_realm_admin_for_sensitive_roles(monkeypatch, clie
     csrf_token = _get_csrf_token(client)
 
     monkeypatch.setattr(flask_module, "_get_service_token", lambda: "token")
-    monkeypatch.setattr(jml, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
+    monkeypatch.setattr(keycloak, "get_user_by_username", lambda *args, **kwargs: {"id": "target"})
     monkeypatch.setattr(flask_module, "_user_roles", lambda token, user_id: [IAM_OPERATOR_ROLE])
 
     called = {}
@@ -361,7 +369,7 @@ def test_admin_leaver_requires_realm_admin_for_sensitive_roles(monkeypatch, clie
     def fail_if_called(*args, **kwargs):
         called["called"] = True
 
-    monkeypatch.setattr(jml, "disable_user", fail_if_called)
+    monkeypatch.setattr(keycloak, "disable_user", fail_if_called)
 
     response = client.post(
         "/admin/leaver",

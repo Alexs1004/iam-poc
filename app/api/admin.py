@@ -6,7 +6,14 @@ from pathlib import Path
 from functools import wraps
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, abort
-from scripts import jml, audit
+from scripts import audit
+from app.core.keycloak import (
+    get_group_by_path,
+    get_group_members,
+    get_user_by_username,
+    _user_has_totp,
+    REQUEST_TIMEOUT,
+)
 from app.core import provisioning_service
 from app.core.rbac import (
     is_authenticated,
@@ -81,8 +88,8 @@ def _user_roles(kc_token: str, user_id: str) -> list[str]:
     import requests
     resp = requests.get(
         f"{keycloak_base_url}/admin/realms/{cfg.keycloak_realm}/users/{user_id}/role-mappings/realm",
-        headers=jml._auth_headers(kc_token),
-        timeout=jml.REQUEST_TIMEOUT,
+        headers={"Authorization": f"Bearer {kc_token}"},
+        timeout=REQUEST_TIMEOUT,
     )
     resp.raise_for_status()
     return sorted({role.get("name") for role in resp.json() or [] if role.get("name")})
@@ -107,7 +114,7 @@ def _fetch_user_statuses(kc_token: str) -> list[dict]:
     # Dynamic user discovery via group membership
     # ─────────────────────────────────────────────────────────────────────────
     managed_group_path = "/iam-poc-managed"
-    managed_group = jml.get_group_by_path(keycloak_base_url, kc_token, cfg.keycloak_realm, managed_group_path)
+    managed_group = get_group_by_path(keycloak_base_url, kc_token, cfg.keycloak_realm, managed_group_path)
     
     if not managed_group:
         # Group doesn't exist yet (e.g., before initial bootstrap)
@@ -117,7 +124,7 @@ def _fetch_user_statuses(kc_token: str) -> list[dict]:
     
     # Get group members (only managed users)
     try:
-        users = jml.get_group_members(keycloak_base_url, kc_token, cfg.keycloak_realm, managed_group["id"])
+        users = get_group_members(keycloak_base_url, kc_token, cfg.keycloak_realm, managed_group["id"])
     except requests.HTTPError as exc:
         detail = exc.response.text if hasattr(exc, "response") and exc.response else str(exc)
         print(f"[admin] Error fetching group members: {detail}", file=sys.stderr)
@@ -147,7 +154,7 @@ def _fetch_user_statuses(kc_token: str) -> list[dict]:
         
         try:
             status["roles"] = _user_roles(kc_token, user_id)
-            status["totp_enrolled"] = jml._user_has_totp(
+            status["totp_enrolled"] = _user_has_totp(
                 keycloak_base_url, kc_token, cfg.keycloak_realm, user_id
             )
             status["roles"] = filter_display_roles(status["roles"], cfg.keycloak_realm)
@@ -169,8 +176,8 @@ def _fetch_assignable_roles(kc_token: str) -> list[str]:
     import requests
     resp = requests.get(
         f"{keycloak_base_url}/admin/realms/{cfg.keycloak_realm}/roles",
-        headers=jml._auth_headers(kc_token),
-        timeout=jml.REQUEST_TIMEOUT,
+        headers={"Authorization": f"Bearer {kc_token}"},
+        timeout=REQUEST_TIMEOUT,
     )
     resp.raise_for_status()
     available = [role.get("name") for role in resp.json() or [] if role.get("name")]
@@ -444,7 +451,7 @@ def admin_mover():
     try:
         token = provisioning_service.get_service_token()
         keycloak_base_url = cfg.keycloak_url or cfg.keycloak_server_url.split("/realms/")[0]
-        target_user = jml.get_user_by_username(keycloak_base_url, token, cfg.keycloak_realm, username)
+        target_user = get_user_by_username(keycloak_base_url, token, cfg.keycloak_realm, username)
     except provisioning_service.ScimError as exc:
         flash(f"Failed to obtain service token: {exc.detail}", "error")
         return redirect(url_for("admin.admin_dashboard"))
@@ -517,7 +524,7 @@ def admin_leaver():
     try:
         token = provisioning_service.get_service_token()
         keycloak_base_url = cfg.keycloak_url or cfg.keycloak_server_url.split("/realms/")[0]
-        target_user = jml.get_user_by_username(keycloak_base_url, token, cfg.keycloak_realm, username)
+        target_user = get_user_by_username(keycloak_base_url, token, cfg.keycloak_realm, username)
     except provisioning_service.ScimError as exc:
         flash(f"Failed to obtain service token: {exc.detail}", "error")
         return redirect(url_for("admin.admin_dashboard"))
