@@ -4,10 +4,20 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.pyd
 .venv/
 env/
 venv/
 .runtime/
+
+# Backup files (git should not track these)
+*.backup
+*.old
+*~
+*.swp
+*.swo
 
 # OS/éditeurs
 .DS_Store
