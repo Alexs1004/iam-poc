@@ -455,7 +455,14 @@ make verify-audit   # Vérifier signatures HMAC logs
 
 ---
 
-## 🔗 Ressources Complémentaires
+## � Author
+
+**Alex** (@Alexs1004)  
+🔗 GitHub: [github.com/Alexs1004/iam-poc](https://github.com/Alexs1004/iam-poc)
+
+---
+
+## �🔗 Ressources Complémentaires
 
 **Keywords Azure/Suisse Romande** :
 Azure Key Vault • Microsoft Entra ID • Managed Identity • Azure Monitor • Azure Policy • Defender for Cloud • SC-300 • AZ-500 • nLPD (LPD 2023) • RGPD • FINMA • SCIM 2.0 • OIDC • JML • Suisse Romande • DevSecOps
@@ -467,9 +474,7 @@ Azure Key Vault • Microsoft Entra ID • Managed Identity • Azure Monitor �
 
 ---
 
-
-
-> 💼 **Contact** : [Votre LinkedIn / Email]
+> 💼 **Contact** : GitHub [@Alexs1004](https://github.com/Alexs1004) | [Ouvrir une issue](https://github.com/Alexs1004/iam-poc/issues)
 
 ---
 
