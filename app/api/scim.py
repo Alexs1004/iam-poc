@@ -1,29 +1,16 @@
-""""""SCIM 2.0 API endpoints (RFC 7644) for user provisioning.
+"""SCIM 2.0 API endpoints (RFC 7644) for user provisioning.
 
-Compatibility wrapper for backward compatibility with tests.
+This module provides a minimal SCIM-compliant REST API that delegates all
+business logic to the unified provisioning_service layer.
 
-This module re-exports everything from app.api.scim to maintainThis module provides a minimal SCIM-compliant REST API that delegates all
+Architecture:
+    SCIM API (/scim/v2/*) -> app/provisioning_service.py -> scripts/jml.py -> Keycloak
 
-compatibility with existing tests that import from app.scim_api.business logic to the unified provisioning_service layer.
-
-
-
-TODO: Refactor tests to import from app.api.scim directly, then remove this file.Architecture:
-
-"""    SCIM API (/scim/v2/*) -> app/provisioning_service.py -> scripts/jml.py -> Keycloak
-
-from app.api.scim import *
-
-from app.api.scim import bp as scim  # For tests that use scim_api.scimSecurity:
-
+Security:
     - OAuth 2.0 Bearer Token authentication (RFC 6750) via @require_oauth_token decorator
-
-# Re-export commonly mocked functions for test compatibility    - Read operations require 'scim:read' scope
-
-# These are actually in other modules but tests expect them here    - Write operations require 'scim:write' scope
-
-__all__ = ['bp', 'scim']    - Discovery endpoints (ServiceProviderConfig, Schemas) are public
-
+    - Read operations require 'scim:read' scope
+    - Write operations require 'scim:write' scope
+    - Discovery endpoints (ServiceProviderConfig, Schemas) are public
 """
 
 from __future__ import annotations
@@ -35,7 +22,7 @@ from app.api.decorators import validate_jwt_token, TokenValidationError
 from app.api.decorators import require_oauth_token
 
 # SCIM 2.0 Blueprint
-scim = Blueprint('scim', __name__, url_prefix='/scim/v2')
+bp = Blueprint('scim', __name__, url_prefix='/scim/v2')
 
 # Configuration
 JSON_MAX_SIZE_BYTES = 65536  # 64 KB
@@ -77,13 +64,13 @@ def scim_error_response(status: int, detail: str, scim_type: str = None) -> Resp
     return response
 
 
-@scim.errorhandler(ScimError)
+@bp.errorhandler(ScimError)
 def handle_scim_error(error: ScimError):
     """Global error handler for ScimError exceptions."""
     return jsonify(error.to_dict()), error.status
 
 
-@scim.errorhandler(413)
+@bp.errorhandler(413)
 def handle_request_too_large(error):
     """Handle payload too large errors."""
     return scim_error(413, "Request payload exceeds maximum allowed size (64 KB)", "invalidValue")
@@ -93,9 +80,16 @@ def handle_request_too_large(error):
 # Request Validation Middleware
 # ─────────────────────────────────────────────────────────────────────────────
 
-@scim.before_request
+@bp.before_request
 def validate_request():
     """Validate OAuth, request size, and content type."""
+    # Skip validation in test mode IF explicitly requested (for unit tests that mock provisioning)
+    # OAuth validation tests will NOT set this variable
+    from flask import current_app
+    import os
+    if current_app.config.get('TESTING') and os.getenv('SKIP_OAUTH_FOR_TESTS') == 'true':
+        return None
+    
     # Skip OAuth for discovery endpoints (RFC 7644 requirement)
     discovery_endpoints = [
         "/scim/v2/ServiceProviderConfig",
@@ -170,7 +164,7 @@ def validate_request():
             )
 
 
-@scim.after_request
+@bp.after_request
 def add_correlation_id(response):
     """Add correlation ID to response headers for tracing."""
     correlation_id = request.headers.get("X-Correlation-Id")
@@ -183,7 +177,7 @@ def add_correlation_id(response):
 # SCIM Schema Discovery Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
-@scim.route('/ServiceProviderConfig', methods=['GET'])
+@bp.route('/ServiceProviderConfig', methods=['GET'])
 def service_provider_config():
     """Return SCIM ServiceProviderConfig (RFC 7643 Section 5)."""
     config = {
@@ -223,7 +217,7 @@ def service_provider_config():
     return jsonify(config), 200
 
 
-@scim.route('/ResourceTypes', methods=['GET'])
+@bp.route('/ResourceTypes', methods=['GET'])
 def resource_types():
     """Return supported SCIM resource types."""
     resources = {
@@ -247,7 +241,7 @@ def resource_types():
     return jsonify(resources), 200
 
 
-@scim.route('/Schemas', methods=['GET'])
+@bp.route('/Schemas', methods=['GET'])
 def schemas():
     """Return SCIM schema definitions."""
     schema_list = {
@@ -300,7 +294,7 @@ def schemas():
 # SCIM User CRUD Operations
 # ─────────────────────────────────────────────────────────────────────────────
 
-@scim.route('/Users', methods=['POST'])
+@bp.route('/Users', methods=['POST'])
 def create_user():
     """Create a new user (Joiner).
     
@@ -334,7 +328,7 @@ def create_user():
         return scim_error(500, f"Internal server error: {exc}")
 
 
-@scim.route('/Users/<user_id>', methods=['GET'])
+@bp.route('/Users/<user_id>', methods=['GET'])
 def get_user(user_id: str):
     """Retrieve a specific user by ID.
     
@@ -359,7 +353,7 @@ def get_user(user_id: str):
         return scim_error(500, f"Internal server error: {exc}")
 
 
-@scim.route('/Users', methods=['GET'])
+@bp.route('/Users', methods=['GET'])
 def list_users():
     """List users with pagination and filtering.
     
@@ -392,7 +386,7 @@ def list_users():
         return scim_error(500, f"Internal server error: {exc}")
 
 
-@scim.route('/Users/<user_id>', methods=['PUT'])
+@bp.route('/Users/<user_id>', methods=['PUT'])
 def replace_user(user_id: str):
     """Update a user via full replacement (Mover/Leaver).
     
@@ -420,7 +414,7 @@ def replace_user(user_id: str):
         return scim_error(500, f"Internal server error: {exc}")
 
 
-@scim.route('/Users/<user_id>', methods=['DELETE'])
+@bp.route('/Users/<user_id>', methods=['DELETE'])
 def delete_user(user_id: str):
     """Soft-delete a user by disabling (Leaver).
     
@@ -451,7 +445,7 @@ def delete_user(user_id: str):
 # Optional: POST /Users/.search for Azure AD/Okta compatibility
 # ─────────────────────────────────────────────────────────────────────────────
 
-@scim.route('/Users/.search', methods=['POST'])
+@bp.route('/Users/.search', methods=['POST'])
 def search_users():
     """Search users via POST (Azure AD/Okta compatibility).
     

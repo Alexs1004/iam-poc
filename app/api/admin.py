@@ -385,7 +385,7 @@ def admin_dashboard():
 @require_jml_operator
 def admin_joiner():
     """Create user (Joiner operation)."""
-    from app import admin_ui_helpers
+    from app.api.helpers import admin_ui
     cfg = current_app.config["APP_CONFIG"]
     
     # Input validation
@@ -424,7 +424,7 @@ def admin_joiner():
     operator = current_username() or "system"
     
     try:
-        user_id, returned_password = admin_ui_helpers.ui_create_user(
+        user_id, returned_password = admin_ui.ui_create_user(
             username=username,
             email=email,
             first_name=first,
@@ -464,7 +464,7 @@ def admin_joiner():
 @require_jml_operator
 def admin_mover():
     """Change user role (Mover operation)."""
-    from app import admin_ui_helpers
+    from app.api.helpers import admin_ui
     cfg = current_app.config["APP_CONFIG"]
     
     username = request.form.get("username", "").strip()
@@ -514,7 +514,7 @@ def admin_mover():
     operator = current_username() or "system"
     
     try:
-        admin_ui_helpers.ui_change_role(username, source_role, target_role)
+        admin_ui.ui_change_role(username, source_role, target_role)
         flash(f"User '{username}' moved from {source_role} to {target_role}.", "success")
     except provisioning_service.ScimError as exc:
         flash(f"Failed to update roles for '{username}': {exc.detail}", "error")
@@ -544,7 +544,7 @@ def admin_mover():
 @require_jml_operator
 def admin_leaver():
     """Disable user (Leaver operation)."""
-    from app import admin_ui_helpers
+    from app.api.helpers import admin_ui
     cfg = current_app.config["APP_CONFIG"]
     
     username = request.form.get("username", "").strip()
@@ -585,7 +585,7 @@ def admin_leaver():
     operator = current_username() or "system"
     
     try:
-        admin_ui_helpers.ui_disable_user(username)
+        admin_ui.ui_disable_user(username)
         flash(f"User '{username}' disabled successfully (sessions revoked).", "success")
     except provisioning_service.ScimError as exc:
         flash(f"Failed to disable '{username}': {exc.detail}", "error")

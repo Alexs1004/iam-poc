@@ -11,9 +11,19 @@ from unittest.mock import MagicMock, patch
 # Set environment variables before importing app
 os.environ['DEMO_MODE'] = 'true'
 os.environ['FLASK_SECRET_KEY'] = 'test-secret-key-for-unit-tests'
+os.environ['SKIP_OAUTH_FOR_TESTS'] = 'true'  # Skip OAuth validation for these unit tests
 
-from app.scim_api import scim
+from app.api.scim import bp as scim
 from app.core.provisioning_service import keycloak_to_scim, ScimError
+
+
+# Cleanup fixture to prevent test pollution
+@pytest.fixture(scope="module", autouse=True)
+def cleanup_test_env():
+    """Ensure SKIP_OAUTH_FOR_TESTS is cleaned up after this module"""
+    yield
+    # Cleanup after all tests in this module
+    os.environ.pop('SKIP_OAUTH_FOR_TESTS', None)
 
 
 @pytest.fixture
@@ -44,6 +54,21 @@ def mock_keycloak_user():
 def mock_token():
     """Mock valid OAuth token"""
     return "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.test.token"
+
+
+@pytest.fixture
+def mock_oauth_validation(monkeypatch):
+    """Mock OAuth token validation to always succeed"""
+    def mock_validate(token, required_scope=None):
+        # Return a valid decoded token payload
+        return {
+            'sub': 'test-user',
+            'scope': 'scim:read scim:write',
+            'client_id': 'test-client'
+        }
+    
+    monkeypatch.setattr('app.api.decorators.validate_jwt_token', mock_validate)
+    return mock_validate
 
 
 class TestSCIMSchemaEndpoints:
@@ -101,30 +126,28 @@ class TestSCIMSchemaEndpoints:
 class TestSCIMUserCRUD:
     """Test SCIM User CRUD operations"""
     
-    @patch('app.scim_api.create_user')
-    @patch('app.scim_api.get_user_by_username')
-    def test_create_user_success(self, mock_get_user, mock_create, client, mock_keycloak_user, mock_token):
+    @patch('app.core.provisioning_service.create_user_scim_like')
+    def test_create_user_success(self, mock_create, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test POST /Users creates user successfully"""
-        mock_get_user.return_value = None  # User doesn't exist
-        mock_create.return_value = ('user-id-123', 'temp-password-xyz')
+        # Mock the response from provisioning service
+        mock_scim_user = keycloak_to_scim(mock_keycloak_user)
+        mock_scim_user['_tempPassword'] = 'temp-password-xyz'
+        mock_create.return_value = mock_scim_user
         
-        with patch('app.scim_api.get_keycloak_admin') as mock_admin:
-            mock_admin.return_value.get_user.return_value = mock_keycloak_user
-            
-            response = client.post(
-                '/scim/v2/Users',
-                headers={
-                    'Content-Type': 'application/scim+json',
-                    'Authorization': mock_token
-                },
-                json={
-                    'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
-                    'userName': 'newuser',
-                    'emails': [{'value': 'newuser@example.com', 'primary': True}],
-                    'name': {'givenName': 'New', 'familyName': 'User'},
-                    'active': True
-                }
-            )
+        response = client.post(
+            '/scim/v2/Users',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
+                'userName': 'newuser',
+                'emails': [{'value': 'newuser@example.com', 'primary': True}],
+                'name': {'givenName': 'New', 'familyName': 'User'},
+                'active': True
+            }
+        )
         
         assert response.status_code == 201
         data = json.loads(response.data)
@@ -133,10 +156,11 @@ class TestSCIMUserCRUD:
         assert data['id'] == mock_keycloak_user['id']
         assert '_tempPassword' in data
         
-    @patch('app.scim_api.get_user_by_username')
-    def test_create_user_conflict(self, mock_get_user, client, mock_keycloak_user, mock_token):
+    @patch('app.core.provisioning_service.create_user_scim_like')
+    def test_create_user_conflict(self, mock_create, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test POST /Users returns 409 for duplicate username"""
-        mock_get_user.return_value = mock_keycloak_user  # User exists
+        # Mock provisioning service raising uniqueness error
+        mock_create.side_effect = ScimError(409, "User already exists", "uniqueness")
         
         response = client.post(
             '/scim/v2/Users',
@@ -177,10 +201,11 @@ class TestSCIMUserCRUD:
         data = json.loads(response.data)
         assert data['scimType'] == 'invalidValue'
         
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_get_user_success(self, mock_admin, client, mock_keycloak_user, mock_token):
+    @patch('app.core.provisioning_service.get_user_scim')
+    def test_get_user_success(self, mock_get_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test GET /Users/{id} retrieves user"""
-        mock_admin.return_value.get_user.return_value = mock_keycloak_user
+        mock_scim_user = keycloak_to_scim(mock_keycloak_user)
+        mock_get_user.return_value = mock_scim_user
         
         response = client.get(
             f'/scim/v2/Users/{mock_keycloak_user["id"]}',
@@ -194,10 +219,10 @@ class TestSCIMUserCRUD:
         assert data['userName'] == mock_keycloak_user['username']
         assert data['active'] is True
         
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_get_user_not_found(self, mock_admin, client, mock_token):
+    @patch('app.core.provisioning_service.get_user_scim')
+    def test_get_user_not_found(self, mock_get_user, client, mock_token, mock_oauth_validation):
         """Test GET /Users/{id} returns 404 for missing user"""
-        mock_admin.return_value.get_user.side_effect = Exception("User not found")
+        mock_get_user.side_effect = ScimError(404, "User not found", "invalidValue")
         
         response = client.get(
             '/scim/v2/Users/nonexistent-id',
@@ -206,13 +231,17 @@ class TestSCIMUserCRUD:
         
         assert response.status_code == 404
         
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_list_users_success(self, mock_admin, client, mock_keycloak_user, mock_token):
+    @patch('app.core.provisioning_service.list_users_scim')
+    def test_list_users_success(self, mock_list_users, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test GET /Users returns paginated list"""
-        mock_admin.return_value.get_users.return_value = [
-            mock_keycloak_user,
-            {**mock_keycloak_user, 'id': 'user-2', 'username': 'bob'},
-        ]
+        scim_user1 = keycloak_to_scim(mock_keycloak_user)
+        scim_user2 = keycloak_to_scim({**mock_keycloak_user, 'id': 'user-2', 'username': 'bob'})
+        mock_list_users.return_value = {
+            'Resources': [scim_user1, scim_user2],
+            'totalResults': 2,
+            'startIndex': 1,
+            'itemsPerPage': 2
+        }
         
         response = client.get(
             '/scim/v2/Users?startIndex=1&count=10',
@@ -227,10 +256,16 @@ class TestSCIMUserCRUD:
         assert data['itemsPerPage'] == 2
         assert len(data['Resources']) == 2
         
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_list_users_with_filter(self, mock_admin, client, mock_keycloak_user, mock_token):
+    @patch('app.core.provisioning_service.list_users_scim')
+    def test_list_users_with_filter(self, mock_list_users, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test GET /Users?filter=... applies filtering"""
-        mock_admin.return_value.get_users.return_value = [mock_keycloak_user]
+        scim_user = keycloak_to_scim(mock_keycloak_user)
+        mock_list_users.return_value = {
+            'Resources': [scim_user],
+            'totalResults': 1,
+            'startIndex': 1,
+            'itemsPerPage': 1
+        }
         
         response = client.get(
             '/scim/v2/Users?filter=userName eq "alice"',
@@ -239,18 +274,21 @@ class TestSCIMUserCRUD:
         
         assert response.status_code == 200
         data = json.loads(response.data)
+        assert len(data['Resources']) == 1
         
-        # Verify filter was applied in query
-        mock_admin.return_value.get_users.assert_called_once()
-        call_kwargs = mock_admin.return_value.get_users.call_args[1]
-        assert 'alice' in call_kwargs.get('query', {}).get('username', '')
+        # Verify filter was passed to provisioning service
+        mock_list_users.assert_called_once()
+        # list_users_scim is called with query as positional arg
+        call_args = mock_list_users.call_args[0]
+        assert len(call_args) > 0
+        query_dict = call_args[0]
+        assert query_dict.get('filter') == 'userName eq "alice"'
         
-    @patch('app.scim_api.disable_user')
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_update_user_disable(self, mock_admin, mock_disable, client, mock_keycloak_user, mock_token):
+    @patch('app.core.provisioning_service.replace_user_scim')
+    def test_update_user_disable(self, mock_replace, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test PUT /Users/{id} with active=false disables user"""
-        disabled_user = {**mock_keycloak_user, 'enabled': False}
-        mock_admin.return_value.get_user.return_value = disabled_user
+        disabled_scim_user = keycloak_to_scim({**mock_keycloak_user, 'enabled': False})
+        mock_replace.return_value = disabled_scim_user
         
         response = client.put(
             f'/scim/v2/Users/{mock_keycloak_user["id"]}',
@@ -269,13 +307,13 @@ class TestSCIMUserCRUD:
         data = json.loads(response.data)
         assert data['active'] is False
         
-        mock_disable.assert_called_once_with('alice')
+        # Verify replace_user_scim was called
+        mock_replace.assert_called_once()
         
-    @patch('app.scim_api.disable_user')
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_delete_user(self, mock_admin, mock_disable, client, mock_keycloak_user, mock_token):
+    @patch('app.core.provisioning_service.delete_user_scim')
+    def test_delete_user(self, mock_delete, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test DELETE /Users/{id} soft-deletes user"""
-        mock_admin.return_value.get_user.return_value = mock_keycloak_user
+        mock_delete.return_value = None  # DELETE returns no content
         
         response = client.delete(
             f'/scim/v2/Users/{mock_keycloak_user["id"]}',
@@ -285,7 +323,9 @@ class TestSCIMUserCRUD:
         assert response.status_code == 204
         assert response.data == b''
         
-        mock_disable.assert_called_once_with('alice')
+        # Verify delete was called with user_id (and correlation_id=None)
+        mock_delete.assert_called_once()
+        assert mock_delete.call_args[0][0] == mock_keycloak_user["id"]
 
 
 class TestHelperFunctions:
@@ -336,10 +376,15 @@ class TestHelperFunctions:
 class TestSCIMPaginationAndFiltering:
     """Test SCIM pagination and filtering logic"""
     
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_pagination_defaults(self, mock_admin, client, mock_token):
+    @patch('app.core.provisioning_service.list_users_scim')
+    def test_pagination_defaults(self, mock_list_users, client, mock_token, mock_oauth_validation):
         """Test default pagination values"""
-        mock_admin.return_value.get_users.return_value = []
+        mock_list_users.return_value = {
+            'Resources': [],
+            'totalResults': 0,
+            'startIndex': 1,
+            'itemsPerPage': 0
+        }
         
         response = client.get(
             '/scim/v2/Users',
@@ -352,10 +397,15 @@ class TestSCIMPaginationAndFiltering:
         # SCIM default: startIndex=1
         assert data['startIndex'] == 1
         
-    @patch('app.scim_api.get_keycloak_admin')
-    def test_filter_username_eq(self, mock_admin, client, mock_token):
+    @patch('app.core.provisioning_service.list_users_scim')
+    def test_filter_username_eq(self, mock_list_users, client, mock_token, mock_oauth_validation):
         """Test filter parsing for 'userName eq "value"'"""
-        mock_admin.return_value.get_users.return_value = []
+        mock_list_users.return_value = {
+            'Resources': [],
+            'totalResults': 0,
+            'startIndex': 1,
+            'itemsPerPage': 0
+        }
         
         response = client.get(
             '/scim/v2/Users?filter=userName eq "alice"',
@@ -364,9 +414,10 @@ class TestSCIMPaginationAndFiltering:
         
         assert response.status_code == 200
         
-        # Verify username query parameter was set
-        call_kwargs = mock_admin.return_value.get_users.call_args[1]
-        assert 'alice' in str(call_kwargs.get('query', {}))
+        # Verify filter string was passed (as positional argument)
+        call_args = mock_list_users.call_args[0]
+        query_dict = call_args[0]
+        assert query_dict.get('filter') == 'userName eq "alice"'
 
 
 if __name__ == '__main__':

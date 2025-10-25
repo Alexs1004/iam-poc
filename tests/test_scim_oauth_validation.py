@@ -39,7 +39,12 @@ from app.flask_app import create_app
 
 @pytest.fixture
 def client():
-    """Test client with production-like config (OAuth enabled)."""
+    """Test client with production-like config (OAuth enabled).
+    
+    CRITICAL: Does NOT set SKIP_OAUTH_FOR_TESTS=true (unlike test_scim_api.py).
+    This ensures OAuth validation logic (Bearer token, JWT signature, scopes) is ACTUALLY tested.
+    See app/api/scim.py line 90: OAuth only bypassed if SKIP_OAUTH_FOR_TESTS='true'.
+    """
     app = create_app()
     app.config['TESTING'] = True
     return app.test_client()
@@ -260,7 +265,7 @@ def test_not_yet_valid_token_rejected(mock_jwks, client, valid_token_payload):
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.scim_api.validate_jwt_token')
+@patch('app.api.scim.validate_jwt_token')
 def test_insufficient_scope_rejected(mock_validate, client, insufficient_scope_payload):
     """SCIM endpoints reject tokens without required scopes."""
     # Mock JWT validation to return token with insufficient scope
@@ -282,7 +287,7 @@ def test_insufficient_scope_rejected(mock_validate, client, insufficient_scope_p
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.scim_api.validate_jwt_token')
+@patch('app.api.scim.validate_jwt_token')
 def test_read_scope_cannot_write(mock_validate, client, read_only_token_payload):
     """Tokens with only scim:read cannot perform write operations."""
     # Mock JWT validation to return read-only token
@@ -306,7 +311,7 @@ def test_read_scope_cannot_write(mock_validate, client, read_only_token_payload)
 @pytest.mark.oauth
 @pytest.mark.scim
 @patch('app.core.provisioning_service.list_users_scim')  # Mock Keycloak backend
-@patch('app.scim_api.validate_jwt_token')  # Mock OAuth validation
+@patch('app.api.scim.validate_jwt_token')  # Mock OAuth validation
 def test_write_scope_implies_read(mock_validate, mock_list_users, client, valid_token_payload):
     """Tokens with scim:write can also read (hierarchical scopes)."""
     # Mock JWT validation to return token with write scope only
@@ -342,7 +347,7 @@ def test_write_scope_implies_read(mock_validate, mock_list_users, client, valid_
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.scim_api.validate_jwt_token')
+@patch('app.api.scim.validate_jwt_token')
 @patch('app.core.provisioning_service.list_users_scim')
 def test_valid_token_with_read_scope_accepted(mock_list_users, mock_validate, client, valid_token_payload):
     """Valid tokens with scim:read scope can read resources."""
@@ -368,7 +373,7 @@ def test_valid_token_with_read_scope_accepted(mock_list_users, mock_validate, cl
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.scim_api.validate_jwt_token')
+@patch('app.api.scim.validate_jwt_token')
 @patch('app.core.provisioning_service.create_user_scim_like')
 def test_valid_token_with_write_scope_accepted(mock_create_user, mock_validate, client, valid_token_payload):
     """Valid tokens with scim:write scope can create resources."""

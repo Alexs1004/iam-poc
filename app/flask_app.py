@@ -76,12 +76,12 @@ def create_app() -> Flask:
     # Register blueprints
     from app.api import health, errors
     from app.api import admin
-    from app import scim_api
+    from app.api import scim
     
     app.register_blueprint(auth.bp)
     app.register_blueprint(health.bp)
     app.register_blueprint(admin.bp, url_prefix="/admin")
-    app.register_blueprint(scim_api.scim, url_prefix="/scim/v2")
+    app.register_blueprint(scim.bp, url_prefix="/scim/v2")
     
     # Register error handlers
     errors.register_error_handlers(app)
