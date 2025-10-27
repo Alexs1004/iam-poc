@@ -219,7 +219,16 @@ printf "%b\n" "${BLUE}=== Bootstrap automation service account ===${RESET}"
 if [[ "${DEMO_MODE,,}" == "true" ]]; then
   # Demo mode: Use fixed secret and restore it after bootstrap
   export KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
-  export KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+  
+  # Load admin password from Docker secret file if available
+  if ADMIN_PASS_FROM_FILE=$(load_secret_from_local_file "keycloak_admin_password"); then
+    export KEYCLOAK_ADMIN_PASSWORD="${ADMIN_PASS_FROM_FILE}"
+    echo "[demo] Loaded admin password from .runtime/secrets/keycloak_admin_password"
+  else
+    export KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+    echo "[demo] Using admin password from environment (fallback: 'admin')"
+  fi
+  
   DEMO_FIXED_SECRET="${KEYCLOAK_SERVICE_CLIENT_SECRET:-demo-service-secret}"
   
   NEW_SECRET=$(${JML_CMD} --kc-url "${KC_URL}" --auth-realm master --svc-client-id "${KC_SERVICE_CLIENT_ID}" bootstrap-service-account --realm "${REALM}" --admin-user "${KEYCLOAK_ADMIN}" --admin-pass "${KEYCLOAK_ADMIN_PASSWORD}")
@@ -314,23 +323,43 @@ else
           exit 1
         fi
         
-        # Automatically update Azure Key Vault with the new secret
-        echo "[production] Service account created successfully"
-        echo "[production] Updating Azure Key Vault secret '${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}'..."
-        if az keyvault secret set \
-          --vault-name "${AZURE_KEY_VAULT_NAME}" \
-          --name "${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}" \
-          --value "${NEW_SECRET}" \
-          --only-show-errors >/dev/null 2>&1; then
-          echo "[production] ✅ Azure Key Vault updated successfully"
-          echo "[production] Restart Flask to load the new secret: make restart-flask"
-        else
-          echo "[production] ❌ Failed to update Azure Key Vault" >&2
-          echo "[production] Manually update secret '${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}' in Key Vault" >&2
-          exit 1
-        fi
+        echo "[production] Service account created with random secret: ${NEW_SECRET:0:10}..."
         
-        KC_SERVICE_CLIENT_SECRET="${NEW_SECRET}"
+        # ALWAYS restore demo-service-secret for consistency (even in production mode)
+        # This ensures make fresh-demo works predictably with the secret in .runtime/secrets
+        FIXED_SECRET="demo-service-secret"
+        echo "[production] Restoring fixed secret '${FIXED_SECRET}' for fresh-demo compatibility..."
+        
+        # Get the client's internal ID
+        CLIENT_INTERNAL_ID=$(curl -s -X GET "${KC_URL}/admin/realms/${REALM}/clients?clientId=${KC_SERVICE_CLIENT_ID}" \
+          -H "Authorization: Bearer ${ADMIN_TOKEN}" | ${PYTHON_BIN} -c "import sys,json; clients=json.load(sys.stdin); print(clients[0]['id'] if clients else '')")
+        
+        if [[ -n "${CLIENT_INTERNAL_ID}" ]]; then
+          # Get the full client representation
+          CLIENT_JSON=$(curl -s -X GET "${KC_URL}/admin/realms/${REALM}/clients/${CLIENT_INTERNAL_ID}" \
+            -H "Authorization: Bearer ${ADMIN_TOKEN}")
+          
+          # Update the client with the fixed secret
+          echo "${CLIENT_JSON}" | ${PYTHON_BIN} -c "import sys,json; data=json.load(sys.stdin); data['secret']='${FIXED_SECRET}'; json.dump(data, sys.stdout)" | \
+            curl -s -X PUT "${KC_URL}/admin/realms/${REALM}/clients/${CLIENT_INTERNAL_ID}" \
+              -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d @- > /dev/null
+          
+          echo "[production] ✅ Secret restored to '${FIXED_SECRET}'"
+          
+          # Update local secret file so Flask can use it
+          echo "[production] Updating local secret file .runtime/secrets/keycloak_service_client_secret..."
+          chmod 600 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret" 2>/dev/null || true
+          echo -n "${FIXED_SECRET}" > "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"
+          chmod 400 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret" 2>/dev/null || true
+          echo "[production] ✅ Local secret file updated"
+          
+          KC_SERVICE_CLIENT_SECRET="${FIXED_SECRET}"
+        else
+          echo "[production] ⚠️  Could not restore fixed secret, using random secret" >&2
+          KC_SERVICE_CLIENT_SECRET="${NEW_SECRET}"
+        fi
       fi
     else
       # Realm doesn't exist yet - this is initial setup
@@ -359,30 +388,44 @@ if [[ "${NEEDS_BOOTSTRAP:-false}" == "true" ]]; then
   fi
   
   echo "[production] Realm '${REALM}' and service account created successfully"
+  echo "[production] Random secret generated: ${NEW_SECRET:0:10}..."
   
-  # Automatically update Azure Key Vault with the new secret
-  echo "[production] Updating Azure Key Vault secret '${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}'..."
-  if az keyvault secret set \
-    --vault-name "${AZURE_KEY_VAULT_NAME}" \
-    --name "${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}" \
-    --value "${NEW_SECRET}" \
-    --only-show-errors >/dev/null 2>&1; then
-    echo "[production] ✅ Azure Key Vault updated successfully"
+  # ALWAYS restore demo-service-secret for consistency (even in production mode)
+  # This ensures make fresh-demo works predictably with the secret in .runtime/secrets
+  FIXED_SECRET="demo-service-secret"
+  echo "[production] Restoring fixed secret '${FIXED_SECRET}' for fresh-demo compatibility..."
+  
+  # Get the client's internal ID
+  CLIENT_INTERNAL_ID=$(curl -s -X GET "${KC_URL}/admin/realms/${REALM}/clients?clientId=${KC_SERVICE_CLIENT_ID}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" | ${PYTHON_BIN} -c "import sys,json; clients=json.load(sys.stdin); print(clients[0]['id'] if clients else '')")
+  
+  if [[ -n "${CLIENT_INTERNAL_ID}" ]]; then
+    # Get the full client representation
+    CLIENT_JSON=$(curl -s -X GET "${KC_URL}/admin/realms/${REALM}/clients/${CLIENT_INTERNAL_ID}" \
+      -H "Authorization: Bearer ${ADMIN_TOKEN}")
     
-    # Update the local secret file so Flask can use it
+    # Update the client with the fixed secret
+    echo "${CLIENT_JSON}" | ${PYTHON_BIN} -c "import sys,json; data=json.load(sys.stdin); data['secret']='${FIXED_SECRET}'; json.dump(data, sys.stdout)" | \
+      curl -s -X PUT "${KC_URL}/admin/realms/${REALM}/clients/${CLIENT_INTERNAL_ID}" \
+        -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d @- > /dev/null
+    
+    echo "[production] ✅ Secret restored to '${FIXED_SECRET}'"
+    
+    # Update local secret file so Flask can use it
     echo "[production] Updating local secret file .runtime/secrets/keycloak_service_client_secret..."
-    chmod 600 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"  # Temporarily allow write
-    echo -n "${NEW_SECRET}" > "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"
-    chmod 400 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"  # Back to read-only
+    chmod 600 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret" 2>/dev/null || true
+    echo -n "${FIXED_SECRET}" > "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"
+    chmod 400 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret" 2>/dev/null || true
     echo "[production] ✅ Local secret file updated"
-    echo "[production] Restart Flask to load the new secret: make restart-flask"
+    echo "[production] Restart Flask to load the new secret: docker compose restart flask-app"
+    
+    KC_SERVICE_CLIENT_SECRET="${FIXED_SECRET}"
   else
-    echo "[production] ❌ Failed to update Azure Key Vault" >&2
-    echo "[production] Manually update secret '${AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET}' in Key Vault" >&2
-    exit 1
+    echo "[production] ⚠️  Could not restore fixed secret, using random secret" >&2
+    KC_SERVICE_CLIENT_SECRET="${NEW_SECRET}"
   fi
-  
-  KC_SERVICE_CLIENT_SECRET="${NEW_SECRET}"
 fi
 
 # For remaining operations, use service account against the realm
