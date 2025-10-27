@@ -31,7 +31,7 @@ Thumbs.db
 .runtime/secrets/
 *.log
 *.zip
-.coverage
+.coverage*
 coverage.xml
 htmlcov/
 
