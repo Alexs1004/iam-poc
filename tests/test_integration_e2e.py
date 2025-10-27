@@ -23,21 +23,23 @@ import pytest
 import requests
 from datetime import datetime
 
-# Mark all tests in this file as integration tests
-pytestmark = pytest.mark.integration
-
-# Environment variables (from .env via make)
+# Apply both the integration marker and the conditional skip marker
+# Assigning pytestmark once with a list preserves both behaviours.
+# See https://docs.pytest.org/en/stable/how-to/mark.html#marking-whole-classes-or-modules
+# for context on module-level pytestmark usage.
 KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "https://localhost")
 APP_BASE_URL = os.getenv("APP_BASE_URL", "https://localhost")
 SERVICE_CLIENT_ID = os.getenv("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
 SERVICE_CLIENT_SECRET = os.getenv("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
 SERVICE_REALM = os.getenv("KEYCLOAK_SERVICE_REALM", "demo")
 
-# Skip all tests if service secret not configured
-pytestmark = pytest.mark.skipif(
-    not SERVICE_CLIENT_SECRET,
-    reason="KEYCLOAK_SERVICE_CLIENT_SECRET not configured"
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not SERVICE_CLIENT_SECRET,
+        reason="KEYCLOAK_SERVICE_CLIENT_SECRET not configured"
+    ),
+]
 
 
 # ============================================================================
