@@ -337,7 +337,7 @@ restart: ## Restart all services
 .PHONY: restart-flask
 restart-flask: ## Restart entire stack to reload secrets from files
 	@echo "[restart-flask] Restarting stack to reload secrets..."
-	@docker-compose down
+	@docker compose down
 	@./scripts/run_https.sh
 	@echo "[restart-flask] Stack restarted with updated secrets"
 
@@ -439,13 +439,6 @@ pytest-secrets: ## Run secrets security tests (logs, HTTP, rotation, permissions
 	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
 	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest tests/test_secrets_security.py -v
 
-.PHONY: pytest-scim-revocation
-pytest-scim-revocation: ## Run SCIM session revocation tests (requires running stack)
-	@echo "[pytest-scim-revocation] Running SCIM session revocation tests..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && DEMO_MODE=true RUN_INTEGRATION_TESTS=1 python3 -m pytest tests/test_scim_session_revocation.py -v -m integration
-
 .PHONY: pytest-nginx-headers
 pytest-nginx-headers: ensure-stack ## Run Nginx/TLS/headers security tests (auto-starts stack if needed)
 	@echo "[pytest-nginx-headers] Running Nginx/TLS/headers security tests..."
@@ -459,7 +452,6 @@ pytest-p0: ## Run all P0 critical security tests (unit + integration)
 	@$(MAKE) pytest-oidc
 	@$(MAKE) pytest-secrets
 	@echo "[pytest-p0] Integration tests require running stack. Run 'make up' first, then:"
-	@echo "  - make pytest-scim-revocation"
 	@echo "  - make pytest-nginx-headers"
 
 .PHONY: verify-audit

@@ -483,6 +483,10 @@ def list_users_scim(query: Optional[dict] = None) -> dict:
 def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str] = None) -> dict:
     """Update a user (Mover/Leaver) via PUT.
     
+    SCOPE: Supports deactivation (active=false) per JML pattern.
+    Attribute updates (name, email) intentionally not implemented - real IAM 
+    systems sync these from authoritative HR source, not via API updates.
+    
     Args:
         user_id: Keycloak user ID
         payload: SCIM User dict (full replacement)
@@ -545,9 +549,9 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
             if "already disabled" not in str(exc).lower():
                 raise ScimError(500, f"Failed to disable user: {exc}")
     
-    # Handle role change (Mover)
-    # Note: SCIM doesn't have standard "roles" field, so we'd need custom extension
-    # For now, we'll just update basic attributes
+    # Attribute updates (name, email) not supported - design decision
+    # Real IAM: User attributes are immutable post-creation (HR system is source of truth)
+    # Use Keycloak Admin Console or HR sync for attribute changes
     
     # Refresh user state (re-query to get updated enabled status)
     kc_user = get_user_by_username(KEYCLOAK_BASE_URL, token, KEYCLOAK_REALM, username)

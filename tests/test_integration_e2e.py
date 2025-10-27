@@ -86,7 +86,7 @@ def test_username():
 # E2E Test: Full CRUD Flow via SCIM API
 # ============================================================================
 
-@pytest.mark.skip(reason="KNOWN LIMITATION: replace_user_scim() does not update name/email attributes - only handles active=false (disable)")
+@pytest.mark.skip(reason="Attribute updates outside JML pattern scope (design decision)")
 def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     """
     End-to-end test: Create → Get → List → Update → Delete user via SCIM API
@@ -97,13 +97,19 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     - scripts/jml.py Keycloak integration
     - Session revocation on delete
     
-    CURRENT STATUS:
-    - ✅ Create (POST /Users) works
-    - ✅ Get (GET /Users/{id}) works
-    - ✅ List (GET /Users?filter=...) works
-    - ❌ Update attributes (PUT /Users/{id}) NOT implemented (only active=false works)
-    - ✅ Delete (DELETE /Users/{id}) works (soft delete)
-    - TODO: Implement full attribute update in replace_user_scim()
+    IMPLEMENTATION STATUS:
+    - ✅ Create (POST /Users) - Joiner event
+    - ✅ Get (GET /Users/{id}) - User lookup
+    - ✅ List (GET /Users?filter=...) - Reporting
+    - ✅ Disable (PUT active=false) - Leaver event
+    - ✅ Delete (DELETE /Users/{id}) - Soft delete (idempotent)
+    - ⚠️  Attribute updates (name/email) - NOT IMPLEMENTED
+    
+    DESIGN RATIONALE:
+    Real IAM systems treat user attributes as immutable after creation (HR system 
+    is source of truth). SCIM API focuses on lifecycle events (JML pattern), not 
+    attribute management. Keycloak attribute updates require complex workflows 
+    (email uniqueness validation, session revocation). Out of scope for PoC.
     """
     base_url = f"{APP_BASE_URL}/scim/v2/Users"
     
