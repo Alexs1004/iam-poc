@@ -355,6 +355,11 @@ else
           chmod 400 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret" 2>/dev/null || true
           echo "[production] ✅ Local secret file updated"
           
+          # Restart Flask to load the new secret
+          echo "[production] Restarting Flask to load new secret..."
+          docker compose restart flask-app >/dev/null 2>&1 || true
+          echo "[production] ✅ Flask restarted"
+          
           KC_SERVICE_CLIENT_SECRET="${FIXED_SECRET}"
         else
           echo "[production] ⚠️  Could not restore fixed secret, using random secret" >&2
@@ -419,7 +424,11 @@ if [[ "${NEEDS_BOOTSTRAP:-false}" == "true" ]]; then
     echo -n "${FIXED_SECRET}" > "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret"
     chmod 400 "${PROJECT_ROOT}/.runtime/secrets/keycloak_service_client_secret" 2>/dev/null || true
     echo "[production] ✅ Local secret file updated"
-    echo "[production] Restart Flask to load the new secret: docker compose restart flask-app"
+    
+    # Restart Flask to load the new secret
+    echo "[production] Restarting Flask to load new secret..."
+    docker compose restart flask-app >/dev/null 2>&1 || true
+    echo "[production] ✅ Flask restarted"
     
     KC_SERVICE_CLIENT_SECRET="${FIXED_SECRET}"
   else
