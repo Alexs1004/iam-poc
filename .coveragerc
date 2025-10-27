@@ -1,0 +1,10 @@
+[run]
+source = app
+omit =
+    app/scim_api.py
+    app/core/keycloak/*
+
+[report]
+exclude_also =
+    if TYPE_CHECKING:
+    pragma: no cover

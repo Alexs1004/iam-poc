@@ -57,6 +57,49 @@ from app.flask_app import create_app
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Network Guard Rails
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest.fixture(autouse=True)
+def _mock_oidc_endpoints(monkeypatch, request):
+    """
+    Prevent unit tests from hitting live OIDC endpoints.
+
+    Integration tests are explicitly marked with @pytest.mark.integration and
+    are allowed to perform real HTTP calls by skipping this fixture.
+    """
+    if request.node.get_closest_marker("integration"):
+        return
+
+    class _StubResponse:
+        def __init__(self, payload: dict, status_code: int = 200):
+            self._payload = payload
+            self.status_code = status_code
+            self.text = json.dumps(payload)
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(response=self)
+
+    def _stub_post(url, *args, **kwargs):
+        if url.endswith("/protocol/openid-connect/token"):
+            return _StubResponse({"access_token": "test-token", "expires_in": 300})
+        raise RuntimeError(f"Unexpected HTTP POST in unit test: {url}")
+
+    def _stub_get(url, *args, **kwargs):
+        if url.endswith("/.well-known/openid-configuration"):
+            return _StubResponse({"jwks_uri": "http://localhost:8080/realms/demo/protocol/openid-connect/certs"})
+        if url.endswith("/protocol/openid-connect/certs"):
+            return _StubResponse({"keys": []})
+        raise RuntimeError(f"Unexpected HTTP GET in unit test: {url}")
+
+    monkeypatch.setattr(requests, "post", _stub_post)
+    monkeypatch.setattr(requests, "get", _stub_get)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Flask Test Client
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.fixture()
