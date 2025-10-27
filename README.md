@@ -362,6 +362,14 @@ make verify-audit   # Vérifier signatures HMAC logs
 
 **Mode test** : `DEMO_MODE=true` (tests self-contained, aucun accès Azure requis)
 
+### 🛡️ Test Posture Sécurité
+
+- **Unitaires hermétiques** : fixtures autouse mockent OIDC/JWKS ⇒ aucun appel réseau accidentel.
+- **Modules critiques ≥80 %** : `app/core/validators` 100 %, `app/core/rbac` 85 %, `app/core/provisioning_service` 82 %, `app/api/errors` 91 %.
+- **SCIM & OAuth** : `app/api/scim` couvert à 78 % + batterie d’intégration (`tests/test_integration_e2e.py`) sur stack Docker.
+- **CI gating** : workflow `tests-coverage` exécute `pytest -m "not integration"` avec `--cov-fail-under=60`, badge calculé depuis `coverage.xml`.
+- **Glue UI exclue** : `app/api/admin.py` & `app/api/helpers/admin_ui.py` omis des unitaires (couverts via tests E2E).
+
 ## ☁️ Production Notes
 
 **Avant déploiement** :
@@ -477,4 +485,3 @@ Azure Key Vault • Microsoft Entra ID • Managed Identity • Azure Monitor �
 > 💼 **Contact** : GitHub [@Alexs1004](https://github.com/Alexs1004) | [Ouvrir une issue](https://github.com/Alexs1004/iam-poc/issues)
 
 ---
-

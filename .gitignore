@@ -31,5 +31,8 @@ Thumbs.db
 .runtime/secrets/
 *.log
 *.zip
+.coverage
+coverage.xml
+htmlcov/
 
 copilot_context.md

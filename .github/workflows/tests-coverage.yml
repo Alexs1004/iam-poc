@@ -30,7 +30,7 @@ jobs:
       env:
         DEMO_MODE: "true"
       run: |
-        pytest --cov=app --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=45 -m "not integration"
+        pytest --cov=app --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=60 -m "not integration"
     
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
