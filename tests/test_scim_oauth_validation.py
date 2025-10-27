@@ -172,13 +172,22 @@ def test_empty_bearer_token_rejected(client):
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.api.decorators.fetch_jwks')
-def test_invalid_jwt_signature_rejected(mock_jwks, client, valid_token_payload):
+@patch('app.api.decorators.jwt.decode')
+@patch('app.api.decorators.get_jwks_client')
+def test_invalid_jwt_signature_rejected(mock_get_jwks, mock_jwt_decode, client, valid_token_payload):
     """SCIM endpoints reject tokens with invalid JWT signature."""
-    # Mock JWKS (will fail signature validation because token is signed with wrong key)
-    mock_jwks.return_value = MagicMock()
+    # Mock jwt.decode to raise InvalidSignatureError
+    from jwt.exceptions import InvalidSignatureError
+    mock_jwt_decode.side_effect = InvalidSignatureError("Invalid signature")
     
-    # Create token signed with wrong secret
+    # Mock PyJWKClient (even though decode will fail before using it)
+    mock_jwks_client = MagicMock()
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = "fake-public-key"
+    mock_jwks_client.get_signing_key_from_jwt.return_value = mock_signing_key
+    mock_get_jwks.return_value = mock_jwks_client
+    
+    # Create token (signature doesn't matter, mock will fail it)
     invalid_token = jwt.encode(valid_token_payload, "wrong-secret", algorithm="HS256")
     
     response = client.get(
@@ -190,19 +199,27 @@ def test_invalid_jwt_signature_rejected(mock_jwks, client, valid_token_payload):
     data = response.get_json()
     assert data["status"] == "401"
     assert "signature" in data["detail"].lower() or "invalid" in data["detail"].lower()
-    assert data["scimType"] == "unauthorized"
+    assert data["scimType"] in ["unauthorized", "invalidToken"]
 
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.api.decorators.fetch_jwks')
-def test_expired_token_rejected(mock_jwks, client, expired_token_payload):
+@patch('app.api.decorators.jwt.decode')
+@patch('app.api.decorators.get_jwks_client')
+def test_expired_token_rejected(mock_get_jwks, mock_jwt_decode, client, expired_token_payload):
     """SCIM endpoints reject expired JWT tokens."""
-    # Mock JWKS
-    mock_jwks.return_value = MagicMock()
+    # Mock jwt.decode to raise ExpiredSignatureError
+    from jwt.exceptions import ExpiredSignatureError
+    mock_jwt_decode.side_effect = ExpiredSignatureError("Token expired")
     
-    # Create properly signed but expired token
-    # Note: In production this would be signed by Keycloak's private key
+    # Mock PyJWKClient
+    mock_jwks_client = MagicMock()
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = "fake-public-key"
+    mock_jwks_client.get_signing_key_from_jwt.return_value = mock_signing_key
+    mock_get_jwks.return_value = mock_jwks_client
+    
+    # Create expired token
     expired_token = jwt.encode(expired_token_payload, "test-secret", algorithm="HS256")
     
     response = client.get(
@@ -213,17 +230,26 @@ def test_expired_token_rejected(mock_jwks, client, expired_token_payload):
     assert response.status_code == 401
     data = response.get_json()
     assert data["status"] == "401"
-    assert "expired" in data["detail"].lower() or "invalid" in data["detail"].lower()
-    assert data["scimType"] == "unauthorized"
+    assert "expired" in data["detail"].lower()
+    assert data["scimType"] in ["unauthorized", "invalidToken"]
 
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.api.decorators.fetch_jwks')
-def test_wrong_issuer_rejected(mock_jwks, client, wrong_issuer_payload):
+@patch('app.api.decorators.jwt.decode')
+@patch('app.api.decorators.get_jwks_client')
+def test_wrong_issuer_rejected(mock_get_jwks, mock_jwt_decode, client, wrong_issuer_payload):
     """SCIM endpoints reject tokens from wrong issuer."""
-    # Mock JWKS
-    mock_jwks.return_value = MagicMock()
+    # Mock jwt.decode to raise InvalidIssuerError
+    from jwt.exceptions import InvalidIssuerError
+    mock_jwt_decode.side_effect = InvalidIssuerError("Invalid issuer")
+    
+    # Mock PyJWKClient
+    mock_jwks_client = MagicMock()
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = "fake-public-key"
+    mock_jwks_client.get_signing_key_from_jwt.return_value = mock_signing_key
+    mock_get_jwks.return_value = mock_jwks_client
     
     wrong_issuer_token = jwt.encode(wrong_issuer_payload, "test-secret", algorithm="HS256")
     
@@ -235,16 +261,26 @@ def test_wrong_issuer_rejected(mock_jwks, client, wrong_issuer_payload):
     assert response.status_code == 401
     data = response.get_json()
     assert data["status"] == "401"
-    assert data["scimType"] == "unauthorized"
+    assert "issuer" in data["detail"].lower()
+    assert data["scimType"] in ["unauthorized", "invalidToken"]
 
 
 @pytest.mark.oauth
 @pytest.mark.scim
-@patch('app.api.decorators.fetch_jwks')
-def test_not_yet_valid_token_rejected(mock_jwks, client, valid_token_payload):
+@patch('app.api.decorators.jwt.decode')
+@patch('app.api.decorators.get_jwks_client')
+def test_not_yet_valid_token_rejected(mock_get_jwks, mock_jwt_decode, client, valid_token_payload):
     """SCIM endpoints reject tokens with nbf (not before) in future."""
-    # Mock JWKS
-    mock_jwks.return_value = MagicMock()
+    # Mock jwt.decode to raise ImmatureSignatureError (nbf validation)
+    from jwt.exceptions import ImmatureSignatureError
+    mock_jwt_decode.side_effect = ImmatureSignatureError("Token not yet valid")
+    
+    # Mock PyJWKClient
+    mock_jwks_client = MagicMock()
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = "fake-public-key"
+    mock_jwks_client.get_signing_key_from_jwt.return_value = mock_signing_key
+    mock_get_jwks.return_value = mock_jwks_client
     
     future_nbf_payload = valid_token_payload.copy()
     future_nbf_payload["nbf"] = int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp())

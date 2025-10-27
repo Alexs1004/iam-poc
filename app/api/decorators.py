@@ -3,23 +3,183 @@ Flask decorators for authentication and authorization.
 
 This module provides OAuth 2.0 Bearer Token validation for SCIM API endpoints.
 Implements RFC 6750 (Bearer Token) and validates JWT tokens from Keycloak.
+
+Security:
+- RSA-SHA256 signature verification via JWKS (RFC 7517)
+- Expiration, issuer, audience validation (RFC 7519)
+- JWKS caching for performance (1-hour refresh)
 """
 
 import logging
 from functools import wraps
-from typing import Optional, List
+from typing import Optional, List, Dict
 
-import requests
-from flask import request, jsonify, current_app
-from authlib.jose import JsonWebKey, jwt
-from authlib.jose.errors import JoseError
+import jwt
+from jwt import PyJWKClient
+from jwt.exceptions import (
+    InvalidTokenError,
+    ExpiredSignatureError,
+    InvalidIssuerError,
+    InvalidAudienceError,
+    InvalidSignatureError,
+    DecodeError
+)
+from flask import request, jsonify, current_app, g
 
 logger = logging.getLogger(__name__)
 
+# Global JWKS client (cached singleton)
+_jwks_client: Optional[PyJWKClient] = None
 
-# ================================w============================================
+# ============================================================================
 # OAuth 2.0 Bearer Token Validation (RFC 6750)
 # ============================================================================
+
+class TokenValidationError(Exception):
+    """Exception raised when JWT token validation fails."""
+    pass
+
+
+def get_jwks_client() -> PyJWKClient:
+    """
+    Get cached JWKS client (singleton pattern).
+    
+    JWKS (JSON Web Key Set) client fetches Keycloak's public keys
+    for RSA signature verification. Keys are cached for performance.
+    
+    Returns:
+        PyJWKClient: Configured client for Keycloak realm
+    
+    Security:
+        - Caches up to 16 keys
+        - Refreshes cache every 1 hour
+        - Uses kid (Key ID) from JWT header to select correct key
+    
+    References:
+        - RFC 7517 (JWKS)
+        - RFC 7518 (JWA - algorithms)
+    """
+    global _jwks_client
+    
+    if _jwks_client is None:
+        cfg = current_app.config["APP_CONFIG"]
+        
+        # Use internal Docker URL for JWKS endpoint
+        # (keycloak:8080 accessible from Flask container)
+        server_url = cfg.keycloak_server_url  # http://keycloak:8080/realms/demo
+        jwks_url = f"{server_url}/protocol/openid-connect/certs"
+        
+        logger.info(f"Initializing JWKS client for: {jwks_url}")
+        
+        _jwks_client = PyJWKClient(
+            jwks_url,
+            cache_keys=True,      # Cache public keys (avoid JWKS call every request)
+            max_cached_keys=16,   # Max keys in cache (Keycloak rotates keys)
+            lifespan=3600,        # Refresh cache after 1 hour (3600 seconds)
+            headers={"User-Agent": "IAM-PoC-Flask/1.0"}  # Identify client in Keycloak logs
+        )
+    
+    return _jwks_client
+
+
+def validate_jwt_token(token: str) -> Dict[str, any]:
+    """
+    Validate JWT Bearer token with full security checks.
+    
+    Validations performed:
+    1. Signature verification (RSA-SHA256 via JWKS)
+    2. Expiration (exp claim)
+    3. Not Before (nbf claim)
+    4. Issuer (iss claim)
+    5. Audience (aud claim, if configured)
+    
+    Args:
+        token: JWT token string (without "Bearer " prefix)
+    
+    Returns:
+        dict: Validated token claims
+    
+    Raises:
+        TokenValidationError: If any validation fails
+    
+    Security:
+        - Uses Keycloak JWKS endpoint for public key rotation
+        - Enforces strict validation (signature, expiration, issuer)
+        - Cache-enabled to avoid JWKS call on every request
+        - Guards against token tampering, replay attacks
+    
+    References:
+        - RFC 6750 (Bearer Token Usage)
+        - RFC 7519 (JWT)
+        - RFC 7517 (JWKS)
+    
+    Example:
+        >>> claims = validate_jwt_token("eyJhbGc...")
+        >>> print(claims['sub'])  # automation-cli
+        >>> print(claims['scope'])  # scim:read scim:write
+    """
+    # Guard: Skip validation in test mode (unit tests mock OAuth)
+    if current_app.config.get('TESTING'):
+        skip_oauth = current_app.config.get('SKIP_OAUTH_FOR_TESTS', False)
+        if skip_oauth:
+            logger.warning("⚠️ JWT validation SKIPPED (TESTING + SKIP_OAUTH_FOR_TESTS)")
+            return {
+                'sub': 'test-user',
+                'scope': 'scim:read scim:write',
+                'iss': 'test-issuer',
+                'aud': 'account',
+                'client_id': 'test-client'
+            }
+    
+    cfg = current_app.config["APP_CONFIG"]
+    
+    try:
+        # Step 1: Get signing key from JWKS (uses kid from JWT header)
+        jwks_client = get_jwks_client()
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        
+        # Step 2: Decode + verify signature + validate claims
+        expected_issuer = cfg.keycloak_issuer  # https://localhost/realms/demo (public URL)
+        
+        # Note: audience validation optional for client_credentials grant
+        # Keycloak client_credentials tokens typically have aud=["account"]
+        claims = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=['RS256'],           # Only RSA-SHA256 (asymmetric)
+            issuer=expected_issuer,         # Validate issuer (prevent token from wrong realm)
+            options={
+                'verify_signature': True,   # ✅ Verify RSA signature (CRITICAL)
+                'verify_exp': True,         # ✅ Check expiration
+                'verify_nbf': True,         # ✅ Check not-before
+                'verify_iss': True,         # ✅ Check issuer
+                'verify_aud': False,        # ⚠️ Audience optional for client_credentials
+                'require_exp': True,        # exp claim mandatory
+                'require_iat': True         # iat claim mandatory
+            }
+        )
+        
+        # Step 3: Log successful validation
+        client_id = claims.get("azp") or claims.get("client_id", "unknown")
+        logger.debug(f"✅ JWT validated for client: {client_id}, scopes: {claims.get('scope')}")
+        
+        return claims
+        
+    except ExpiredSignatureError:
+        raise TokenValidationError("Token expired (exp claim)")
+    except InvalidIssuerError as e:
+        raise TokenValidationError(f"Invalid issuer (token from wrong Keycloak realm): {e}")
+    except InvalidAudienceError as e:
+        raise TokenValidationError(f"Invalid audience (token not for this API): {e}")
+    except InvalidSignatureError:
+        raise TokenValidationError("Invalid signature (token tampered or wrong key)")
+    except DecodeError as e:
+        raise TokenValidationError(f"Token decode error (malformed JWT): {e}")
+    except Exception as e:
+        logger.error(f"❌ JWT validation failed: {e}")
+        raise TokenValidationError(f"Token validation failed: {e}")
+
+
 
 def require_oauth_token(scopes: Optional[List[str]] = None):
     """
@@ -115,127 +275,14 @@ def require_oauth_token(scopes: Optional[List[str]] = None):
             # Step 4: Attach claims to request context for downstream use
             request.oauth_claims = claims
             request.oauth_client_id = claims.get("azp") or claims.get("client_id")
+            g.oauth_claims = claims
+            g.oauth_client_id = claims.get("azp") or claims.get("client_id")
             
             # Step 5: Call the actual route handler
             return fn(*args, **kwargs)
         
         return wrapper
     return decorator
-
-
-class TokenValidationError(Exception):
-    """Exception raised when JWT token validation fails."""
-    pass
-
-
-def validate_jwt_token(token: str) -> dict:
-    """
-    Validate JWT token issued by Keycloak.
-    
-    Performs the following validations:
-    1. Fetch public keys from Keycloak JWKS endpoint
-    2. Verify token signature (RS256)
-    3. Validate issuer (must match Keycloak issuer)
-    4. Validate audience (optional, if configured)
-    5. Validate expiration (exp claim)
-    6. Validate not-before (nbf claim, if present)
-    
-    Args:
-        token: JWT token string
-    
-    Returns:
-        dict: Decoded JWT claims
-    
-    Raises:
-        TokenValidationError: If validation fails
-    """
-    cfg = current_app.config["APP_CONFIG"]
-    
-    # Step 1: Fetch JWKS (JSON Web Key Set) from Keycloak
-    try:
-        jwks = fetch_jwks()
-    except Exception as e:
-        logger.error(f"Failed to fetch JWKS from Keycloak: {e}")
-        raise TokenValidationError(f"Unable to fetch public keys: {e}")
-    
-    # Step 2: Decode and validate JWT
-    try:
-        # Authlib automatically validates:
-        # - Signature (using public key from JWKS)
-        # - Expiration (exp claim)
-        # - Not-before (nbf claim, if present)
-        claims = jwt.decode(token, jwks)
-        
-    except JoseError as e:
-        logger.warning(f"JWT validation failed: {e}")
-        raise TokenValidationError(f"Invalid token: {e}")
-    
-    # Step 3: Validate issuer
-    expected_issuer = cfg.keycloak_issuer
-    actual_issuer = claims.get("iss")
-    
-    if actual_issuer != expected_issuer:
-        logger.warning(
-            f"Token issuer mismatch. Expected: {expected_issuer}, Got: {actual_issuer}"
-        )
-        raise TokenValidationError(
-            f"Invalid issuer. Expected {expected_issuer}, got {actual_issuer}"
-        )
-    
-    # Step 4: Validate audience (optional, for client credentials flow this may not be set)
-    # Note: client_credentials grants typically don't have 'aud' claim
-    # We validate the client_id/azp instead
-    
-    # Step 5: Log successful validation
-    client_id = claims.get("azp") or claims.get("client_id", "unknown")
-    logger.info(f"SCIM OAuth token validated successfully for client: {client_id}")
-    
-    return claims
-
-
-def fetch_jwks() -> JsonWebKey:
-    """
-    Fetch JSON Web Key Set (JWKS) from Keycloak.
-    
-    JWKS contains public keys used to verify JWT signatures.
-    Keys are cached for performance (Keycloak rotates keys periodically).
-    
-    Returns:
-        JsonWebKey: Keycloak's public keys
-    
-    Raises:
-        Exception: If JWKS endpoint is unreachable
-    """
-    cfg = current_app.config["APP_CONFIG"]
-    
-    # IMPORTANT: Use keycloak_server_url (internal Docker network URL) instead of 
-    # keycloak_issuer (public URL) because Flask container cannot reach localhost:443
-    # from inside Docker network.
-    # 
-    # keycloak_server_url: http://keycloak:8080/realms/demo (internal)
-    # keycloak_issuer: https://localhost/realms/demo (public, for token validation)
-    # JWKS endpoint: {server_url}/protocol/openid-connect/certs
-    server_url = cfg.keycloak_server_url  # e.g., "http://keycloak:8080/realms/demo"
-    jwks_url = f"{server_url}/protocol/openid-connect/certs"
-    
-    logger.debug(f"Fetching JWKS from: {jwks_url}")
-    
-    try:
-        response = requests.get(jwks_url, timeout=10, verify=False)  # verify=False for self-signed certs in dev
-        response.raise_for_status()
-        
-        jwks_data = response.json()
-        
-        # Create JsonWebKey from JWKS
-        jwks = JsonWebKey.import_key_set(jwks_data)
-        
-        logger.debug(f"Successfully fetched {len(jwks_data.get('keys', []))} keys from JWKS")
-        
-        return jwks
-        
-    except requests.RequestException as e:
-        logger.error(f"Failed to fetch JWKS from {jwks_url}: {e}")
-        raise Exception(f"JWKS endpoint unreachable: {e}")
 
 
 # ============================================================================
@@ -251,7 +298,7 @@ def get_oauth_client_id() -> Optional[str]:
     Returns:
         str: Client ID from token, or None if not available
     """
-    return getattr(request, "oauth_client_id", None)
+    return getattr(request, "oauth_client_id", None) or getattr(g, "oauth_client_id", None)
 
 
 def get_oauth_claims() -> Optional[dict]:
@@ -263,4 +310,5 @@ def get_oauth_claims() -> Optional[dict]:
     Returns:
         dict: JWT claims, or None if not available
     """
-    return getattr(request, "oauth_claims", None)
+    return getattr(request, "oauth_claims", None) or getattr(g, "oauth_claims", None)
+

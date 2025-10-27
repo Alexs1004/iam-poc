@@ -251,12 +251,39 @@ def validate_request():
 
 **Fichier** : `app/api/decorators.py`
 
+**Bibliothèque utilisée** : `PyJWKClient` (PyJWT >= 2.8.0)
+
 ```python
 import jwt
 from jwt import PyJWKClient
+from jwt.exceptions import (
+    ExpiredSignatureError,
+    InvalidIssuerError,
+    InvalidSignatureError,
+    DecodeError
+)
 from typing import Dict
 
-JWKS_URL = "https://localhost/realms/demo/protocol/openid-connect/certs"
+# Global JWKS client (cached singleton)
+_jwks_client: Optional[PyJWKClient] = None
+
+def get_jwks_client() -> PyJWKClient:
+    """Get cached JWKS client (singleton pattern)."""
+    global _jwks_client
+    
+    if _jwks_client is None:
+        cfg = current_app.config["APP_CONFIG"]
+        server_url = cfg.keycloak_server_url  # http://keycloak:8080/realms/demo
+        jwks_url = f"{server_url}/protocol/openid-connect/certs"
+        
+        _jwks_client = PyJWKClient(
+            jwks_url,
+            cache_keys=True,      # Cache public keys
+            max_cached_keys=16,   # Max keys in cache
+            lifespan=3600,        # Refresh after 1 hour
+        )
+    
+    return _jwks_client
 
 class TokenValidationError(Exception):
     """Raised when JWT validation fails."""
@@ -271,7 +298,7 @@ def validate_jwt_token(token: str) -> Dict[str, any]:
     2. Expiration (exp claim)
     3. Not Before (nbf claim)
     4. Issuer (iss claim)
-    5. Audience (aud claim)
+    5. Audience (aud claim, optionnel)
     
     Args:
         token: JWT Bearer token (sans préfixe "Bearer ")
@@ -282,24 +309,39 @@ def validate_jwt_token(token: str) -> Dict[str, any]:
     Raises:
         TokenValidationError: Si validation échoue
     """
+    # Guard: Skip validation in test mode
+    if current_app.config.get('TESTING'):
+        skip_oauth = current_app.config.get('SKIP_OAUTH_FOR_TESTS', False)
+        if skip_oauth:
+            logger.warning("⚠️ JWT validation SKIPPED (TESTING mode)")
+            return {
+                'sub': 'test-user',
+                'scope': 'scim:read scim:write',
+                'iss': 'test-issuer',
+                'aud': 'account'
+            }
+    
+    cfg = current_app.config["APP_CONFIG"]
+    
     try:
-        # 1. Récupère clés publiques Keycloak (JWKS)
-        jwks_client = PyJWKClient(JWKS_URL, cache_keys=True, timeout=10)
+        # 1. Récupère clé publique via JWKS (utilise kid du JWT header)
+        jwks_client = get_jwks_client()
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         
         # 2. Décode + vérifie signature + claims
+        expected_issuer = cfg.keycloak_issuer  # https://localhost/realms/demo
+        
         claims = jwt.decode(
             token,
             signing_key.key,
-            algorithms=['RS256'],  # Algorithme attendu
-            audience='account',    # Audience attendue
-            issuer='https://localhost/realms/demo',  # Issuer attendu
+            algorithms=['RS256'],  # Algorithme attendu (RSA-SHA256)
+            issuer=expected_issuer,  # Issuer attendu
             options={
-                'verify_signature': True,  # Vérifie signature RSA
-                'verify_exp': True,        # Vérifie expiration
-                'verify_nbf': True,        # Vérifie not-before
-                'verify_aud': True,        # Vérifie audience
-                'verify_iss': True,        # Vérifie issuer
+                'verify_signature': True,  # ✅ Vérifie signature RSA
+                'verify_exp': True,        # ✅ Vérifie expiration
+                'verify_nbf': True,        # ✅ Vérifie not-before
+                'verify_iss': True,        # ✅ Vérifie issuer
+                'verify_aud': False,       # ⚠️ Audience optionnel (client_credentials)
                 'require_exp': True,       # exp claim obligatoire
                 'require_iat': True        # iat claim obligatoire
             }
@@ -307,18 +349,32 @@ def validate_jwt_token(token: str) -> Dict[str, any]:
         
         return claims
         
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         raise TokenValidationError("Token expired")
-    except jwt.InvalidIssuerError:
-        raise TokenValidationError("Invalid issuer")
-    except jwt.InvalidAudienceError:
-        raise TokenValidationError("Invalid audience")
-    except jwt.InvalidSignatureError:
-        raise TokenValidationError("Invalid signature")
-    except jwt.DecodeError as e:
+    except InvalidIssuerError:
+        raise TokenValidationError("Invalid issuer (token from wrong Keycloak realm)")
+    except InvalidSignatureError:
+        raise TokenValidationError("Invalid signature (token tampered or wrong key)")
+    except DecodeError as e:
         raise TokenValidationError(f"Token decode error: {e}")
     except Exception as e:
         raise TokenValidationError(f"Token validation failed: {e}")
+```
+
+**Avantages `PyJWKClient`** :
+- ✅ **Cache intégré** : Évite appel JWKS à chaque requête (performance)
+- ✅ **Rotation automatique** : Gère plusieurs clés publiques via `kid` header
+- ✅ **Sélection automatique** : Utilise le `kid` du JWT pour trouver la bonne clé
+- ✅ **Thread-safe** : Peut être réutilisé dans applications multi-threaded
+
+**Workflow JWKS** :
+```
+1. JWT header contient: {"alg": "RS256", "kid": "key-2024-10"}
+2. PyJWKClient appelle: GET /realms/demo/protocol/openid-connect/certs
+3. Keycloak retourne: {"keys": [{"kid": "key-2024-10", "n": "...", "e": "AQAB"}]}
+4. PyJWKClient cache clés (1 heure)
+5. PyJWKClient sélectionne clé avec kid="key-2024-10"
+6. jwt.decode() vérifie signature RSA avec clé publique
 ```
 
 ---
