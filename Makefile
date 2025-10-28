@@ -334,6 +334,10 @@ demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la v
 
 .PHONY: quickstart
 quickstart: validate-env ensure-secrets ## Run stack + demo_jml.sh (which handles bootstrap)
+	@if docker compose ps --services --filter "status=running" 2>/dev/null | grep -q "^keycloak$$"; then \
+		echo "[quickstart] Keycloak container is already running. Stop the stack first (e.g. 'make down') before running quickstart."; \
+		exit 1; \
+	fi
 	@set -a; source .env; set +a; \
 	use_keyvault="$${AZURE_USE_KEYVAULT:-}"; \
 	shopt -s nocasematch; \
