@@ -29,9 +29,12 @@ def _get_signing_key() -> bytes:
             return _env_secret_path.read_text(encoding="utf-8").strip().encode("utf-8")
         except OSError:
             pass
-    key = os.environ.get("AUDIT_LOG_SIGNING_KEY", "")
-    if key:
-        return key.encode("utf-8")
+    if "AUDIT_LOG_SIGNING_KEY" in os.environ:
+        key = os.environ.get("AUDIT_LOG_SIGNING_KEY", "")
+        stripped = key.strip()
+        if stripped:
+            return stripped.encode("utf-8")
+        return b""
     for path in _default_secret_paths:
         if not path:
             continue

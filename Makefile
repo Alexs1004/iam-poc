@@ -1,13 +1,36 @@
+.DEFAULT_GOAL := help
+.ONESHELL:
+.SHELLFLAGS := -Eeuo pipefail -c
+.DELETE_ON_ERROR:
+.NOTPARALLEL:
 SHELL := /bin/bash
 
 # Use python3 explicitly so we work on systems where only python3 is installed.
 PYTHON ?= python3
-JML := $(PYTHON) scripts/jml.py
 
+# Portable helpers
+UNAME_S := $(shell uname -s)
+SED_INPLACE := sed -i
+ifeq ($(UNAME_S),Darwin)
+  SED_INPLACE := sed -i ''
+endif
+SHA256_CMD := $(PYTHON) -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())"
+JML := $(PYTHON) scripts/jml.py
+VENV_PYTHON := venv/bin/python
+PYTEST := $(VENV_PYTHON) -m pytest
+
+
+UX_TARGETS := help help-all quickstart fresh-demo up down logs test test-e2e test-all rotate-secret doctor
 
 COMMON_FLAGS = --kc-url $${KEYCLOAK_URL} --auth-realm $${KEYCLOAK_SERVICE_REALM} --svc-client-id $${KEYCLOAK_SERVICE_CLIENT_ID} --svc-client-secret $${KEYCLOAK_SERVICE_CLIENT_SECRET}
 WITH_ENV := set -a; source .env; set +a; \
-	if [[ "$${AZURE_USE_KEYVAULT,,}" == "true" ]]; then \
+	use_keyvault="$${AZURE_USE_KEYVAULT:-}"; \
+	shopt -s nocasematch; \
+	if [[ "$$use_keyvault" == "true" ]]; then \
+		if [[ -z "$${AZURE_KEY_VAULT_NAME:-}" ]]; then \
+			echo "[make] AZURE_KEY_VAULT_NAME is required when AZURE_USE_KEYVAULT=true." >&2; \
+			exit 1; \
+		fi; \
 		if ! command -v az >/dev/null 2>&1; then \
 			echo "[make] Azure CLI is required when AZURE_USE_KEYVAULT=true." >&2; \
 			exit 1; \
@@ -42,9 +65,14 @@ WITH_ENV := set -a; source .env; set +a; \
 		fi; \
 	fi;
 
-.PHONY: help
-help:
-	@grep -E '^[a-zA-Z0-9_-]+:.*##' Makefile | sed 's/:.*##/: /'
+.PHONY: help help-all
+help: ## Show common commands
+	@set -a; source .env 2>/dev/null || true; set +a; \
+	printf 'Mode: DEMO_MODE=%s  |  AZURE_USE_KEYVAULT=%s\n' "${DEMO_MODE:-unset}" "${AZURE_USE_KEYVAULT:-unset}"; \
+	awk -v targets="$(UX_TARGETS)" 'BEGIN{n=split(targets,order," ");print "Available commands:"} match($$0,/^([a-zA-Z0-9_.\/-]+):.*##[ \t]*(.*)$$/,m){docs[m[1]]=sprintf("  %-16s %s",m[1],m[2])} END{for(i=1;i<=n;++i){t=order[i]; if(docs[t]!="") print docs[t];}}' $(MAKEFILE_LIST)
+
+help-all: ## Show full list of documented commands (sorted)
+	@awk 'match($$0,/^([a-zA-Z0-9_.\/-]+):.*##[ \t]*(.*)$$/,m){print m[1] "##" m[2]}' $(MAKEFILE_LIST) | sort | awk -F"##" '{ printf "  %-20s %s\n", $$1, $$2 }'
 
 .PHONY: ensure-env
 ensure-env: ## Copy .env.demo to .env if .env doesn't exist (zero-config demo mode)
@@ -59,12 +87,15 @@ ensure-env: ## Copy .env.demo to .env if .env doesn't exist (zero-config demo mo
 .PHONY: ensure-secrets
 ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (demo mode only)
 	@set -a; source .env 2>/dev/null || true; set +a; \
-	if [[ "$${DEMO_MODE,,}" == "false" ]]; then \
+	mode="$${DEMO_MODE:-}"; \
+	shopt -s nocasematch; \
+	if [[ "$$mode" == "false" ]]; then \
 		echo "[ensure-secrets] Production mode detected (DEMO_MODE=false)" >&2; \
-		if [[ "$${AZURE_USE_KEYVAULT,,}" == "true" ]]; then \
+		use_keyvault="$${AZURE_USE_KEYVAULT:-}"; \
+		if [[ "$$use_keyvault" == "true" ]]; then \
 			echo "[ensure-secrets] Azure Key Vault enabled: clearing local secrets in .env" >&2; \
-			sed -i "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=|" .env; \
-			sed -i "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=|" .env; \
+			$(SED_INPLACE) "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=|" .env; \
+			$(SED_INPLACE) "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=|" .env; \
 			echo "[ensure-secrets] ✓ FLASK_SECRET_KEY cleared (will load from Key Vault)" >&2; \
 			echo "[ensure-secrets] ✓ AUDIT_LOG_SIGNING_KEY cleared (will load from Key Vault)" >&2; \
 		else \
@@ -74,9 +105,9 @@ ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (demo mod
 	else \
 		echo "[ensure-secrets] Demo mode: checking secrets in .env..." >&2; \
 		if ! grep -qE "^FLASK_SECRET_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
-			SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
+			SECRET=$$($(PYTHON) -c "import secrets; print(secrets.token_urlsafe(32))"); \
 			if grep -q "^FLASK_SECRET_KEY=" .env; then \
-				sed -i "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$$SECRET|" .env; \
+				$(SED_INPLACE) "s|^FLASK_SECRET_KEY=.*|FLASK_SECRET_KEY=$$SECRET|" .env; \
 			else \
 				echo "FLASK_SECRET_KEY=$$SECRET" >> .env; \
 			fi; \
@@ -85,9 +116,9 @@ ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (demo mod
 			echo "[ensure-secrets] ✓ FLASK_SECRET_KEY already set" >&2; \
 		fi; \
 		if ! grep -qE "^AUDIT_LOG_SIGNING_KEY=[^[:space:]#]+" .env 2>/dev/null; then \
-			SECRET=$$(python3 -c "import secrets; print(secrets.token_urlsafe(48))"); \
+			SECRET=$$($(PYTHON) -c "import secrets; print(secrets.token_urlsafe(48))"); \
 			if grep -q "^AUDIT_LOG_SIGNING_KEY=" .env; then \
-				sed -i "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=$$SECRET|" .env; \
+				$(SED_INPLACE) "s|^AUDIT_LOG_SIGNING_KEY=.*|AUDIT_LOG_SIGNING_KEY=$$SECRET|" .env; \
 			else \
 				echo "AUDIT_LOG_SIGNING_KEY=$$SECRET" >> .env; \
 			fi; \
@@ -101,7 +132,7 @@ ensure-secrets: ensure-env ## Generate strong secrets if empty in .env (demo mod
 reset-demo: ## Reset .env to demo defaults (requires confirmation)
 	@echo "⚠️  WARNING: This will overwrite .env with .env.demo defaults." >&2
 	@echo "Any custom configuration will be lost." >&2
-	@read -p "Type 'yes' to confirm: " confirm; \
+	@if [ "${FORCE:-}" = "yes" ]; then confirm=yes; else read -p "Type 'yes' to confirm: " confirm; fi; \
 	if [ "$$confirm" = "yes" ]; then \
 		cp .env.demo .env; \
 		echo "[reset-demo] ✓ .env reset to demo defaults" >&2; \
@@ -115,7 +146,7 @@ init-production: ## Initialize .env for production mode with Azure Key Vault
 	@if [ -f .env ]; then \
 		echo "⚠️  WARNING: .env already exists." >&2; \
 		echo "This will overwrite it with production defaults." >&2; \
-		read -p "Type 'yes' to confirm: " confirm; \
+		if [ "${FORCE:-}" = "yes" ]; then confirm=yes; else read -p "Type 'yes' to confirm: " confirm; fi; \
 		if [ "$$confirm" != "yes" ]; then \
 			echo "[init-production] Cancelled" >&2; \
 			exit 1; \
@@ -191,8 +222,8 @@ bootstrap-service-account: ## One-time bootstrap (requires master admin; rotates
 		echo "[bootstrap] Failed to store KEYCLOAK_SERVICE_CLIENT_SECRET in Key Vault." >&2; \
 		exit 1; \
 	fi; \
-	secret_id=$$(printf '%s' "$$rotation_json" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('id',''))"); \
-	secret_version=$$(printf '%s' "$$rotation_json" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('version',''))"); \
+	secret_id=$$(printf '%s' "$$rotation_json" | $(PYTHON) -c "import sys,json; data=json.load(sys.stdin); print(data.get('id',''))"); \
+	secret_version=$$(printf '%s' "$$rotation_json" | $(PYTHON) -c "import sys,json; data=json.load(sys.stdin); print(data.get('version',''))"); \
 	if [ -z "$$secret_id" ] || [ -z "$$secret_version" ]; then \
 		echo "[bootstrap] Unable to parse secret identifier from Key Vault response." >&2; \
 		exit 1; \
@@ -209,7 +240,7 @@ bootstrap-service-account: ## One-time bootstrap (requires master admin; rotates
 	mkdir -p "$$audit_dir"; \
 	chmod 700 "$$audit_dir"; \
 	audit_message="timestamp=$$timestamp operator=$$operator secret_id=$$secret_id version=$$secret_version"; \
-	signature=$$(AUDIT_LOG_MESSAGE="$$audit_message" python3 -c 'import os,hmac,hashlib,sys; key=os.environ["AUDIT_LOG_SIGNING_KEY"].encode(); msg=os.environ["AUDIT_LOG_MESSAGE"].encode(); print(hmac.new(key, msg, hashlib.sha256).hexdigest())'); \
+	signature=$$(AUDIT_LOG_MESSAGE="$$audit_message" $(PYTHON) -c 'import os,hmac,hashlib,sys; key=os.environ["AUDIT_LOG_SIGNING_KEY"].encode(); msg=os.environ["AUDIT_LOG_MESSAGE"].encode(); print(hmac.new(key, msg, hashlib.sha256).hexdigest())'); \
 	audit_file="$$audit_dir/secret-rotation.log"; \
 	touch "$$audit_file"; \
 	chmod 600 "$$audit_file"; \
@@ -255,7 +286,7 @@ restart-stack: ## Recreate certificates, rebuild image if needed, and restart co
 
 .PHONY: check-azure
 check-azure: ## Test DefaultAzureCredential token acquisition inside the Flask container
-	@docker compose exec flask-app python3 -c "from azure.identity import DefaultAzureCredential; print(DefaultAzureCredential().get_token('https://management.azure.com/.default').token[:20])"
+	@docker compose exec flask-app $(PYTHON) -c "from azure.identity import DefaultAzureCredential; print(DefaultAzureCredential().get_token('https://management.azure.com/.default').token[:20])"
 
 .PHONY: clean-secrets
 clean-secrets: ## Remove secrets only (keep audit logs)
@@ -287,7 +318,7 @@ archive-audit: ## Archive current audit log with timestamp
 .PHONY: demo-mode
 demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la valeur
 	@cp .env .env.backup_demo || true
-	@sed -i 's/^DEMO_MODE=.*/DEMO_MODE=true/' .env
+	@$(SED_INPLACE) 's/^DEMO_MODE=.*/DEMO_MODE=true/' .env
 	@$(MAKE) fresh-demo || (mv .env.backup_demo .env 2>/dev/null; exit 1)
 	@set -a; source .env; set +a; \
 	demo_key="$${AUDIT_LOG_SIGNING_KEY_DEMO:-demo-audit-signing-key-change-in-production}"; \
@@ -304,7 +335,9 @@ demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la v
 .PHONY: quickstart
 quickstart: validate-env ensure-secrets ## Run stack + demo_jml.sh (which handles bootstrap)
 	@set -a; source .env; set +a; \
-	if [[ "$${AZURE_USE_KEYVAULT,,}" == "true" ]]; then \
+	use_keyvault="$${AZURE_USE_KEYVAULT:-}"; \
+	shopt -s nocasematch; \
+	if [[ "$$use_keyvault" == "true" ]]; then \
 		echo "[quickstart] Loading secrets from Azure Key Vault..."; \
 		$(MAKE) load-secrets; \
 	fi
@@ -325,6 +358,13 @@ fresh-demo-keep-audit: validate-env ## Reset but preserve audit logs
 
 .PHONY: up
 up: ## Start services (requires run_https.sh for cert/secrets)
+	@set -a; source .env 2>/dev/null || true; set +a; \
+	use_keyvault="$${AZURE_USE_KEYVAULT:-}"; \
+	shopt -s nocasematch; \
+	if [[ "$$use_keyvault" == "true" ]] && [ ! -s .runtime/secrets/keycloak_service_client_secret ]; then \
+		echo "[up] Local secrets missing, loading from Azure Key Vault..."; \
+		$(MAKE) load-secrets; \
+	fi
 	@./scripts/run_https.sh
 
 .PHONY: down
@@ -336,8 +376,12 @@ ps: ## Display service status
 	@docker compose ps
 
 .PHONY: logs
-logs: ## Tail logs for all services
-	@docker compose logs -f
+logs: ## Tail logs (SERVICE=name to filter)
+	@if [ -n "$(SERVICE)" ]; then \
+		docker compose logs -f "$(SERVICE)"; \
+	else \
+		docker compose logs -f; \
+	fi
 
 .PHONY: restart
 restart: ## Restart all services
@@ -351,118 +395,123 @@ restart-flask: ## Restart entire stack to reload secrets from files
 	@./scripts/run_https.sh
 	@echo "[restart-flask] Stack restarted with updated secrets"
 
-.PHONY: rotate-secret-legacy
-rotate-secret-legacy: ## [DEPRECATED] Old rotation method (use rotate-secret instead)
-	@$(MAKE) bootstrap-service-account
-	@./scripts/run_https.sh
-
 .PHONY: doctor
 doctor: ## Check az login, Key Vault access and docker compose version
+	@$(WITH_ENV)
 	@az account show >/dev/null || (echo "[doctor] Run 'az login' first." >&2; exit 1)
-	@az keyvault secret list --vault-name $${AZURE_KEY_VAULT_NAME:?Set AZURE_KEY_VAULT_NAME} >/dev/null || (echo "[doctor] Cannot list secrets; check Key Vault permissions." >&2; exit 1)
+	@vault="$${AZURE_KEY_VAULT_NAME:-}"; \
+	if [ -z "$$vault" ]; then \
+		echo "[doctor] Set AZURE_KEY_VAULT_NAME in .env before running doctor."; \
+		exit 1; \
+	fi; \
+	az keyvault secret list --vault-name "$$vault" >/dev/null || (echo "[doctor] Cannot list secrets; check Key Vault permissions." >&2; exit 1)
 	@docker compose version >/dev/null || (echo "[doctor] docker compose not available." >&2; exit 1)
 	@echo "[doctor] Environment looks good."
+	@$(MAKE) --no-print-directory doctor-secrets || true
+
+.PHONY: doctor-secrets
+doctor-secrets: ## Compare KV vs local vs Keycloak (hash only) and fail on drift
+	@set -e; \
+	hash8(){ printf '%s' "$$1" | $(SHA256_CMD) | cut -c1-8; }; \
+	kv=$$(az keyvault secret show --vault-name "$$AZURE_KEY_VAULT_NAME" --name "$$AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET" --query value -o tsv 2>/dev/null || true); \
+	loc=$$(cat .runtime/secrets/keycloak_service_client_secret 2>/dev/null || true); \
+	if [ -n "$$kv" ] && [ -n "$$loc" ] && [ "$$kv" != "$$loc" ]; then \
+	  echo "[doctor-secrets] drift KV/local: $$(hash8 $$kv) != $$(hash8 $$loc) — run 'make rotate-secret'"; exit 1; \
+	fi; \
+	if [ -n "$$kv" ]; then \
+	  echo "[doctor-secrets] KV hash=$$(hash8 $$kv)"; \
+	fi; \
+	if [ -n "$$loc" ]; then \
+	  echo "[doctor-secrets] local hash=$$(hash8 $$loc)"; \
+	fi
 
 .PHONY: ensure-stack
 ensure-stack: ## Ensure stack is running (start if needed)
 	@if ! docker compose ps --services --filter "status=running" 2>/dev/null | grep -q keycloak; then \
 		echo "[ensure-stack] Stack not running, starting with quickstart..."; \
 		$(MAKE) quickstart; \
-		echo "[ensure-stack] Waiting for services to be healthy (30s)..."; \
-		sleep 30; \
+		echo "[ensure-stack] Waiting for services to be healthy..."; \
+		ok=0; for i in $$(seq 1 30); do \
+		  unhealthy=$$(docker compose ps --format '{{.Name}} {{.Health}}' 2>/dev/null | awk '$$2!="healthy"{print $$1}'); \
+		  if [ -z "$$unhealthy" ]; then echo "[ensure-stack] ✓ healthy"; ok=1; break; fi; \
+		  sleep 2; \
+		done; \
+		[ $$ok -eq 1 ] || { echo "[ensure-stack] ❌ services not healthy in time"; exit 1; }; \
 	else \
 		echo "[ensure-stack] ✓ Stack already running"; \
 	fi
 
-.PHONY: pytest
-pytest: ## Run unit tests only (fast, no infrastructure needed)
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest -m "not integration" $(ARGS)
+.PHONY: venv
+venv: ## Create/refresh venv and install dependencies
+	@$(PYTHON) -m venv venv >/dev/null 2>&1 || true
+	@venv/bin/pip install -q -r requirements.txt
 
-.PHONY: pytest-all
-pytest-all: ensure-stack ## Run ALL tests (unit + E2E, auto-starts stack if needed)
-	@echo "[pytest-all] Running all tests (unit + E2E)..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && python3 -m pytest $(ARGS)
+.PHONY: test
+test: venv ## Run unit tests (no integration)
+	@DEMO_MODE=true $(PYTEST) -m "not integration" $(ARGS)
 
-.PHONY: pytest-unit
-pytest-unit: ## Run unit tests only (skip integration tests)
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest -m "not integration" $(ARGS)
+.PHONY: test-e2e
+test-e2e: ensure-stack venv ## Run integration test suite (requires stack)
+	@set -a; source .env 2>/dev/null || true; set +a; \
+	if [ "$${DEMO_MODE:-}" = "true" ]; then \
+		echo "[test-e2e] DEMO_MODE=true: unit tests are sufficient for demo mode (run 'make test'). To execute integration suites, switch back to production configuration (DEMO_MODE=false, AZURE_USE_KEYVAULT=true) then run 'make load-secrets' and 'set -a; source .env; set +a'." >&2; \
+		exit 1; \
+	fi; \
+	$(PYTEST) -m integration $(ARGS)
 
-.PHONY: pytest-e2e
-pytest-e2e: ensure-stack ## Run E2E integration tests (auto-starts stack if needed)
-	@echo "[pytest-e2e] Running integration tests against live stack..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v -m integration
+.PHONY: test-all
+test-all: ## Run unit, integration, and security suites
+	@set -a; source .env 2>/dev/null || true; set +a; \
+	if [ "$${DEMO_MODE:-}" = "true" ]; then \
+		echo "[test-all] DEMO_MODE=true: unit tests are sufficient for demo mode (run 'make test'). To run the full suites, switch back to production configuration (DEMO_MODE=false, AZURE_USE_KEYVAULT=true) then run 'make load-secrets' and 'set -a; source .env; set +a'." >&2; \
+		exit 1; \
+	fi; \
+	true
+	@$(MAKE) test $(if $(ARGS),ARGS="$(ARGS)",)
+	@$(MAKE) test-e2e $(if $(ARGS),ARGS="$(ARGS)",)
+	@$(MAKE) test/security $(if $(ARGS),ARGS="$(ARGS)",)
+	@echo "[test-all] ✅ All test suites completed"
 
-.PHONY: pytest-e2e-comprehensive
-pytest-e2e-comprehensive: ensure-stack ## Run comprehensive E2E tests (auto-starts stack if needed)
-	@echo "[pytest-e2e-comprehensive] Running comprehensive E2E test suite..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v
+.PHONY: test/security
+test/security: venv ## Run critical security tests
+	@set -a; source .env 2>/dev/null || true; set +a; \
+	if [ "$${DEMO_MODE:-}" = "true" ]; then \
+		echo "[test/security] DEMO_MODE=true: unit tests are sufficient for demo mode (run 'make test'). To execute security suites, switch back to production configuration (DEMO_MODE=false, AZURE_USE_KEYVAULT=true) then run 'make load-secrets' and 'set -a; source .env; set +a'." >&2; \
+		exit 1; \
+	fi; \
+	secret_dir=".runtime/secrets"; \
+	if [ ! -f "$$secret_dir/keycloak_service_client_secret" ]; then \
+		$(MAKE) load-secrets >/dev/null; \
+	fi; \
+	if [ -f "$$secret_dir/keycloak_service_client_secret" ]; then \
+		export KEYCLOAK_SERVICE_CLIENT_SECRET="$$(cat $$secret_dir/keycloak_service_client_secret)"; \
+	fi; \
+	if [ -f "$$secret_dir/keycloak_admin_password" ]; then \
+		export KEYCLOAK_ADMIN_PASSWORD="$$(cat $$secret_dir/keycloak_admin_password)"; \
+	fi; \
+	if [ -f "$$secret_dir/flask_secret_key" ]; then \
+		export FLASK_SECRET_KEY="$$(cat $$secret_dir/flask_secret_key)"; \
+	fi; \
+	if [ -f "$$secret_dir/audit_log_signing_key" ]; then \
+		export AUDIT_LOG_SIGNING_KEY="$$(cat $$secret_dir/audit_log_signing_key)"; \
+	fi; \
+	export AZURE_USE_KEYVAULT=false; \
+	export DEMO_MODE=false; \
+	export TRUSTED_PROXY_IPS="127.0.0.1/32,::1/128"; \
+	export KEYCLOAK_URL="https://localhost"; \
+	export APP_BASE_URL="https://localhost"; \
+	export KEYCLOAK_ISSUER="https://localhost/realms/demo"; \
+	export KEYCLOAK_PUBLIC_ISSUER="https://localhost/realms/demo"; \
+	echo "service secret len: $${#KEYCLOAK_SERVICE_CLIENT_SECRET}"; \
+	$(PYTEST) -m critical -v $(ARGS)
 
-.PHONY: pytest-e2e-critical
-pytest-e2e-critical: ensure-stack ## Run only critical E2E tests (auto-starts stack if needed)
-	@echo "[pytest-e2e-critical] Running critical E2E tests only..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v -m critical
+.PHONY: test/oidc
+test/oidc: venv ## Run OIDC/JWT validation tests
+	@DEMO_MODE=true $(PYTEST) tests/test_oidc_jwt_validation.py -v $(ARGS)
 
-.PHONY: pytest-e2e-scim
-pytest-e2e-scim: ensure-stack ## Run SCIM E2E tests (auto-starts stack if needed)
-	@echo "[pytest-e2e-scim] Running SCIM E2E tests..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && python3 -m pytest tests/test_e2e_comprehensive.py -v -m scim
-
-.PHONY: pytest-e2e-full
-pytest-e2e-full: ensure-stack ## Run ALL E2E tests (auto-starts stack if needed)
-	@echo "[pytest-e2e-full] Running all E2E test suites..."
-	@$(MAKE) pytest-e2e
-	@$(MAKE) pytest-e2e-comprehensive
-	@echo "[pytest-e2e-full] ✅ All E2E test suites completed"
-
-.PHONY: pytest-security
-pytest-security: ## Run P0 critical security tests (OIDC/JWT, secrets, SCIM, headers)
-	@echo "[pytest-security] Running P0 critical security tests..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest -m critical -v
-
-.PHONY: pytest-oidc
-pytest-oidc: ## Run OIDC/JWT validation tests (issuer, exp, alg:none, PKCE, JWKS rotation)
-	@echo "[pytest-oidc] Running OIDC/JWT security tests..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest tests/test_oidc_jwt_validation.py -v
-
-.PHONY: pytest-secrets
-pytest-secrets: ## Run secrets security tests (logs, HTTP, rotation, permissions)
-	@echo "[pytest-secrets] Running secrets security tests..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && DEMO_MODE=true python3 -m pytest tests/test_secrets_security.py -v
-
-.PHONY: pytest-nginx-headers
-pytest-nginx-headers: ensure-stack ## Run Nginx/TLS/headers security tests (auto-starts stack if needed)
-	@echo "[pytest-nginx-headers] Running Nginx/TLS/headers security tests..."
-	@python3 -m venv venv >/dev/null 2>&1 || true
-	@. venv/bin/activate && pip install -r requirements.txt >/dev/null
-	@. venv/bin/activate && python3 -m pytest tests/test_nginx_security_headers.py -v -m integration
-
-.PHONY: pytest-p0
-pytest-p0: ## Run all P0 critical security tests (unit + integration)
-	@echo "[pytest-p0] Running all P0 critical security tests..."
-	@$(MAKE) pytest-oidc
-	@$(MAKE) pytest-secrets
-	@echo "[pytest-p0] Integration tests require running stack. Run 'make up' first, then:"
-	@echo "  - make pytest-nginx-headers"
+.PHONY: test/nginx
+test/nginx: ensure-stack venv ## Run Nginx/TLS/headers smoke tests
+	@$(PYTEST) tests/test_nginx_security_headers.py -v -m integration $(ARGS)
 
 .PHONY: verify-audit
 verify-audit: ## Verify integrity of audit log signatures
