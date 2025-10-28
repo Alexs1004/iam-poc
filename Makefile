@@ -270,6 +270,7 @@ clean-all: ## Remove runtime data (secrets + audit logs)
 	@chmod -R u+w .runtime/azure 2>/dev/null || true
 	@rm -rf .runtime/azure || true
 	@rm -rf .runtime/audit/*.jsonl || true
+	@rm -f .runtime/audit/audit_log_signing_key || true
 	@echo "[clean-all] Removed .runtime/ (secrets, azure cache, audit logs)"
 
 .PHONY: archive-audit
@@ -288,6 +289,15 @@ demo-mode: ## Toggle DEMO_MODE=true le temps d'un fresh-demo, puis restaure la v
 	@cp .env .env.backup_demo || true
 	@sed -i 's/^DEMO_MODE=.*/DEMO_MODE=true/' .env
 	@$(MAKE) fresh-demo || (mv .env.backup_demo .env 2>/dev/null; exit 1)
+	@set -a; source .env; set +a; \
+	demo_key="$${AUDIT_LOG_SIGNING_KEY_DEMO:-demo-audit-signing-key-change-in-production}"; \
+	if [ -n "$$demo_key" ]; then \
+		mkdir -p .runtime/audit; \
+		chmod 700 .runtime/audit 2>/dev/null || true; \
+		( umask 177 && printf '%s' "$$demo_key" > .runtime/audit/audit_log_signing_key.tmp ) && \
+		mv .runtime/audit/audit_log_signing_key.tmp .runtime/audit/audit_log_signing_key; \
+		echo "[demo-mode] audit_log_signing_key written to .runtime/audit/"; \
+	fi
 	@mv .env.backup_demo .env 2>/dev/null || true
 	@echo "[demo-mode] fresh-demo exécuté en mode démo, configuration restaurée."
 
@@ -456,7 +466,13 @@ pytest-p0: ## Run all P0 critical security tests (unit + integration)
 
 .PHONY: verify-audit
 verify-audit: ## Verify integrity of audit log signatures
-	@$(WITH_ENV) $(PYTHON) scripts/audit.py
+	@if [ -f .runtime/audit/audit_log_signing_key ]; then \
+		AUDIT_LOG_SIGNING_KEY_FILE=.runtime/audit/audit_log_signing_key AZURE_USE_KEYVAULT=false $(PYTHON) scripts/audit.py; \
+	elif [ -f .runtime/secrets/audit_log_signing_key ]; then \
+		AUDIT_LOG_SIGNING_KEY="$$(tr -d '\n' < .runtime/secrets/audit_log_signing_key)" AZURE_USE_KEYVAULT=false $(PYTHON) scripts/audit.py; \
+	else \
+		$(WITH_ENV) $(PYTHON) scripts/audit.py; \
+	fi
 
 .PHONY: rotate-secret
 rotate-secret: ## Rotate Keycloak service client secret (production only)

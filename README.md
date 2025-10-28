@@ -3,8 +3,8 @@
 ![Made with Azure Key Vault](https://img.shields.io/badge/Azure-Key%20Vault-0078D4?logo=microsoft-azure&logoColor=white)
 ![Demo in 2 min](https://img.shields.io/badge/Demo-2%20minutes-success?logo=github)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-162%20passed-brightgreen?logo=pytest)
-![Coverage](https://img.shields.io/badge/Coverage-85%25-green?logo=codecov)
+![Tests](https://img.shields.io/badge/Tests-160%2B%20passed-brightgreen?logo=pytest)
+![Coverage](https://img.shields.io/badge/Coverage-90%25-brightgreen?logo=codecov)
 ![Security](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
@@ -29,19 +29,30 @@ Login → Provisioning JML → Appel SCIM API → Audit signé → Rotation de s
 
 > **📹 Vidéo démo (60s)** : _À venir_ — Login alice → Promotion manager → Désactivation bob → Logs d'audit HMAC
 
-**Accès :**
-- UI Admin : https://localhost/admin
-- SCIM API : https://localhost/scim/v2 (OAuth 2.0 bearer)
-- Keycloak : https://localhost/keycloak
+**Point d’entrée unique :** https://localhost  
+Le reverse proxy Nginx redirige ensuite vers :
+- **UI Admin (Flask)** — https://localhost/admin
+- **Console Keycloak (demo)** — https://localhost/admin/demo/console/
+- **Console Keycloak (admin)** — Console Keycloak — lien “Console Admin” → https://localhost/admin/master/console/
+- **SCIM API (Flask)** — https://localhost/scim/v2 (utilisable depuis l’UI admin ou via curl/Postman avec Bearer token)
+
+> ℹ️ Depuis la page d’accueil `https://localhost`, tous les liens utiles sont accessibles (Admin UI, SCIM docs, console Keycloak).
 
 <details>
-<summary><strong>🔓 Credentials démo (cliquer pour afficher)</strong></summary>
+<summary><strong>🔓 Credentials démo (mode <code>DEMO_MODE=true</code>)</strong></summary>
 
-**⚠️ UNIQUEMENT POUR DÉMO LOCALE** — Jamais en production !
+- Keycloak admin : `admin` / `admin`
+- Utilisateurs démo : `alice` / `Passw0rd!`, `bob` / `Passw0rd!`, `joe` / `Passw0rd!`
+- Service account SCIM : `automation-cli` / `demo-service-secret`
 
-- **Keycloak admin** : `admin` / `admin`
-- **Utilisateurs démo** : `alice` / `alice`, `bob` / `bob`, `joe` / `joe`
-- **Service account** : `automation-cli` / `demo-service-secret`
+</details>
+
+<details>
+<summary><strong>🔒 Mode production / Azure Key Vault</strong></summary>
+
+- `DEMO_MODE=false` & `AZURE_USE_KEYVAULT=true` génèrent des secrets aléatoires stockés dans Key Vault (`keycloak-admin-password`, `keycloak-service-client-secret`, etc.).
+- Après `make load-secrets`, les valeurs sont disponibles dans `.runtime/secrets/…` (ex. `cat .runtime/secrets/keycloak_admin_password`) ou via `az keyvault secret show`.
+- Les identifiants ci-dessus ne sont plus valides : ne conservez aucun mot de passe par défaut.
 
 </details>
 
@@ -128,7 +139,7 @@ make quickstart
 # 1. ✅ Copie .env.demo → .env (si absent)
 # 2. ✅ Génère FLASK_SECRET_KEY (256 bits) + AUDIT_LOG_SIGNING_KEY (384 bits)
 # 3. ✅ Démarre Keycloak + Flask + Nginx avec health checks
-# 4. ✅ Bootstrap service account automation-cli (secret: demo-service-secret)
+# 4. ✅ Bootstrap service account automation-cli (secret initial seedé dans Azure Key Vault)
 # 5. ✅ Crée realm demo + users (alice, bob, carol, joe) + roles
 # 6. ✅ Démontre JML : alice promue manager, bob désactivé
 ```
@@ -170,7 +181,7 @@ make rotate-secret-dry      # Test dry-run
 **Permissions Azure requises** :
 - **Key Vault Secrets User** (lecture secrets)
 - **Key Vault Secrets Officer** (écriture pour rotation)
-- Voir [docs/DETAILED_SETUP.md](docs/DETAILED_SETUP.md) pour guide complet
+- Consulter [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) pour le workflow complet (démo vs production)
 
 ## 🛡️ Make Commands — Référence Rapide
 
@@ -250,7 +261,7 @@ make rotate-secret-dry      # Test dry-run
 - ✅ Tamper detection (`make verify-audit`)
 - ✅ Clés séparées demo vs production
 
-> 🔒 **Preuves de sécurité** : Voir [docs/SECURITY_PROOFS.md](docs/SECURITY_PROOFS.md) pour captures d'écran, commandes de vérification, et scénarios de test.
+> 🔒 **Preuves de sécurité** : Synthèse et contrôles détaillés dans [docs/SECURITY_DESIGN.md](docs/SECURITY_DESIGN.md)
 
 ## ⚠️ Known Limitations
 
@@ -280,11 +291,10 @@ make rotate-secret-dry      # Test dry-run
 **Workaround**:
 - ✅ Use admin UI (`/admin/*`) for user provisioning (protected by OIDC session)
 - ✅ Block SCIM routes in nginx for production deployments
-- ✅ E2E tests for SCIM temporarily skipped (see [`docs/E2E_SCIM_WORKAROUND.md`](docs/E2E_SCIM_WORKAROUND.md))
+- ✅ E2E tests for SCIM temporairement ignorés (voir note en tête de `tests/test_integration_e2e.py`)
 
 **Remediation**: 
-- 📖 Complete implementation guide: [`docs/SCIM_AUTHENTICATION.md`](docs/SCIM_AUTHENTICATION.md)
-- 📖 Executive summary: [`docs/SCIM_AUTH_SUMMARY.md`](docs/SCIM_AUTH_SUMMARY.md)
+- 📖 Complete implementation guide: [`docs/SECURITY_DESIGN.md`](docs/SECURITY_DESIGN.md#road-to-azure-native)
 - ⏱️ Estimated effort: **6 hours** (middleware + tests + validation)
 - 🎯 Priority: **P0** (required before production deployment)
 
@@ -296,7 +306,7 @@ curl -X GET https://localhost/scim/v2/Users
 # If 200 OK or 403 (not 401) → OAuth not enforced
 ```
 
-See [`docs/SCIM_AUTHENTICATION.md`](docs/SCIM_AUTHENTICATION.md) for detailed implementation roadmap, RFC compliance checklist, and test procedures.
+See [`docs/SECURITY_DESIGN.md`](docs/SECURITY_DESIGN.md#principes-de-référence) for detailed implementation roadmap, RFC compliance checklist, and test procedures.
 
 ## 🔌 SCIM 2.0 API
 
@@ -343,7 +353,7 @@ curl -sk -X POST "https://localhost/scim/v2/Users" \
 - ✅ Session revocation (effet immédiat sur `active=false`)
 - ✅ Validation stricte (username, email, noms)
 
-> 📘 **Guide complet** : [docs/SCIM_API_GUIDE.md](docs/SCIM_API_GUIDE.md) _(à venir)_ — Tests disponibles : `tests/test_scim_api.py`, `scripts/test_scim_api.sh`
+> 📘 **Guide complet** : [docs/API_REFERENCE.md](docs/API_REFERENCE.md) — Endpoints SCIM + exemples d'intégration
 
 ## 🧪 Tests
 
@@ -367,7 +377,7 @@ make verify-audit   # Vérifier signatures HMAC logs
 - **Unitaires hermétiques** : fixtures autouse mockent OIDC/JWKS ⇒ aucun appel réseau accidentel.
 - **Modules critiques ≥80 %** : `app/core/validators` 100 %, `app/core/rbac` 85 %, `app/core/provisioning_service` 82 %, `app/api/errors` 91 %.
 - **SCIM & OAuth** : `app/api/scim` couvert à 78 % + batterie d’intégration (`tests/test_integration_e2e.py`) sur stack Docker.
-- **CI gating** : workflow `tests-coverage` exécute `pytest -m "not integration"` avec `--cov-fail-under=60`, badge calculé depuis `coverage.xml`.
+- **CI gating** : workflow `tests-coverage` exécute `pytest -m "not integration"` avec `--cov-fail-under=80`, badge calculé depuis `coverage.xml` (couverture moyenne ≈ 90 %).
 - **Glue UI exclue** : `app/api/admin.py` & `app/api/helpers/admin_ui.py` omis des unitaires (couverts via tests E2E).
 
 ## ☁️ Production Notes
@@ -386,23 +396,19 @@ make verify-audit   # Vérifier signatures HMAC logs
 3. Audit logs rétention policy (Azure Storage immutable blobs)
 4. Network policies (NSG, Azure Firewall, private endpoints)
 5. RBAC Key Vault granulaire (principe du moindre privilège)
+6. `KEYCLOAK_URL_HOST` configuré vers l'URL accessible depuis l'hôte (ex. `http://127.0.0.1:8080`) pour les scripts d'automatisation (`make rotate-secret`)
 
-## 📚 Documentation Complète
+## 📚 Documentation Essentielle
 
-### Guides Principaux
-- **[docs/DETAILED_SETUP.md](docs/DETAILED_SETUP.md)** _(à venir)_ — Configuration détaillée (secrets, SCIM, architecture)
-- **[docs/SECURITY_PROOFS.md](docs/SECURITY_PROOFS.md)** — Preuves de sécurité (captures, commandes vérification)
-- **[docs/SCIM_API_GUIDE.md](docs/SCIM_API_GUIDE.md)** _(à venir)_ — Intégration SCIM (Okta, Azure AD, curl)
-- **[docs/SECRET_ROTATION.md](docs/SECRET_ROTATION.md)** _(à venir)_ — Rotation orchestrée (CI/CD, troubleshooting)
-- **[docs/README.md](docs/README.md)** — Index complet documentation
+- **[docs/README.md](docs/README.md)** — index & navigation complète.
+- **[docs/OVERVIEW.md](docs/OVERVIEW.md)** — architecture et flux clés.
+- **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — installation locale, mode Azure, troubleshooting.
+- **[docs/SECURITY_DESIGN.md](docs/SECURITY_DESIGN.md)** — principes, contrôles, threat model.
+- **[docs/TEST_STRATEGY.md](docs/TEST_STRATEGY.md)** — couverture, commandes tests, CI/CD.
+- **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** — endpoints SCIM, exemples `curl`.
+- **[docs/ROADMAP.md](docs/ROADMAP.md)** — jalons passés et vision Azure-native.
 
-### Documentation Technique
-- **[CHANGELOG.md](CHANGELOG.md)** — Historique versions, breaking changes
-- **[docs/UNIFIED_SERVICE_ARCHITECTURE.md](docs/UNIFIED_SERVICE_ARCHITECTURE.md)** _(à venir)_ — Architecture v2.0
-- **[docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md)** _(vide, à compléter)_ — Résumé implémentation
-- **[docs/JML_REFACTORING_SUMMARY.md](docs/JML_REFACTORING_SUMMARY.md)** — Refactoring JML
-
-### Support & Troubleshooting
+## Support & Troubleshooting
 
 **Problèmes courants** :
 - **Flask unhealthy** → `make doctor` puis `make fresh-demo`
@@ -411,7 +417,7 @@ make verify-audit   # Vérifier signatures HMAC logs
 - **Service secret vide** → Bootstrap manqué → `make fresh-demo`
 - **"Invalid client credentials"** → Demo mode secret mismatch → `make fresh-demo`
 
-> 🩺 **Diagnostic complet** : Section troubleshooting détaillée à venir dans docs/DETAILED_SETUP.md
+> 🩺 **Diagnostic complet** : Rappel des commandes et scripts dans [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md#dépannage-rapide)
 
 ## 🗺️ Roadmap Azure
 

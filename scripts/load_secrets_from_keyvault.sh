@@ -94,6 +94,14 @@ write_secret_file() {
   fi
   
   # Handle missing secret
+  if [[ "$secret_name" == "keycloak-service-client-secret" ]]; then
+    echo -e "${YELLOW}[keyvault] ⚠ Secret ${secret_name} absent. Il sera généré lors du bootstrap et poussé dans Key Vault.${RESET}" >&2
+    # Ensure any stale local value is cleared
+    : > "$file_path"
+    chmod 400 "$file_path" 2>/dev/null || true
+    return 0
+  fi
+  
   if [[ "$required" == "true" ]]; then
     echo -e "${RED}[keyvault] ✗ REQUIRED secret ${secret_name} not found${RESET}"
     return 1

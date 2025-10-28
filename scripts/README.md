@@ -167,9 +167,10 @@ from scripts import audit    # Audit logging
 ## 📚 Documentation
 
 - **Main Guide**: [../README.md](../README.md)
-- **Secret Management**: [../docs/SECRET_MANAGEMENT.md](../docs/SECRET_MANAGEMENT.md)
-- **Refactoring Guide**: [../docs/JML_REFACTORING_SUMMARY.md](../docs/JML_REFACTORING_SUMMARY.md)
-- **Architecture**: [../docs/IMPLEMENTATION_SUMMARY.md](../docs/IMPLEMENTATION_SUMMARY.md)
+- **Architecture & flux**: [../docs/OVERVIEW.md](../docs/OVERVIEW.md)
+- **Setup & dépannage**: [../docs/SETUP_GUIDE.md](../docs/SETUP_GUIDE.md)
+- **Sécurité & OAuth SCIM**: [../docs/SECURITY_DESIGN.md](../docs/SECURITY_DESIGN.md)
+- **API détaillée**: [../docs/API_REFERENCE.md](../docs/API_REFERENCE.md)
 
 ---
 

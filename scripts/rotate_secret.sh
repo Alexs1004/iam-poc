@@ -43,10 +43,19 @@ fi
 DEMO_MODE="${DEMO_MODE:-false}"
 AZURE_USE_KEYVAULT="${AZURE_USE_KEYVAULT:-true}"
 
-KEYCLOAK_URL="${KEYCLOAK_URL:-http://127.0.0.1:8080}"
+KEYCLOAK_URL_INTERNAL="${KEYCLOAK_URL:-}"
+KEYCLOAK_URL_HOST="${KEYCLOAK_URL_HOST:-}"
+
+if [[ -n "${KEYCLOAK_URL_HOST}" ]]; then
+  KEYCLOAK_URL="${KEYCLOAK_URL_HOST}"
+else
+  KEYCLOAK_URL="${KEYCLOAK_URL_INTERNAL:-http://127.0.0.1:8080}"
+fi
+log "Cible Keycloak pour la rotation: ${KEYCLOAK_URL}"
+
 KEYCLOAK_REALM="${KEYCLOAK_SERVICE_REALM:-demo}"
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
-KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
+KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
 
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_SERVICE_CLIENT_ID:-automation-cli}"
 
@@ -58,6 +67,24 @@ FLASK_SERVICE="${FLASK_SERVICE:-flask-app}"
 
 # Endpoint simple de health-check (protégé en prod → utilisez un endpoint public sain ou un /healthz)
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-https://localhost/health}"
+
+SECRETS_DIR="${PROJECT_ROOT}/.runtime/secrets"
+load_secret_if_empty() {
+  local var_name="$1"
+  local file_name="$2"
+  local current_value="${!var_name:-}"
+
+  if [[ -z "${current_value}" && -f "${SECRETS_DIR}/${file_name}" ]]; then
+    local value
+    value=$(<"${SECRETS_DIR}/${file_name}")
+    export "${var_name}=${value}"
+  fi
+}
+
+load_secret_if_empty "KEYCLOAK_ADMIN_PASSWORD" "keycloak_admin_password"
+load_secret_if_empty "KEYCLOAK_CLIENT_SECRET" "keycloak_service_client_secret"
+
+[[ -n "${KEYCLOAK_ADMIN_PASSWORD}" ]] || die "Impossible de déterminer KEYCLOAK_ADMIN_PASSWORD (vérifiez .runtime/secrets ou .env)."
 
 ### ──────────────────────────────────────────────────────────────────────────────
 ### Prérequis
@@ -89,10 +116,10 @@ fi
 log "Obtention d'un token admin Keycloak…"
 KC_TOKEN_JSON=$(curl -sS "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d "grant_type=password" \
-  -d "client_id=admin-cli" \
-  -d "username=${KEYCLOAK_ADMIN}" \
-  -d "password=${KEYCLOAK_ADMIN_PASSWORD}" || true)
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=${KEYCLOAK_ADMIN}" \
+  --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD}" || true)
 
 KC_ACCESS_TOKEN=$(echo "${KC_TOKEN_JSON}" | jq -r '.access_token // empty')
 

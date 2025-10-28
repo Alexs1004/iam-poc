@@ -10,11 +10,40 @@ from pathlib import Path
 from typing import Any, Literal
 
 AUDIT_LOG_DIR = Path(os.environ.get("AUDIT_LOG_DIR", ".runtime/audit"))
+_default_secret_paths: list[Path] = []
+_env_secret_path_str = os.environ.get("AUDIT_LOG_SIGNING_KEY_FILE")
+_env_secret_path: Path | None = None
+if _env_secret_path_str:
+    _env_secret_path = Path(_env_secret_path_str)
+    _default_secret_paths.append(_env_secret_path)
+_default_secret_paths.extend([
+    Path(".runtime/secrets/audit_log_signing_key"),
+    Path(".runtime/audit/audit_log_signing_key"),
+])
 AUDIT_LOG_FILE = AUDIT_LOG_DIR / "jml-events.jsonl"
 
 def _get_signing_key() -> bytes:
     """Get the audit signing key from environment (loaded lazily to support Key Vault)."""
-    return os.environ.get("AUDIT_LOG_SIGNING_KEY", "").encode("utf-8")
+    if _env_secret_path and _env_secret_path.exists():
+        try:
+            return _env_secret_path.read_text(encoding="utf-8").strip().encode("utf-8")
+        except OSError:
+            pass
+    key = os.environ.get("AUDIT_LOG_SIGNING_KEY", "")
+    if key:
+        return key.encode("utf-8")
+    for path in _default_secret_paths:
+        if not path:
+            continue
+        if path.exists():
+            try:
+                return path.read_text(encoding="utf-8").strip().encode("utf-8")
+            except OSError:
+                continue
+    demo_default = os.environ.get("AUDIT_LOG_SIGNING_KEY_DEMO", "demo-audit-signing-key-change-in-production")
+    if demo_default:
+        return demo_default.encode("utf-8")
+    return b""
 
 EventType = Literal[
     "joiner", "mover", "leaver", 
