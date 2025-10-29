@@ -25,11 +25,6 @@ Utility scripts for IAM PoC automation, infrastructure, and testing.
 | **[validate_env.sh](validate_env.sh)** | Validate `.env` configuration (DEMO_MODE guards) | `make validate-env` |
 | **[validate_config.sh](validate_config.sh)** | Validate project setup and dependencies | Manual validation |
 
-### Testing
-| Script | Purpose | Used By |
-|--------|---------|---------|
-| **[test_scim_api.sh](test_scim_api.sh)** | Integration tests with real Keycloak tokens | Manual testing, CI/CD |
-
 ### Utilities
 | Script | Purpose | Used By |
 |--------|---------|---------|
@@ -77,12 +72,10 @@ python scripts/jml.py disable-user --username alice
 
 ### Testing
 ```bash
-# Integration tests with real OAuth tokens
-./scripts/test_scim_api.sh
-
-# Unit tests (Python)
-pytest tests/test_scim_api.py -v              # SCIM API routes
-pytest tests/test_scim_oauth_validation.py -v # OAuth validation
+# Core pytest suites
+make test             # Unit tests (Keycloak mocked)
+make test-e2e         # Integration tests (requires running stack)
+make test/security    # Critical security smoke tests
 ```
 
 ---
@@ -139,28 +132,31 @@ from scripts import audit    # Audit logging
 ## 🧪 Testing Strategy
 
 ### Unit Tests (pytest)
-- **Location**: `tests/test_*.py`
-- **Coverage**: 128 tests, 98.5% pass rate
-- **Mocking**: Keycloak API mocked, provisioning_service tested
-- **OAuth**: 17 dedicated tests in `test_scim_oauth_validation.py`
+- **Command**: `make test`
+- **Scope**: 190+ fast tests with mocked Keycloak API
+- **Highlights**: Config validation, JML flows, SCIM transformers, OAuth validators
 
-### Integration Tests (Shell)
-- **Location**: `scripts/test_scim_api.sh`
-- **Coverage**: Real Keycloak tokens, full CRUD workflow
-- **Prerequisites**: Running stack (`make up`)
+### Integration Tests (pytest)
+- **Command**: `make test-e2e`
+- **Scope**: Real Keycloak tokens, SCIM CRUD, filtering, error handling
+- **Prerequisites**: Running stack (`make up` or `make ensure-stack`)
 
-### End-to-End Tests (pytest)
-- **Location**: `tests/test_integration_e2e.py`
-- **Coverage**: Full user lifecycle (joiner → mover → leaver)
-- **Prerequisites**: Running stack + real Keycloak
+### Security Regression Suite
+- **Command**: `make test/security`
+- **Scope**: TLS headers, JWT rejection paths, secret hygiene, rotation sanity checks
+- **Prerequisites**: Production-style secrets (Key Vault or `.runtime/secrets`)
 
 ---
 
 ## 🗂️ Removed Scripts
 
-**Commit f57e9d5** (2025-01-XX):
+**January 2025**
 - ❌ `validate_refactoring.sh`: Obsolete (referenced deleted `flask_app_new.py`)
-- ❌ `test_scim_oauth.sh`: Superseded by `tests/test_scim_oauth_validation.py` (17 pytest tests)
+- ❌ `test_scim_oauth.sh`: Superseded by `tests/test_scim_oauth_validation.py`
+
+**February 2025**
+- ❌ `test_scim_api.sh`: Redundant with `tests/test_scim_api.py`
+- ❌ `fix_automation_cli_secret.py`: Bootstrap now restores the demo secret automatically
 
 ---
 
@@ -181,8 +177,10 @@ from scripts import audit    # Audit logging
 make quickstart   # Auto-generates .env, starts stack, runs demo
 
 # 2. Run tests
-make pytest       # Unit tests (mocked)
-make pytest-e2e   # Integration tests (requires stack)
+make test         # Unit tests (mocked)
+make test-e2e     # Integration tests (requires stack)
+# (Optional) Production smoke tests
+make test/security
 
 # 3. Manual JML operations
 python scripts/jml.py --help
@@ -198,6 +196,6 @@ make quickstart
 
 ---
 
-**Last Updated**: January 2025  
+**Last Updated**: February 2025  
 **Maintainer**: Alex  
 **Project**: IAM PoC (Keycloak + Flask + SCIM 2.0)

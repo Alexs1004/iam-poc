@@ -61,7 +61,7 @@ Garanties apportées :
 ## Dépannage rapide
 | Symptom | Cause probable | Résolution |
 |---------|----------------|------------|
-| `Invalid client credentials` après `make fresh-demo` | Secret Keycloak hors sync | `docker compose exec flask-app python /srv/app/scripts/fix_automation_cli_secret.py` puis `make demo-jml`. |
+| `Invalid client credentials` après `make fresh-demo` | Secret Keycloak hors sync | Relancer `make demo-jml` (réapplique le secret `demo-service-secret`); si besoin, refaire `make fresh-demo`. |
 | Erreurs JWT signature | Token expiré ou mauvais issuer | Regénérer le token via Keycloak, vérifier URL issuer dans `.env`. |
 | `DefaultAzureCredential` failed | `az login` manquant ou pas de Managed Identity | Lancer `az login` ou configurer Workload Identity Federation. |
 | Containers `unhealthy` | Keycloak pas prêt ou secrets manquants | Patienter 60s, vérifier `.runtime/secrets`, relancer `make quickstart`. |
