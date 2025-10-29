@@ -5,7 +5,7 @@ info:
   description: >
     Lightweight SCIM 2.0 service designed to model enterprise identity lifecycle flows.
     Emphasis on secure defaults, standards alignment, and interoperability with cloud IdPs.
-    Filtering limited to `userName eq`. PATCH not yet supported.
+    Filtering limited to `userName eq`. PATCH limited to toggling `active`.
   contact:
     name: Alexs1004 — IAM & Cloud Security
     url: https://github.com/Alexs1004/iam-poc
@@ -205,6 +205,40 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+    patch:
+      tags: [Users]
+      summary: Toggle user active state
+      description: >
+        Minimal PatchOp implementation that supports a single `replace` operation
+        on the `active` attribute.
+      operationId: patchUserActive
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema:
+              $ref: '#/components/schemas/UserPatchActiveRequest'
+            example:
+              schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
+              Operations:
+                - op: replace
+                  path: active
+                  value: false
+      responses:
+        '200':
+          description: Updated user representation
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
         '500': { $ref: '#/components/responses/InternalError' }
 
     delete:
@@ -575,6 +609,34 @@ components:
             $ref: '#/components/schemas/Email'
         active:
           type: boolean
+
+    UserPatchActiveRequest:
+      type: object
+      required: [schemas, Operations]
+      properties:
+        schemas:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            enum: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
+        Operations:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            required: [op, path, value]
+            properties:
+              op:
+                type: string
+                enum: ["replace"]
+              path:
+                type: string
+                enum: ["active"]
+              value:
+                type: boolean
 
     UserListResponse:
       type: object

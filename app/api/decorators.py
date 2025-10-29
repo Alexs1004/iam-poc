@@ -156,7 +156,8 @@ def validate_jwt_token(token: str) -> Dict[str, any]:
                 'verify_aud': False,        # ⚠️ Audience optional for client_credentials
                 'require_exp': True,        # exp claim mandatory
                 'require_iat': True         # iat claim mandatory
-            }
+            },
+            leeway=5                         # Allow small clock skew between services
         )
         
         # Step 3: Log successful validation
@@ -311,4 +312,3 @@ def get_oauth_claims() -> Optional[dict]:
         dict: JWT claims, or None if not available
     """
     return getattr(request, "oauth_claims", None) or getattr(g, "oauth_claims", None)
-

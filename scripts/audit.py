@@ -49,10 +49,11 @@ def _get_signing_key() -> bytes:
     return b""
 
 EventType = Literal[
-    "joiner", "mover", "leaver", 
+    "joiner", "mover", "leaver",
     "role_grant", "role_revoke", "session_revoke",
     # SCIM API operations
-    "scim_create_user", "scim_change_role", "scim_disable_user", "scim_delete_user"
+    "scim_create_user", "scim_change_role", "scim_disable_user", "scim_delete_user",
+    "scim_patch_user_active"
 ]
 
 

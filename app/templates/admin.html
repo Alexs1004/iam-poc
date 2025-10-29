@@ -242,13 +242,41 @@
                 <button type="submit" class="btn btn-danger">Disable user</button>
               </div>
             </form>
-          {% else %}
-            <p class="muted">No active users available to disable. All existing users are already disabled.</p>
-          {% endif %}
-        </section>
+        {% else %}
+          <p class="muted">No active users available to disable. All existing users are already disabled.</p>
+        {% endif %}
+      </section>
 
-      </div>
+      <section class="form-section">
+        <header class="form-section-header">
+          <div>
+            <h3>Reactivate account</h3>
+            <p class="form-section-subtitle">Restore access for previously disabled users.</p>
+          </div>
+        </header>
+        {% set disabled_users = existing_users | selectattr('enabled', 'equalto', False) | list %}
+        {% if disabled_users %}
+          <form method="post" action="{{ url_for('admin.admin_reactivate') }}" class="form-grid">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-field">
+              <label for="reactivate-username">User</label>
+              <select id="reactivate-username" name="username" required>
+                {% for user in disabled_users %}
+                  <option value="{{ user.username }}">{{ user.display_name }} ({{ user.username }})</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-success">Reactivate user</button>
+            </div>
+          </form>
+        {% else %}
+          <p class="muted">No disabled users awaiting reactivation.</p>
+        {% endif %}
+      </section>
+
     </div>
+  </div>
 
     <div
       id="admin-snapshot"

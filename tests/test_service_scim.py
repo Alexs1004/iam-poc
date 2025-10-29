@@ -585,6 +585,147 @@ def test_replace_user_not_found(mock_get_user, mock_jml, mock_audit):
 
 
 # ============================================================================
+# patch_user_scim Tests
+# ============================================================================
+
+
+def _mock_response(payload, status_code=200):
+    """Helper to craft mock requests responses."""
+    response = MagicMock()
+    response.status_code = status_code
+    response.json.return_value = payload
+    response.raise_for_status.return_value = None
+    return response
+
+
+def test_patch_user_scim_disable_success(monkeypatch, mock_jml, mock_audit):
+    """patch_user_scim disables an active user and logs audit entry."""
+    initial_user = {
+        "id": "user-123",
+        "username": "alice",
+        "firstName": "Alice",
+        "lastName": "Wonder",
+        "email": "alice@example.com",
+        "enabled": True,
+    }
+    disabled_user = {**initial_user, "enabled": False}
+    
+    get_mock = MagicMock(side_effect=[_mock_response(initial_user), _mock_response(disabled_user)])
+    put_resp = _mock_response({}, status_code=204)
+    put_mock = MagicMock(return_value=put_resp)
+    
+    monkeypatch.setattr("app.core.provisioning_service.requests.get", get_mock)
+    monkeypatch.setattr("app.core.provisioning_service.requests.put", put_mock)
+    
+    result = provisioning_service.patch_user_scim("user-123", False, correlation_id="corr-1")
+    
+    assert result["active"] is False
+    put_mock.assert_called_once()
+    payload_sent = put_mock.call_args.kwargs["json"]
+    assert payload_sent["enabled"] is False
+    mock_audit.log_jml_event.assert_called_once()
+    audit_call = mock_audit.log_jml_event.call_args.kwargs
+    assert audit_call["details"]["previous_active"] is True
+    assert audit_call["details"]["new_active"] is False
+    assert audit_call["details"]["user_id"] == "user-123"
+
+
+def test_patch_user_scim_enable_success(monkeypatch, mock_jml, mock_audit):
+    """patch_user_scim enables a disabled user."""
+    disabled_user = {
+        "id": "user-234",
+        "username": "bob",
+        "firstName": "Bob",
+        "lastName": "Builder",
+        "email": "bob@example.com",
+        "enabled": False,
+    }
+    enabled_user = {**disabled_user, "enabled": True}
+    
+    get_mock = MagicMock(side_effect=[_mock_response(disabled_user), _mock_response(enabled_user)])
+    put_resp = _mock_response({}, status_code=204)
+    put_mock = MagicMock(return_value=put_resp)
+    
+    monkeypatch.setattr("app.core.provisioning_service.requests.get", get_mock)
+    monkeypatch.setattr("app.core.provisioning_service.requests.put", put_mock)
+    
+    result = provisioning_service.patch_user_scim("user-234", True, correlation_id="corr-2")
+    
+    assert result["active"] is True
+    put_mock.assert_called_once()
+    payload_sent = put_mock.call_args.kwargs["json"]
+    assert payload_sent["enabled"] is True
+    audit_call = mock_audit.log_jml_event.call_args.kwargs
+    assert audit_call["details"]["previous_active"] is False
+    assert audit_call["details"]["new_active"] is True
+
+
+def test_patch_user_scim_idempotent(monkeypatch, mock_jml, mock_audit):
+    """patch_user_scim is idempotent when state already matches."""
+    active_user = {
+        "id": "user-345",
+        "username": "carol",
+        "firstName": "Carol",
+        "lastName": "Jones",
+        "email": "carol@example.com",
+        "enabled": True,
+    }
+    
+    get_mock = MagicMock(side_effect=[_mock_response(active_user), _mock_response(active_user)])
+    put_mock = MagicMock()
+    
+    monkeypatch.setattr("app.core.provisioning_service.requests.get", get_mock)
+    monkeypatch.setattr("app.core.provisioning_service.requests.put", put_mock)
+    
+    result = provisioning_service.patch_user_scim("user-345", True, correlation_id="corr-3")
+    
+    assert result["active"] is True
+    put_mock.assert_not_called()
+    mock_audit.log_jml_event.assert_called_once()
+    audit_call = mock_audit.log_jml_event.call_args.kwargs
+    assert audit_call["details"]["previous_active"] is True
+    assert audit_call["details"]["new_active"] is True
+
+
+def test_patch_user_scim_not_found(monkeypatch, mock_jml, mock_audit):
+    """patch_user_scim raises 404 when user does not exist."""
+    not_found_response = _mock_response({}, status_code=404)
+    get_mock = MagicMock(return_value=not_found_response)
+    monkeypatch.setattr("app.core.provisioning_service.requests.get", get_mock)
+    monkeypatch.setattr("app.core.provisioning_service.requests.put", MagicMock())
+    
+    with pytest.raises(ScimError) as exc:
+        provisioning_service.patch_user_scim("missing-user", False)
+    
+    assert exc.value.status == 404
+    mock_audit.log_jml_event.assert_not_called()
+
+
+def test_patch_user_scim_update_failure(monkeypatch, mock_jml, mock_audit):
+    """patch_user_scim propagates update errors as 500."""
+    initial_user = {
+        "id": "user-456",
+        "username": "dave",
+        "firstName": "Dave",
+        "lastName": "Smith",
+        "email": "dave@example.com",
+        "enabled": True,
+    }
+    
+    get_mock = MagicMock(side_effect=[_mock_response(initial_user)])
+    failing_put = MagicMock(side_effect=Exception("Keycloak unavailable"))
+    
+    monkeypatch.setattr("app.core.provisioning_service.requests.get", get_mock)
+    monkeypatch.setattr("app.core.provisioning_service.requests.put", failing_put)
+    
+    with pytest.raises(ScimError) as exc:
+        provisioning_service.patch_user_scim("user-456", False)
+    
+    assert exc.value.status == 500
+    mock_audit.log_jml_event.assert_not_called()
+
+
+# ============================================================================
 # delete_user_scim Tests
 # ============================================================================
 

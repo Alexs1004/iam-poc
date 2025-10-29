@@ -460,6 +460,7 @@ def admin_joiner():
     return redirect(url_for("admin.admin_dashboard"))
 
 
+
 @bp.post("/mover")
 @require_jml_operator
 def admin_mover():
@@ -608,4 +609,79 @@ def admin_leaver():
             success=False,
         )
     
+    return redirect(url_for("admin.admin_dashboard"))
+
+
+@bp.post("/reactivate")
+@require_jml_operator
+def admin_reactivate():
+    """Reactivate user (set active=true)."""
+    from app.api.helpers import admin_ui
+    cfg = current_app.config["APP_CONFIG"]
+
+    username = request.form.get("username", "").strip()
+    if not username:
+        flash("Select a user to reactivate.", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    current_username_lower = current_username().lower()
+    if current_username_lower and username.lower() == current_username_lower:
+        flash("You cannot reactivate your own account from this console.", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    try:
+        token = provisioning_service.get_service_token()
+        keycloak_base_url = cfg.keycloak_url or cfg.keycloak_server_url.split("/realms/")[0]
+        target_user = get_user_by_username(keycloak_base_url, token, cfg.keycloak_realm, username)
+    except provisioning_service.ScimError as exc:
+        flash(f"Failed to obtain service token: {exc.detail}", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+    except Exception as exc:
+        flash(f"Failed to reactivate '{username}': {exc}", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    if not target_user:
+        flash(f"User '{username}' not found in realm '{cfg.keycloak_realm}'.", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    if target_user.get("enabled"):
+        flash(f"User '{username}' is already active.", "info")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    try:
+        target_roles = _user_roles(token, target_user["id"])
+    except Exception as exc:
+        flash(f"Unable to read roles for '{username}': {exc}", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    if requires_operator_for_roles(target_roles, cfg.realm_admin_role, cfg.iam_operator_role) and not user_has_role(cfg.realm_admin_role):
+        flash("Realm-admin privileges are required to reactivate realm-admin-level accounts.", "error")
+        return redirect(url_for("admin.admin_dashboard"))
+
+    operator = current_username() or "system"
+
+    try:
+        admin_ui.ui_set_user_active(username, True)
+        flash(f"User '{username}' reactivated successfully.", "success")
+    except provisioning_service.ScimError as exc:
+        flash(f"Failed to reactivate '{username}': {exc.detail}", "error")
+        audit.log_jml_event(
+            "scim_patch_user_active",
+            username,
+            operator=operator,
+            realm=cfg.keycloak_realm,
+            details={"error": exc.detail, "status": exc.status, "requested_active": True},
+            success=False,
+        )
+    except Exception as exc:
+        flash(f"Failed to reactivate '{username}': {exc}", "error")
+        audit.log_jml_event(
+            "scim_patch_user_active",
+            username,
+            operator=operator,
+            realm=cfg.keycloak_realm,
+            details={"error": str(exc), "requested_active": True},
+            success=False,
+        )
+
     return redirect(url_for("admin.admin_dashboard"))

@@ -86,7 +86,7 @@ class TestSCIMSchemaEndpoints:
         
         # Check supported features
         assert data['filter']['supported'] is True
-        assert data['patch']['supported'] is False
+        assert data['patch']['supported'] is True
         assert data['bulk']['supported'] is False
         
     def test_resource_types(self, client):
@@ -326,6 +326,153 @@ class TestSCIMUserCRUD:
         # Verify delete was called with user_id (and correlation_id=None)
         mock_delete.assert_called_once()
         assert mock_delete.call_args[0][0] == mock_keycloak_user["id"]
+
+    @patch('app.core.provisioning_service.patch_user_scim')
+    def test_patch_user_active_success(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH /Users/{id} toggles active state"""
+        updated_user = keycloak_to_scim({**mock_keycloak_user, 'enabled': False})
+        mock_patch_user.return_value = updated_user
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'active', 'value': False}
+                ]
+            }
+        )
+        
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert data['active'] is False
+        mock_patch_user.assert_called_once_with(mock_keycloak_user["id"], False, None)
+
+    @patch('app.core.provisioning_service.patch_user_scim')
+    def test_patch_user_multiple_operations_rejected(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """PATCH should reject multiple operations"""
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'active', 'value': False},
+                    {'op': 'replace', 'path': 'active', 'value': True}
+                ]
+            }
+        )
+        
+        assert response.status_code == 400
+        mock_patch_user.assert_not_called()
+
+    @patch('app.core.provisioning_service.patch_user_scim')
+    def test_patch_user_requires_authorization_header(self, mock_patch_user, client, mock_keycloak_user, monkeypatch):
+        """PATCH should return 401 when Authorization header missing"""
+        monkeypatch.setenv('SKIP_OAUTH_FOR_TESTS', 'false')
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={'Content-Type': 'application/scim+json'},
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'active', 'value': False}
+                ]
+            }
+        )
+        
+        assert response.status_code == 401
+        mock_patch_user.assert_not_called()
+
+    @patch('app.core.provisioning_service.patch_user_scim')
+    def test_patch_user_insufficient_scope(self, mock_patch_user, client, mock_keycloak_user, mock_token, monkeypatch):
+        """PATCH should return 403 when token lacks scim:write"""
+        monkeypatch.setenv('SKIP_OAUTH_FOR_TESTS', 'false')
+        
+        def no_write_scope(_token):
+            return {
+                'sub': 'tester',
+                'scope': 'scim:read',
+                'client_id': 'test-client'
+            }
+        
+        monkeypatch.setattr('app.api.scim.validate_jwt_token', no_write_scope)
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'active', 'value': False}
+                ]
+            }
+        )
+        
+        assert response.status_code == 403
+        mock_patch_user.assert_not_called()
+
+    @patch('app.core.provisioning_service.patch_user_scim')
+    def test_patch_user_unsupported_media_type(self, mock_patch_user, client, mock_keycloak_user, mock_token, monkeypatch):
+        """PATCH should enforce application/scim+json Content-Type"""
+        monkeypatch.setenv('SKIP_OAUTH_FOR_TESTS', 'false')
+        
+        def full_scope(_token):
+            return {
+                'sub': 'tester',
+                'scope': 'scim:write',
+                'client_id': 'test-client'
+            }
+        
+        monkeypatch.setattr('app.api.scim.validate_jwt_token', full_scope)
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'active', 'value': False}
+                ]
+            }
+        )
+        
+        assert response.status_code == 415
+        mock_patch_user.assert_not_called()
+
+    @patch('app.core.provisioning_service.patch_user_scim')
+    def test_patch_user_not_implemented_for_other_ops(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """PATCH should return 501 for unsupported operations"""
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'add', 'path': 'emails', 'value': []}
+                ]
+            }
+        )
+        
+        assert response.status_code == 501
+        mock_patch_user.assert_not_called()
 
 
 class TestHelperFunctions:

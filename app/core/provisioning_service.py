@@ -561,6 +561,71 @@ def replace_user_scim(user_id: str, payload: dict, correlation_id: Optional[str]
     return keycloak_to_scim(kc_user, base_url=os.environ.get("APP_BASE_URL", "https://localhost"))
 
 
+def patch_user_scim(user_id: str, active: bool, correlation_id: Optional[str] = None) -> dict:
+    """Toggle user active state via SCIM PATCH.
+    
+    Args:
+        user_id: Keycloak user ID
+        active: Desired active flag (True = enable, False = disable)
+        correlation_id: Optional correlation ID for tracing
+    
+    Returns:
+        Updated SCIM User dict
+    
+    Raises:
+        ScimError: 404 if user not found, 500 on update failure
+    """
+    token = get_service_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    user_url = f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}"
+    
+    try:
+        resp = requests.get(user_url, headers=headers, timeout=10)
+        if resp.status_code == 404:
+            raise ScimError(404, f"User with id '{user_id}' not found")
+        resp.raise_for_status()
+        kc_user = resp.json()
+    except ScimError:
+        raise
+    except Exception as exc:
+        raise ScimError(500, f"Failed to retrieve user: {exc}")
+    
+    username = kc_user.get("username") or user_id
+    previous_active = bool(kc_user.get("enabled", True))
+    
+    if previous_active != active:
+        update_payload = dict(kc_user)
+        update_payload["enabled"] = active
+        try:
+            resp = requests.put(user_url, headers=headers, json=update_payload, timeout=10)
+            resp.raise_for_status()
+        except Exception as exc:
+            raise ScimError(500, f"Failed to update active state: {exc}")
+    # Refresh state to ensure consistency (idempotent behaviour)
+    try:
+        refreshed = requests.get(user_url, headers=headers, timeout=10)
+        refreshed.raise_for_status()
+        kc_user = refreshed.json()
+    except Exception as exc:
+        raise ScimError(500, f"User state could not be refreshed: {exc}")
+    
+    audit.log_jml_event(
+        "scim_patch_user_active",
+        username,
+        operator="scim-api",
+        realm=KEYCLOAK_REALM,
+        details={
+            "user_id": user_id,
+            "previous_active": previous_active,
+            "new_active": bool(kc_user.get("enabled", True)),
+            "correlation_id": correlation_id
+        },
+        success=True
+    )
+    
+    return keycloak_to_scim(kc_user, base_url=os.environ.get("APP_BASE_URL", "https://localhost"))
+
+
 def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None:
     """Soft-delete a user by disabling (Leaver).
     

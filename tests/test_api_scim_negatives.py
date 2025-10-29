@@ -111,7 +111,7 @@ def test_content_type_validation(client, monkeypatch):
         headers={**auth_headers(), "Content-Type": "application/json"},
         json={"userName": "alice"},
     )
-    assert response.status_code == 400
+    assert response.status_code == 415
     assert response.get_json()["scimType"] == "invalidSyntax"
 
 

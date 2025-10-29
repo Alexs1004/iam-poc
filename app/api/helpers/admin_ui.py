@@ -89,44 +89,30 @@ def ui_change_role(username: str, source_role: str, target_role: str) -> None:
 
 
 def ui_disable_user(username: str) -> None:
-    """Disable user via service layer or SCIM API (DOGFOOD mode).
-    
-    Args:
-        username: Username to disable
-    
-    Raises:
-        ScimError: On validation or disable failure
-    """
+    """Disable user via service layer or SCIM API (DOGFOOD mode)."""
+    ui_set_user_active(username, False)
+
+
+def ui_set_user_active(username: str, active: bool):
+    """Set user active flag via service layer or SCIM API (DOGFOOD mode)."""
+    from app.core.keycloak import get_user_by_username
+
+    token = provisioning_service.get_service_token()
+    user = get_user_by_username(
+        provisioning_service.KEYCLOAK_BASE_URL,
+        token,
+        provisioning_service.KEYCLOAK_REALM,
+        username
+    )
+    if not user:
+        raise ScimError(404, f"User '{username}' not found")
+
+    user_id = user.get("id")
+
     if DOGFOOD_SCIM:
-        # Call SCIM API via HTTP
-        _dogfood_disable_user(username)
-    else:
-        # Call service layer directly - need to get user ID first
-        from app.core.keycloak import get_user_by_username
-        
-        # Get service token
-        token = provisioning_service.get_service_token()
-        
-        # Get user by username
-        user = get_user_by_username(
-            provisioning_service.KEYCLOAK_BASE_URL,
-            token,
-            provisioning_service.KEYCLOAK_REALM,
-            username
-        )
-        if not user:
-            raise ScimError(404, f"User '{username}' not found")
-        
-        user_id = user.get("id")
-        
-        # Use PUT with active=false
-        payload = {
-            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-            "userName": username,
-            "active": False
-        }
-        
-        provisioning_service.replace_user_scim(user_id, payload)
+        return _dogfood_set_user_active(user_id, username, active)
+
+    return provisioning_service.patch_user_scim(user_id, active)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -193,49 +179,36 @@ def _dogfood_change_role(username: str, source_role: str, target_role: str) -> N
     print(f"[dogfood] Changed role via service layer: {username} ({source_role} -> {target_role})")
 
 
-def _dogfood_disable_user(username: str) -> None:
-    """Disable user via SCIM API HTTP call (DOGFOOD mode)."""
-    from app.core.keycloak import get_user_by_username
-    
-    # Get service token
-    token = provisioning_service.get_service_token()
-    
-    # Get user ID first
-    user = get_user_by_username(
-        provisioning_service.KEYCLOAK_BASE_URL,
-        token,
-        provisioning_service.KEYCLOAK_REALM,
-        username
-    )
-    if not user:
-        raise ScimError(404, f"User '{username}' not found")
-    
-    user_id = user.get("id")
-    
-    # PUT with active=false
+def _dogfood_set_user_active(user_id: str, username: str, active: bool):
+    """Toggle user active flag via SCIM API HTTP call (DOGFOOD mode)."""
     payload = {
-        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-        "userName": username,
-        "active": False
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [
+            {
+                "op": "replace",
+                "path": "active",
+                "value": bool(active)
+            }
+        ]
     }
-    
+
     try:
-        response = requests.put(
+        response = requests.patch(
             f"{SCIM_API_URL}/Users/{user_id}",
             json=payload,
             headers=_get_dogfood_headers(),
             timeout=REQUEST_TIMEOUT,
             verify=False
         )
-        
+
         if response.status_code == 200:
-            print(f"[dogfood] Disabled user via SCIM API: {username}")
-            return
-        else:
-            error_data = response.json()
-            detail = error_data.get("detail", "Unknown error")
-            scim_type = error_data.get("scimType")
-            raise ScimError(response.status_code, detail, scim_type)
-            
+            print(f"[dogfood] Updated active={active} via SCIM API: {username}")
+            return response.json()
+
+        error_data = response.json()
+        detail = error_data.get("detail", "Unknown error")
+        scim_type = error_data.get("scimType")
+        raise ScimError(response.status_code, detail, scim_type)
+
     except requests.RequestException as exc:
         raise ScimError(500, f"DOGFOOD SCIM request failed: {exc}")

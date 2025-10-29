@@ -16,6 +16,7 @@ Security:
 from __future__ import annotations
 import os
 from flask import Blueprint, request, jsonify, Response
+from werkzeug.exceptions import BadRequest
 from app.core import provisioning_service
 from app.core.provisioning_service import ScimError
 from app.api.decorators import validate_jwt_token, TokenValidationError
@@ -153,12 +154,12 @@ def validate_request():
     if request.content_length and request.content_length > JSON_MAX_SIZE_BYTES:
         return scim_error_response(413, "Request payload too large", "invalidValue")
     
-    # 4. Validate Content-Type for POST/PUT
-    if request.method in ("POST", "PUT"):
+    # 4. Validate Content-Type for payload-bearing methods
+    if request.method in ("POST", "PUT", "PATCH"):
         content_type = request.content_type or ""
         if not content_type.startswith("application/scim+json"):
             return scim_error_response(
-                400,
+                415,
                 "Content-Type must be application/scim+json",
                 "invalidSyntax"
             )
@@ -184,7 +185,7 @@ def service_provider_config():
         "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
         "documentationUri": "https://github.com/Alexs1004/iam-poc",
         "patch": {
-            "supported": False
+            "supported": True
         },
         "bulk": {
             "supported": False,
@@ -406,6 +407,57 @@ def replace_user(user_id: str):
         correlation_id = request.headers.get("X-Correlation-Id")
         
         scim_user = provisioning_service.replace_user_scim(user_id, payload, correlation_id)
+        return jsonify(scim_user), 200
+        
+    except ScimError:
+        raise
+    except Exception as exc:
+        return scim_error(500, f"Internal server error: {exc}")
+
+
+@bp.route('/Users/<user_id>', methods=['PATCH'])
+def patch_user(user_id: str):
+    """Partially update a user (active flag only).
+    
+    Implements minimal SCIM PatchOp (RFC 7644 Section 3.5.2) restricted to
+    toggling the `active` attribute.
+    """
+    try:
+        try:
+            payload = request.get_json()
+        except BadRequest:
+            return scim_error(400, "Request body is not valid JSON", "invalidSyntax")
+        
+        if not isinstance(payload, dict):
+            return scim_error(400, "Request body must be a JSON object", "invalidSyntax")
+        
+        schemas = payload.get("schemas")
+        if schemas != ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]:
+            return scim_error(400, "schemas must equal ['urn:ietf:params:scim:api:messages:2.0:PatchOp']", "invalidSyntax")
+        
+        operations = payload.get("Operations")
+        if not isinstance(operations, list) or len(operations) != 1:
+            return scim_error(400, "Exactly one operation is required", "invalidSyntax")
+        
+        operation = operations[0]
+        if not isinstance(operation, dict):
+            return scim_error(400, "Operation must be an object", "invalidSyntax")
+        
+        if operation.get("op") != "replace":
+            return scim_error(501, "Only 'replace' operations are supported", "notImplemented")
+        
+        if operation.get("path") != "active":
+            return scim_error(501, "Only path 'active' is supported", "notImplemented")
+        
+        if "value" not in operation or not isinstance(operation.get("value"), bool):
+            return scim_error(400, "Operation value must be a boolean", "invalidValue")
+        
+        correlation_id = request.headers.get("X-Correlation-Id")
+        scim_user = provisioning_service.patch_user_scim(
+            user_id,
+            operation["value"],
+            correlation_id
+        )
         return jsonify(scim_user), 200
         
     except ScimError:
