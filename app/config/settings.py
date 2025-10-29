@@ -188,8 +188,7 @@ def load_settings() -> AppConfig:
             # and mounted as /run/secrets. DO NOT call Azure Key Vault from container.
             raise RuntimeError(
                 "FLASK_SECRET_KEY not found in /run/secrets. "
-                "Run 'make load-secrets' on the host to populate .runtime/secrets/, "
-                "then restart containers to mount them."
+                "Run 'make quickstart' on the host (loads secrets and restarts services)."
             )
         
         if not secret_key:
