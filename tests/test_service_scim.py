@@ -127,6 +127,34 @@ def valid_create_payload():
     }
 
 
+def test_load_secret_from_file_reads_disk(monkeypatch, tmp_path):
+    secrets_dir = tmp_path / "run_secrets"
+    secrets_dir.mkdir()
+    secret_path = secrets_dir / "test_secret"
+    secret_path.write_text("value\n", encoding="utf-8")
+
+    def fake_path(value):
+        if value == "/run/secrets":
+            return secrets_dir
+        return pathlib.Path(value)
+
+    monkeypatch.setattr(provisioning_service, "Path", fake_path, raising=False)
+    result = provisioning_service._load_secret_from_file("test_secret")
+    assert result == "value"
+
+
+def test_load_secret_from_file_env_fallback(monkeypatch):
+    monkeypatch.setattr(
+        provisioning_service,
+        "Path",
+        lambda value: pathlib.Path("/nonexistent"),
+        raising=False,
+    )
+    monkeypatch.setenv("ENV_SECRET", "fallback")
+    result = provisioning_service._load_secret_from_file("missing", "ENV_SECRET")
+    assert result == "fallback"
+
+
 # ============================================================================
 # Validation Tests
 # ============================================================================

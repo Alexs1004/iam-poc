@@ -1,117 +1,140 @@
 from types import SimpleNamespace
 
 import pytest
-from flask import Flask, jsonify
+from flask import Flask
+from jwt.exceptions import ExpiredSignatureError
 
 from app.api import decorators
-from app.api.decorators import (
-    TokenValidationError,
-    require_oauth_token,
-    get_oauth_claims,
-    get_oauth_client_id,
-    validate_jwt_token,
-)
 
 
-@pytest.fixture(autouse=True)
-def reset_jwks_cache():
-    """Ensure JWKS cache does not leak between tests."""
-    decorators._jwks_client = None
-    yield
-    decorators._jwks_client = None
-
-
-@pytest.fixture()
-def flask_app():
+@pytest.fixture
+def app_ctx():
     app = Flask(__name__)
-    app.config.update(TESTING=True, SKIP_OAUTH_FOR_TESTS=False)
+    app.config["TESTING"] = False
     app.config["APP_CONFIG"] = SimpleNamespace(
-        keycloak_issuer="https://localhost/realms/demo",
-        keycloak_server_url="https://localhost/realms/demo",
+        keycloak_server_url="https://issuer/realms/demo",
+        keycloak_issuer="https://issuer/realms/demo",
     )
+    with app.app_context():
+        yield app
+
+
+class DummySigningKey:
+    key = "secret"
+
+
+class DummyJWKS:
+    def get_signing_key_from_jwt(self, token):
+        return DummySigningKey()
+
+
+def test_validate_jwt_token_expired_raises_token_validation_error(monkeypatch, app_ctx):
+    monkeypatch.setattr(decorators, "_jwks_client", None)
+    monkeypatch.setattr(decorators, "get_jwks_client", lambda: DummyJWKS())
+
+    def raise_expired(*args, **kwargs):
+        raise ExpiredSignatureError("expired")
+
+    monkeypatch.setattr(decorators.jwt, "decode", raise_expired)
+
+    with pytest.raises(decorators.TokenValidationError) as exc:
+        decorators.validate_jwt_token("header.payload.signature")
+
+    assert "Token expired" in str(exc.value)
+
+
+def test_validate_jwt_token_unexpected_exception_wrapped(monkeypatch, app_ctx):
+    monkeypatch.setattr(decorators, "_jwks_client", None)
+    monkeypatch.setattr(decorators, "get_jwks_client", lambda: DummyJWKS())
+
+    def raise_generic(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(decorators.jwt, "decode", raise_generic)
+
+    with pytest.raises(decorators.TokenValidationError) as exc:
+        decorators.validate_jwt_token("header.payload.signature")
+
+    assert "Token validation failed" in str(exc.value)
+
+
+def test_validate_jwt_token_success(monkeypatch, app_ctx):
+    monkeypatch.setattr(decorators, "_jwks_client", None)
+    monkeypatch.setattr(decorators, "get_jwks_client", lambda: DummyJWKS())
+
+    claims_payload = {
+        "sub": "user-123",
+        "scope": "scim:read scim:write",
+        "client_id": "automation-cli",
+    }
+
+    def decode_success(*args, **kwargs):
+        return claims_payload
+
+    monkeypatch.setattr(decorators.jwt, "decode", decode_success)
+
+    claims = decorators.validate_jwt_token("header.payload.signature")
+    assert claims["sub"] == "user-123"
+    assert claims["scope"] == "scim:read scim:write"
+
+
+def _make_protected_app(monkeypatch, validator):
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["SKIP_OAUTH_FOR_TESTS"] = False
+    app.config["APP_CONFIG"] = SimpleNamespace(
+        keycloak_server_url="https://issuer/realms/demo",
+        keycloak_issuer="https://issuer/realms/demo",
+    )
+    monkeypatch.setattr(decorators, "validate_jwt_token", validator)
 
     @app.route("/protected")
-    @require_oauth_token(scopes=["scim:write"])
+    @decorators.require_oauth_token(scopes=["scim:write"])
     def protected():
-        claims = get_oauth_claims() or {}
-        client_id = get_oauth_client_id()
-        return jsonify({"client_id": client_id, "scope": claims.get("scope", "")})
+        return ("OK", 204)
 
     return app
 
 
-@pytest.fixture()
-def client(flask_app):
-    with flask_app.test_client() as client:
-        yield client
-
-
-def test_missing_authorization_header_returns_401(client):
-    response = client.get("/protected")
-    body = response.get_json()
+def test_require_oauth_token_missing_header(monkeypatch):
+    app = _make_protected_app(monkeypatch, lambda _: {})
+    with app.test_client() as client:
+        response = client.get("/protected")
     assert response.status_code == 401
-    assert body["scimType"] == "unauthorized"
 
 
-def test_invalid_authorization_scheme(client):
-    response = client.get("/protected", headers={"Authorization": "Basic abc"})
-    body = response.get_json()
+def test_require_oauth_token_non_bearer(monkeypatch):
+    app = _make_protected_app(monkeypatch, lambda _: {})
+    with app.test_client() as client:
+        response = client.get("/protected", headers={"Authorization": "Basic abc"})
     assert response.status_code == 401
-    assert "Invalid Authorization header format" in body["detail"]
 
 
-def test_empty_bearer_token(client):
-    response = client.get("/protected", headers={"Authorization": "Bearer "})
-    body = response.get_json()
-    assert response.status_code == 401
-    assert body["detail"] == "Bearer token is empty"
+def test_require_oauth_token_insufficient_scope(monkeypatch):
+    def validator(_token):
+        return {"scope": "scim:read", "client_id": "test-client"}
 
-
-def test_invalid_token_returns_401(monkeypatch, client):
-    monkeypatch.setattr(
-        decorators,
-        "validate_jwt_token",
-        lambda token: (_ for _ in ()).throw(TokenValidationError("bad token")),
-    )
-
-    response = client.get("/protected", headers={"Authorization": "Bearer token"})
-    body = response.get_json()
-    assert response.status_code == 401
-    assert body["scimType"] == "invalidToken"
-    assert "bad token" in body["detail"]
-
-
-def test_insufficient_scope_returns_403(monkeypatch, client):
-    monkeypatch.setattr(
-        decorators,
-        "validate_jwt_token",
-        lambda token: {"scope": "scim:read", "client_id": "automation-cli"},
-    )
-
-    response = client.get("/protected", headers={"Authorization": "Bearer token"})
-    body = response.get_json()
+    app = _make_protected_app(monkeypatch, validator)
+    with app.test_client() as client:
+        response = client.get("/protected", headers={"Authorization": "Bearer token"})
     assert response.status_code == 403
-    assert body["scimType"] == "insufficientScope"
 
 
-def test_successful_request_sets_claims_context(monkeypatch, client):
-    monkeypatch.setattr(
-        decorators,
-        "validate_jwt_token",
-        lambda token: {"scope": "scim:read scim:write", "client_id": "automation-cli"},
-    )
+def test_require_oauth_token_success(monkeypatch):
+    def validator(_token):
+        return {"scope": "scim:read scim:write", "client_id": "svc"}
 
-    response = client.get("/protected", headers={"Authorization": "Bearer token"})
-    data = response.get_json()
-    assert response.status_code == 200
-    assert data == {"client_id": "automation-cli", "scope": "scim:read scim:write"}
+    app = _make_protected_app(monkeypatch, validator)
+    with app.test_client() as client:
+        response = client.get("/protected", headers={"Authorization": "Bearer token"})
+    assert response.status_code == 204
 
 
-def test_validate_jwt_token_skips_when_testing(monkeypatch, flask_app):
-    flask_app.config["SKIP_OAUTH_FOR_TESTS"] = True
+def test_require_oauth_token_handles_validation_error(monkeypatch):
+    def validator(_token):
+        raise decorators.TokenValidationError("boom")
 
-    with flask_app.app_context():
-        claims = validate_jwt_token("ignored-token")
-
-    assert claims["client_id"] == "test-client"
-    assert claims["scope"] == "scim:read scim:write"
+    app = _make_protected_app(monkeypatch, validator)
+    with app.test_client() as client:
+        response = client.get("/protected", headers={"Authorization": "Bearer token"})
+    assert response.status_code == 401

@@ -74,8 +74,7 @@ paths:
       summary: Search or list users
       description: >
         Supports pagination and filtering by `userName`. Filtering operators are
-        restricted to `eq` for security hardening while bearer-token enforcement
-        is finalised.
+        restricted to `eq` for security hardening.
       operationId: listUsers
       parameters:
         - $ref: '#/components/parameters/Filter'
@@ -186,7 +185,9 @@ paths:
     put:
       tags: [Users]
       summary: Full replace not supported
-      description: Use PATCH (replace path=active) to toggle enable/disable, or DELETE for soft-delete.
+      description: >
+        Full replace is not implemented. This endpoint always returns 501. Use PATCH
+        (replace path=active) to toggle enable/disable, or DELETE for soft-delete.
       operationId: replaceUser
       requestBody:
         required: true
@@ -451,7 +452,7 @@ components:
         schemas: ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"]
         documentationUri: https://localhost/scim/docs
         patch:
-          supported: false
+          supported: true
         bulk:
           supported: false
           maxOperations: 0

@@ -657,15 +657,19 @@ def test_leaver_01_immediate_session_revocation(scim_headers, test_user_unique, 
     
     print(f"✅ Created user: {user_id}")
     
-    # Step 2: Disable user (Leaver operation)
+    # Step 2: Disable user (Leaver operation) via PATCH active=false
     disable_payload = {
-        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-        "id": user_id,
-        "userName": test_user_unique,
-        "active": False,  # This triggers session revocation in disable_user()
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        "Operations": [
+            {
+                "op": "replace",
+                "path": "active",
+                "value": False,
+            }
+        ],
     }
     
-    response = requests.put(
+    response = requests.patch(
         f"{APP_BASE_URL}/scim/v2/Users/{user_id}",
         json=disable_payload,
         headers=scim_headers,
@@ -673,8 +677,8 @@ def test_leaver_01_immediate_session_revocation(scim_headers, test_user_unique, 
     )
     assert response.status_code == 200, f"Disable failed: {response.text}"
     
-    disabled_user = response.json()
-    assert disabled_user["active"] is False, "User should be disabled"
+    patched_user = response.json()
+    assert patched_user["active"] is False, "User should be disabled"
     
     print(f"✅ LEAVER-01: User disabled (session revocation integrated in disable_user)")
     
