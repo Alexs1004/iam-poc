@@ -18,8 +18,10 @@
         {% if is_authenticated %}
           <a class="btn-primary" href="{{ url_for('admin.me') }}">View my profile</a>
           <a class="btn-secondary" href="{{ url_for('admin.admin_dashboard') }}">Admin area</a>
+          <a class="btn-secondary" href="{{ keycloak_console_url if keycloak_console_url else 'https://localhost/admin/demo/console/' }}" target="_blank" rel="noopener noreferrer">Keycloak Console (demo)</a>
         {% else %}
           <a class="btn-primary" href="{{ url_for('auth.login') }}">Sign in with Keycloak</a>
+          <a class="btn-secondary" href="{{ keycloak_console_url if keycloak_console_url else 'https://localhost/admin/demo/console/' }}" target="_blank" rel="noopener noreferrer">Keycloak Console (admin)</a>
         {% endif %}
       </div>
     </div>

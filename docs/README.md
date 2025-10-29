@@ -9,6 +9,10 @@
 - [Test Strategy](TEST_STRATEGY.md) — Pyramide de tests, couverture, CI/CD.
 - [API Reference](API_REFERENCE.md) — Endpoints SCIM, exemples, erreurs.
 - [Roadmap](ROADMAP.md) — Vision, jalons, apprentissages à venir.
+- [SCIM & OIDC Flow](SCIM_OIDC_FLOW.md) — Séquences mermaid, mapping attributs.
+- [Deployment Guide](DEPLOYMENT_GUIDE.md) — Déploiement Azure Key Vault / Managed Identity.
+- [Threat Model](THREAT_MODEL.md) — STRIDE, MITRE ATT&CK, conformité FINMA/nLPD.
+- [Local SCIM Testing](LOCAL_SCIM_TESTING.md) — Tests locaux (curl, tokens, docs).
 
 ## Ressources annexes
 - Tests automatisés : `../tests/`

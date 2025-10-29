@@ -8,6 +8,7 @@ import ipaddress
 import hmac
 import os
 import secrets
+from pathlib import Path
 from tempfile import gettempdir
 
 from flask import Flask, session, request, g, abort, redirect, url_for, get_flashed_messages
@@ -27,6 +28,10 @@ def create_app() -> Flask:
     
     # Create Flask app
     app = Flask(__name__)
+    app.config.setdefault(
+        "OPENAPI_SPEC_PATH",
+        str(Path(app.root_path).parent / "openapi" / "scim_openapi.yaml"),
+    )
     
     # Store config for easy access in routes
     app.config["APP_CONFIG"] = cfg
@@ -77,11 +82,13 @@ def create_app() -> Flask:
     from app.api import health, errors
     from app.api import admin
     from app.api import scim
+    from app.api import docs as docs_routes
     
     app.register_blueprint(auth.bp)
     app.register_blueprint(health.bp)
     app.register_blueprint(admin.bp, url_prefix="/admin")
     app.register_blueprint(scim.bp, url_prefix="/scim/v2")
+    app.register_blueprint(docs_routes.bp)
     
     # Register error handlers
     errors.register_error_handlers(app)
