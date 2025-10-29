@@ -402,17 +402,11 @@ def replace_user(user_id: str):
     Returns:
         200 OK with updated User resource
     """
-    try:
-        payload = request.get_json()
-        correlation_id = request.headers.get("X-Correlation-Id")
-        
-        scim_user = provisioning_service.replace_user_scim(user_id, payload, correlation_id)
-        return jsonify(scim_user), 200
-        
-    except ScimError:
-        raise
-    except Exception as exc:
-        return scim_error(500, f"Internal server error: {exc}")
+    return scim_error(
+        501,
+        "Full replace is not supported. Use PATCH (active) or DELETE.",
+        "notImplemented"
+    )
 
 
 @bp.route('/Users/<user_id>', methods=['PATCH'])

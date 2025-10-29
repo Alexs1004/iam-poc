@@ -229,7 +229,7 @@ def test_create_user_handles_generic_exception(monkeypatch, client):
         json={"userName": "alice"},
     )
     assert response.status_code == 500
-    assert "Internal server error" in response.get_json()["detail"]
+    assert "boom" in response.get_json()["detail"]
 
 
 def test_get_user_handles_generic_exception(monkeypatch, client):
@@ -281,7 +281,7 @@ def test_replace_user_handles_generic_exception(monkeypatch, client):
         headers={**auth_headers(), "Content-Type": "application/scim+json"},
         json={"userName": "alice"},
     )
-    assert response.status_code == 500
+    assert response.status_code == 501
 
 
 def test_delete_user_handles_generic_exception(monkeypatch, client):

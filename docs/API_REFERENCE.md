@@ -15,8 +15,8 @@
 | `GET` | `/Users` | Lister les utilisateurs (supporte `filter`, `count`, `startIndex`). |
 | `POST` | `/Users` | Créer un utilisateur. |
 | `GET` | `/Users/{id}` | Récupérer un utilisateur par ID. |
-| `PUT` | `/Users/{id}` | Remplacer l’utilisateur (used pour mover/leaver). |
-| `PATCH` | `/Users/{id}` | Support planifié (RFC 7644 section 3.5). |
+| `PUT` | `/Users/{id}` | Not Implemented (501). Utiliser PATCH active ou DELETE. |
+| `PATCH` | `/Users/{id}` | Remplacer `active` (enable/disable) via `op=replace, path=active`. |
 | `DELETE` | `/Users/{id}` | Soft delete (désactive l’utilisateur). |
 | `GET` | `/ServiceProviderConfig` | Capacités déclarées (auth, filtering). |
 | `GET` | `/Schemas` | Schémas supportés (User, EnterpriseUser). |

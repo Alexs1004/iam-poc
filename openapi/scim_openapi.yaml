@@ -185,7 +185,8 @@ paths:
 
     put:
       tags: [Users]
-      summary: Replace an existing user (full replace)
+      summary: Full replace not supported
+      description: Use PATCH (replace path=active) to toggle enable/disable, or DELETE for soft-delete.
       operationId: replaceUser
       requestBody:
         required: true
@@ -194,18 +195,12 @@ paths:
             schema:
               $ref: '#/components/schemas/UserUpdateRequest'
       responses:
-        '200':
-          description: Updated user representation
-          content:
-            application/scim+json:
-              schema:
-                $ref: '#/components/schemas/User'
-        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '500': { $ref: '#/components/responses/InternalError' }
+        '501': { $ref: '#/components/responses/NotImplemented' }
 
     patch:
       tags: [Users]

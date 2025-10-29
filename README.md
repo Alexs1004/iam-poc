@@ -26,9 +26,14 @@ open https://localhost
 - [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) — chargement Key Vault (`make load-secrets`) et rotation (`make rotate-secret`).
 - `make verify-audit` + [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) — journaux JML signés HMAC-SHA256.
 
+## SCIM
+| Méthode | Endpoint | Statut |
+|---------|----------|--------|
+| `PUT` | `/scim/v2/Users/{id}` | Not Implemented (501) — Use PATCH active or DELETE. |
+
 ## Limitations actuelles
 - Filtrage SCIM limité à `userName eq` (pas d’opérateurs avancés).
-- PATCH SCIM non supporté (`patch.supported=false` dans ServiceProviderConfig).
+- PATCH SCIM restreint à `active` (toggle enable/disable, via replace path=active).
 - Les requêtes POST/PUT/DELETE doivent utiliser `Content-Type: application/scim+json` (sinon 415).
 
 ## Ciblage poste

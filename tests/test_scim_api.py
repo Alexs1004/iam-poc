@@ -68,6 +68,7 @@ def mock_oauth_validation(monkeypatch):
         }
     
     monkeypatch.setattr('app.api.decorators.validate_jwt_token', mock_validate)
+    monkeypatch.setattr('app.api.scim.validate_jwt_token', mock_validate)
     return mock_validate
 
 
@@ -284,11 +285,60 @@ class TestSCIMUserCRUD:
         query_dict = call_args[0]
         assert query_dict.get('filter') == 'userName eq "alice"'
         
-    @patch('app.core.provisioning_service.replace_user_scim')
-    def test_update_user_disable(self, mock_replace, client, mock_keycloak_user, mock_token, mock_oauth_validation):
-        """Test PUT /Users/{id} with active=false disables user"""
-        disabled_scim_user = keycloak_to_scim({**mock_keycloak_user, 'enabled': False})
-        mock_replace.return_value = disabled_scim_user
+    def test_put_user_not_implemented(self, client, mock_keycloak_user, mock_token, mock_oauth_validation, monkeypatch):
+        """PUT /Users/{id} should return 501 Not Implemented."""
+        monkeypatch.setenv('SKIP_OAUTH_FOR_TESTS', 'false')
+        
+        response = client.put(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token,
+                'Accept': 'application/scim+json'
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
+                'userName': 'alice',
+                'active': False
+            }
+        )
+        
+        assert response.status_code == 501
+        data = json.loads(response.data)
+        assert data['scimType'] == 'notImplemented'
+        assert data['detail'] == "Full replace is not supported. Use PATCH (active) or DELETE."
+        assert data['status'] == '501'
+
+    def test_put_user_missing_authorization(self, client, mock_keycloak_user, monkeypatch):
+        """PUT requires Authorization header."""
+        monkeypatch.setenv('SKIP_OAUTH_FOR_TESTS', 'false')
+        
+        response = client.put(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={'Content-Type': 'application/scim+json'},
+            json={
+                'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
+                'userName': 'alice',
+                'active': False
+            }
+        )
+        
+        assert response.status_code == 401
+        body = json.loads(response.data)
+        assert body['scimType'] == 'unauthorized'
+
+    def test_put_user_insufficient_scope(self, client, mock_keycloak_user, mock_token, monkeypatch):
+        """PUT requires scim:write scope."""
+        monkeypatch.setenv('SKIP_OAUTH_FOR_TESTS', 'false')
+        
+        def read_only_claims(_token):
+            return {
+                'sub': 'tester',
+                'scope': 'scim:read',
+                'client_id': 'test-client'
+            }
+        
+        monkeypatch.setattr('app.api.scim.validate_jwt_token', read_only_claims)
         
         response = client.put(
             f'/scim/v2/Users/{mock_keycloak_user["id"]}',
@@ -303,12 +353,30 @@ class TestSCIMUserCRUD:
             }
         )
         
-        assert response.status_code == 200
-        data = json.loads(response.data)
-        assert data['active'] is False
+        assert response.status_code == 403
+        body = json.loads(response.data)
+        assert body['scimType'] == 'forbidden'
+
+    def test_put_user_unsupported_media_type(self, client, mock_keycloak_user, mock_token, mock_oauth_validation, monkeypatch):
+        """PUT enforces application/scim+json Content-Type."""
+        monkeypatch.setenv('SKIP_OAUTH_FOR_TESTS', 'false')
         
-        # Verify replace_user_scim was called
-        mock_replace.assert_called_once()
+        response = client.put(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:schemas:core:2.0:User'],
+                'userName': 'alice',
+                'active': False
+            }
+        )
+        
+        assert response.status_code == 415
+        body = json.loads(response.data)
+        assert body['scimType'] == 'invalidSyntax'
         
     @patch('app.core.provisioning_service.delete_user_scim')
     def test_delete_user(self, mock_delete, client, mock_keycloak_user, mock_token, mock_oauth_validation):
