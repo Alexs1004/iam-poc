@@ -47,6 +47,7 @@ Responses:
 - `400` — malformed payload / missing fields
 - `401` / `403` — auth failures
 - `409` — duplicate `userName`
+- `413` — request payload too large (>64 KB)
 - `415` — wrong media type
 - `500` — provisioning failure
 
@@ -77,6 +78,7 @@ Responses:
 - `400` — invalid JSON, missing keys, non-boolean value
 - `401` / `403`
 - `404` — unknown id
+- `413` — request payload too large (>64 KB)
 - `415` — wrong content type
 - `500` — Keycloak failure
 - `501` — unsupported `op` or `path`
@@ -99,7 +101,18 @@ Always returns:
 ### `POST /Users/.search`
 Functional equivalent of `GET /Users` but accepts filter/pagination in the body. Treated as a write operation ⇒ requires `scim:write`.
 
+Body (all fields optional):
+```json
+{
+  "startIndex": 1,
+  "count": 10,
+  "filter": "userName eq \"value\""
+}
+```
+
 Responses mirror `GET /Users`.
+
+**Note**: This endpoint provides Azure AD/Okta compatibility for complex filter expressions via POST body.
 
 ### Discovery endpoints
 - `GET /ServiceProviderConfig` — advertises `patch.supported=true`, `filter.supported=true`, `bulk=false`, `sort=false`, `etag=false`, OAuth bearer authentication.

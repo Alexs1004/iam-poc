@@ -3,7 +3,7 @@
 ![Made with Azure Key Vault](https://img.shields.io/badge/Azure-Key%20Vault-0078D4?logo=microsoft-azure&logoColor=white)
 ![Demo in ~2 min](https://img.shields.io/badge/Demo-~2%20minutes-success?logo=github)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-~240%20passed-brightgreen?logo=pytest)
+![Tests](https://img.shields.io/badge/Tests-245%20passed-brightgreen?logo=pytest)
 ![Coverage](https://img.shields.io/badge/Coverage-~90%25-brightgreen?logo=codecov)
 ![Security](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
@@ -80,7 +80,7 @@ Verify from UI (1 click): https://localhost/verification — runs:
 | POST   | /scim/v2/Users          | OK |
 | GET    | /scim/v2/Users/{id}     | OK |
 | PATCH  | /scim/v2/Users/{id}     | OK — `replace path=active` only (idempotent) |
-| DELETE | /scim/v2/Users/{id}     | OK — soft-delete (disable) |
+| DELETE | /scim/v2/Users/{id}     | OK — soft-delete (disable, idempotent) |
 | PUT    | /scim/v2/Users/{id}     | **501** — use PATCH or DELETE |
 
 PUT returns 501 with detail: `Full replace is not supported. Use PATCH (active) or DELETE.`

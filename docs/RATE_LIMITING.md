@@ -25,9 +25,11 @@ limit_req_zone $binary_remote_addr zone=admin:10m rate=30r/m;
 
 | Endpoint | Rate Limit | Burst | Purpose |
 |----------|------------|-------|---------|
-| `/verification` | 10 req/min | 5 | Development/testing endpoint |
-| `/scim/v2/*` | 60 req/min | 10 | Production SCIM API |
-| `/admin/*` | 30 req/min | 8 | Administrative interface |
+| `/verification` | 10 req/min | 5 | Development/testing endpoint (allows 5 extra req for spikes) |
+| `/scim/v2/*` | 60 req/min | 10 | Production SCIM API (allows 10 extra req for spikes) |
+| `/admin/*` | 30 req/min | 8 | Administrative interface (allows 8 extra req for spikes) |
+
+**Burst Values**: Allow temporary spikes above the base rate limit without queuing (processed immediately with `nodelay`).
 
 ## 🚨 Security Benefits
 

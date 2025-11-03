@@ -27,6 +27,7 @@ Authoritative view of the security controls implemented in this SCIM PoC. Derive
 | Secrets | `/run/secrets` + Azure Key Vault loader | `app/core/provisioning_service._load_secret_from_file`, `settings.service_client_secret_resolved` |
 | Audit | `scripts/audit.log_jml_event` HMAC signature + chmod 600 | `scripts/audit.py` |
 | CSRF/UI hardening | CSRF tokens for admin UI, cookies `Secure`/`HttpOnly`/`SameSite=Lax` | `app/flask_app.py::_register_middleware` |
+| Session security | Flask session secret key with rotation support (SECRET_KEY_FALLBACKS) | `app/flask_app.py:35-43` |
 
 ## Threat considerations
 - **Bearer theft**: tokens are required on every request; expired/invalid tokens yield 401 with SCIM error payload.
