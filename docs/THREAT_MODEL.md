@@ -1,68 +1,51 @@
-# Threat Model – IAM PoC (Swiss Enterprise)
+# Threat Model — Mini IAM Lab
 
-## 1. Contexte
+## Scope
+- SCIM 2.0 API (`/scim/v2`) served by Flask behind nginx.
+- Keycloak (demo realm) providing OAuth tokens and admin REST API.
+- Secrets stored under `/run/secrets` (demo) or Azure Key Vault (production).
+- Audit events persisted in `.runtime/audit/jml-events.jsonl` with HMAC-SHA256 signatures.
 
-- IAM applicatif pour recrutement (Suisse romande), orienté Azure-first.
-- Acteurs : candidats, recruteurs, automatisation SCIM, identités techniques.
-- Normes : RFC 7644, FINMA Circ. 08/21, nLPD, ISO 27001, OWASP API.
-
-## 2. Vue Système
-
+## Architecture summary
 ```
-Clients → Nginx (TLS) → Flask (SCIM/Admin) → Keycloak → Azure Key Vault
+Clients ──TLS──> nginx ──> Flask (Admin + SCIM) ──> Keycloak
+                                 │
+                                 └──> Azure Key Vault (prod secrets)
+                                 └──> audit.jsonl (HMAC)
 ```
 
-Principaux actifs : secrets dans Key Vault, comptes Keycloak, audit logs, données personnelles (nLPD).
+## STRIDE overview
+| Threat | Scenario | Mitigation |
+|--------|----------|------------|
+| Spoofing | Missing/invalid bearer token | `Authorization: Bearer` required for every non-discovery request; invalid tokens → 401 (`tests/test_scim_oauth_validation.py`). |
+| Tampering | Malicious PATCH payload | Handler restricts to a single `replace active` operation with boolean value; other ops/paths → 501. |
+| Repudiation | User denies disable action | Audit event logged via `scripts/audit.log_jml_event` with HMAC signature (`make verify-audit`). |
+| Information disclosure | Secrets leaked from filesystem | Production retrieves secrets from Key Vault (`settings.service_client_secret_resolved`); demo secrets are ephemeral. |
+| Denial of service | Filter abuse (`filter=userName sw *`) | `list_users_scim` only accepts `userName eq`; unrecognised operators return 501. |
+| Elevation of privilege | Reuse of automation-cli token | Scope enforcement (read vs write). Note: service account bypass currently allows automation-cli without explicit scopes (documented TODO). |
 
-## 3. STRIDE Résumé
+## MITRE ATT&CK mapping
+| Technique | ID | Relevance | Control |
+|-----------|----|-----------|---------|
+| Valid Accounts | T1078 | Bearer tokens reused | Rotate service account secret (`make rotate-secret`), monitor Keycloak events. |
+| Exposed Admin Interface | T1190 | `/admin` UI | OIDC login + TOTP, CSRF enforcement, CSP (`proxy/nginx.conf`). |
+| Credentials in Files | T1552.001 | Secrets in repo | Secrets resolved via Key Vault or generated at runtime; `.env` should not contain prod secrets. |
+| API Abuse | T1190/T1499 | Flood SCIM endpoints | TODO: add nginx/App Gateway rate limiting; audit logs capture traffic for investigation. |
 
-| Catégorie | Risque | Exemple | Mitigation |
-|-----------|--------|---------|------------|
-| **Spoofing** | Tokens usurpés | Attaquant obtient bearer token | OAuth strict, rotation secrets, `DefaultAzureCredential` + managed identity. |
-| **Tampering** | Altération SCIM payload | Injection dans PATCH | Validation stricte (`schemas`, `active` boolean), JSON schema, audit HMAC. |
-| **Repudiation** | Nie l’opération | SCIM delete contesté | Logs HMAC-SHA256 + horodatage UTC + rétention immuable. |
-| **Information Disclosure** | Secrets exposés | `.env` livré en prod | Secrets uniquement dans Key Vault + `/run/secrets` (chmod 400). |
-| **Denial of Service** | Flood SCIM | Burst requêtes `filter` | Rate-limit au proxy, limiter `count`, WAF (Azure App Gateway). |
-| **Elevation of Privilege** | Service account abusé | Token automation-cli réutilisé | Rôles Keycloak limités, rotation orchestrée, IP allow-list. |
+## RFC 7644 focus areas
+- `PATCH` limited to toggling `active` to avoid privilege escalation via attribute changes.
+- `PUT` disabled (`501`) to prevent unintended full replacement.
+- `bulk` operations not supported (`ServiceProviderConfig.bulk.supported=false`).
+- `filter` restricted to `userName eq` for predictability and injection resistance.
 
-## 4. MITRE ATT&CK (sélection)
+## Control verification
+- OAuth enforcement: `pytest tests/test_scim_oauth_validation.py`.
+- Content-Type enforcement: `tests/test_scim_api_negatives.py::test_content_type_validation`.
+- Audit integrity: `make verify-audit`.
+- TLS/CSP/HSTS: defined in `proxy/nginx.conf`.
 
-| Technique | ID | Impact | Contremesure |
-|-----------|----|--------|--------------|
-| Credential Dumping | T1552.001 | Exfiltration secrets | Key Vault + RBAC → pas de secrets dans FS. |
-| Valid Accounts | T1078 | Tokens automation-cli | Rotation + surveillance logs Keycloak (`events`). |
-| Exposed Admin Interface | T1190 | Attaque /admin | OIDC + MFA TOTP, CSP stricte, CSRF enforcement. |
-| API Abuse | T1190/T1499 | Brute force SCIM | Rate limiting (nginx), audit HMAC + détection anomalie. |
-
-## 5. RFC 7644 Risks
-
-- **Filter injection** : expressions complexes ⇒ restreint à `eq`.
-- **Bulk** : désactivé (`bulk.supported=false`) pour éviter DoS.
-- **Patch** : opérations limitées (`replace`) et cibles restreintes.
-- **Attribute over-posting** : validation stricte (schemas whitelists).
-- **Access tokens** : distribution par service account unique (rotation journalière recommandée).
-
-## 6. Mitigations Clés
-
-1. **OAuth obligatoire** (Bearer) – refuser toute requête sans `Authorization`.
-2. **TLS 1.2+** (HSTS 31536000, disable TLS 1.0/1.1).
-3. **Audit non répudiable** – HMAC + stockage immuable (Azure Storage).
-4. **Key Vault** – Soft delete + purge protection + RBAC minimal.
-5. **Secrets rotation** – `make rotate-secret`, pipeline automatisé.
-6. **Monitoring** – Azure Monitor + AAD sign-in logs + Key Vault diagnostics.
-7. **Data minimisation** – champs SCIM limités (respect nLPD art. 5).
-
-## 7. Conformité & Références
-
-- **FINMA RS 08/21** : ch. 9 (sécurité des systèmes, journaux), ch. 12 (externalisation).
-- **nLPD** : art. 8-12 (licéité, sécurité).
-- **ISO 27001/27002** : A.9 (contrôle accès), A.12 (exploitation).
-- **OWASP API Security Top 10 (2023)** : API1 (Broken Auth), API3 (Excessive Data), API5 (Broken Function Level Auth).
-
-## 8. Actions Ouvertes
-
-- [ ] Intégrer Managed Identity (supprimer `az login` manuel).
-- [ ] Activer WAF (Azure App Gateway) + rate limiting.
-- [ ] Intégrer alertes Key Vault (retrievals anormaux, 403).
-- [ ] Enrichir tests fuzzing SCIM (OWASP ZAP / Motherload).
-- [ ] Ajouter journaux structurés (App Insights) → pipeline SOC.
+## Open actions
+- Enforce scope check for `automation-cli` (remove bypass).
+- Implement rate limiting / WAF policy for SCIM endpoints.
+- Ship audit logs to immutable storage (Azure Blob immutability).
+- Add Azure Monitor detections for Key Vault secret access anomalies.

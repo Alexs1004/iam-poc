@@ -20,6 +20,7 @@
         <a href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">Keycloak Console</a>
       {% endif %}
       <a href="{{ url_for('docs.scim_docs') }}">SCIM docs</a>
+      <a href="{{ url_for('verification.verification_page') }}">Verification</a>
       {% if is_authenticated %}
         <a href="{{ url_for('admin.me') }}">Profile</a>
         <a href="{{ url_for('admin.admin_dashboard') }}">Admin</a>

@@ -83,12 +83,14 @@ def create_app() -> Flask:
     from app.api import admin
     from app.api import scim
     from app.api import docs as docs_routes
+    from app.api import verification
     
     app.register_blueprint(auth.bp)
     app.register_blueprint(health.bp)
     app.register_blueprint(admin.bp, url_prefix="/admin")
     app.register_blueprint(scim.bp, url_prefix="/scim/v2")
     app.register_blueprint(docs_routes.bp)
+    app.register_blueprint(verification.bp)
     
     # Register error handlers
     errors.register_error_handlers(app)
@@ -146,6 +148,10 @@ def _register_middleware(app: Flask, trusted_proxy_networks: list):
         
         # Skip CSRF for SCIM API (OAuth-protected)
         if request.path.startswith("/scim/v2"):
+            return
+        
+        # Skip CSRF for verification page (testing/development only)
+        if request.path == "/verification":
             return
         
         submitted_token = (

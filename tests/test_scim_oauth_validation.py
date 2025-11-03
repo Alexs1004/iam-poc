@@ -37,6 +37,12 @@ import jwt
 from app.flask_app import create_app
 
 
+@pytest.fixture(autouse=True)
+def reset_oauth_skip(monkeypatch):
+    """Ensure OAuth validation is never skipped in this module."""
+    monkeypatch.delenv("SKIP_OAUTH_FOR_TESTS", raising=False)
+
+
 @pytest.fixture
 def client():
     """Test client with production-like config (OAuth enabled).

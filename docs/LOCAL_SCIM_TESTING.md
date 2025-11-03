@@ -1,42 +1,40 @@
 # Local SCIM Testing Guide
 
-Objectif : vérifier rapidement l’API SCIM sur l’environnement de développement (PoC, TLS self-signed).
+Purpose: verify the SCIM API locally (self-signed TLS) using curl.
 
-## 1. Prérequis
+## Prerequisites
+- Stack running: `make quickstart` (or `make ensure-stack` if already built).
+- `jq` and `curl` installed.
+- Demo secrets loaded automatically by the stack (`automation-cli` client/secret).
 
-- Stack lancée : `make quickstart` (ou `make ensure-stack` si déjà démarrée).
-- jq, curl installés.
-- Fichier `.env` chargé (`set -a; source .env; set +a`).
-
-## 2. Vérifier l’OpenAPI
-
+## Retrieve the OpenAPI document
 ```bash
 curl -sk https://localhost/openapi.json | jq '.info.title,.paths|length'
-# → "IAM PoC SCIM 2.0 API", nombre de routes
+# Expect "IAM PoC SCIM 2.0 API" and path count
 ```
 
-## 3. Consulter la documentation ReDoc
+## Browse ReDoc
+Open `https://localhost/scim/docs` in a browser (accept the self-signed certificate).
 
-Ouvrir le navigateur sur `https://localhost/scim/docs` (certificat auto-signé).  
-> ⚠️ En production, restreindre l’accès (VPN, Basic Auth, IP allow-list).
-
-## 4. Obtenir un Bearer Token
-
+## Get a bearer token
 ```bash
+# Service secret is loaded from .runtime/secrets/ in demo mode
+SERVICE_SECRET=$(cat .runtime/secrets/keycloak-service-client-secret)
+
 TOKEN=$(curl -sk -X POST \
   "https://localhost/realms/demo/protocol/openid-connect/token" \
   -d "grant_type=client_credentials" \
-  -d "client_id=${KEYCLOAK_SERVICE_CLIENT_ID:-automation-cli}" \
-  -d "client_secret=${KEYCLOAK_SERVICE_CLIENT_SECRET:-demo-service-secret}" \
+  -d "client_id=automation-cli" \
+  -d "client_secret=$SERVICE_SECRET" \
   | jq -r '.access_token')
-
 echo "${TOKEN:0:32}..."
 ```
 
-## 5. Appels SCIM Exemples
+**Note**: In demo mode, the service secret is auto-generated and stored in `.runtime/secrets/keycloak-service-client-secret`. In production, it's retrieved from Azure Key Vault.
 
-### Créer un utilisateur
+## SCIM operations
 
+### Create a user
 ```bash
 curl -sk -X POST "https://localhost/scim/v2/Users" \
   -H "Authorization: Bearer $TOKEN" \
@@ -47,40 +45,44 @@ curl -sk -X POST "https://localhost/scim/v2/Users" \
     "name": {"givenName": "Demo", "familyName": "SCIM"},
     "emails": [{"value": "demo.scim@example.com", "primary": true}],
     "active": true
-  }' | jq
+  }'
 ```
 
-### Lister / filtrer
+Capture the `id` from the response (e.g. store in `USER_ID`).
 
+### Filter by userName
 ```bash
 curl -sk "https://localhost/scim/v2/Users?filter=userName%20eq%20%22demo.scim%22" \
   -H "Authorization: Bearer $TOKEN" | jq '.Resources[] | {userName,active}'
 ```
 
-### Désactiver (PATCH)
-
+### Disable the account (PATCH active=false)
 ```bash
-curl -sk -X PATCH "https://localhost/scim/v2/Users/{userId}" \
+curl -sk -X PATCH "https://localhost/scim/v2/Users/$USER_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/scim+json" \
   -d '{
     "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-    "Operations": [{
-      "op": "replace",
-      "path": "active",
-      "value": false
-    }]
+    "Operations": [{"op": "replace", "path": "active", "value": false}]
   }'
 ```
 
-## 6. Nettoyage
+### Delete (soft-delete / disable)
+```bash
+curl -sk -X DELETE "https://localhost/scim/v2/Users/$USER_ID" \
+  -H "Authorization: Bearer $TOKEN" -i
+```
 
-- Supprimer l’utilisateur : `DELETE /scim/v2/Users/{id}`.
-- Vérifier l’audit : `cat .runtime/audit/jml-events.jsonl | tail -n 5`.
+## Audit verification
+```bash
+make verify-audit
+tail -n 5 .runtime/audit/jml-events.jsonl
+```
+Expect signed events with `event_type` (`scim_create_user`, `scim_patch_user_active`, `scim_delete_user`).
 
-## 7. Notes
-
-- Si la requête retourne 401 ⇒ vérifier `TOKEN`.
-- Si 403 ⇒ rôle Keycloak insuffisant.
-- Si 500 ⇒ consulter `docker compose logs flask-app`.
-- Limites actuelles : filtrage `eq`, patch restreint (voir OpenAPI).
+## Troubleshooting
+- `401 unauthorized`: token missing or expired → re-run token command.
+- `403 forbidden`: token lacks `scim:write` or `scim:read` scope (check client configuration).
+- `415 invalidSyntax`: ensure `Content-Type: application/scim+json`.
+- `501 notImplemented`: PUT is disabled; use PATCH or DELETE instead.
+- Review `docker compose logs flask-app` for stack errors.

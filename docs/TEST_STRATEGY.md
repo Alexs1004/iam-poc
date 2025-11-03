@@ -1,52 +1,35 @@
 # Test Strategy — Mini IAM Lab
 
-## Objectifs
-- Prouver la solidité des contrôles sécurité (OAuth, CSRF, MFA, audit).
-- Garantir une régression minimale avant chaque démonstration.
-- Offrir une vision claire aux recruteurs sur la rigueur QA/security engineering.
+This section documents how the automated test suites exercise the SCIM surface and supporting security controls.
 
-## Pyramide de tests
-| Niveau | Contenu | Outils |
-|--------|---------|--------|
-| **Static checks** | `pip-audit`, formatters, lint | Make targets dédiés (TBD) |
-| **Unit tests** | Validation SCIM, RBAC, audit HMAC, helpers Key Vault | `pytest`, fixtures isolées, Keycloak mocké |
-| **Integration tests** | API SCIM end-to-end avec Keycloak réel, rotation secrets | `pytest -m integration`, Docker stack |
-| **Manual drills** | `make demo-jml`, test MFA/TOTP, rotation manuelle | Runbook dans README |
+## Goals
+- Validate security behaviour (OAuth enforcement, scope checks, headers).
+- Detect regressions in provisioning logic (create/disable/idempotence).
+- Provide transparent metrics for recruiters (pytest counts, coverage target).
 
-## Couverture attendue
-- **Global** : ≥ 90 % (objectif interne, gate CI à 80 % dans le pipeline GitHub).
-- **Modules critiques** : `app/core/provisioning_service`, `app/security/rbac`, `app/core/audit` ≥ 80 %.
-- **Tests sécurité** : `tests/test_api_scim_negatives.py` (JWT invalide, scopes manquants), `tests/test_api_auth.py` (headers, CSRF, cookie security).
+## Test layers
+| Layer | What it covers | Command |
+|-------|----------------|---------|
+| Unit | SCIM handlers, provisioning helpers, audit signing, RBAC decorators | `make test` (runs `pytest -n auto -m "not integration"`) |
+| Integration | Full SCIM + Keycloak stack (joiner/leaver flows, security headers) | `make test-e2e` |
+| Security smoke | Critical OAuth/JWT/headers and secret-handling checks | `make test/security` |
 
-## Commandes principales
-```bash
-# Unitaires (rapides, mock Keycloak)
-pytest -m "not integration"
+Notes:
+- `make test` runs in demo mode (`DEMO_MODE=true`) with mocked Keycloak responses; results (~240 tests) complete in ~2 s.
+- `make test-all` chains the three targets above. Set `SKIP_E2E=true` to run only unit tests when needed.
+- Coverage is ~90% (`pytest --cov=app`); the CI gate (see `.github/workflows/tests-coverage.yml`) fails below 80%.
 
-# Intégration (nécessite stack)
-pytest -m integration
+## Key security test files
+- `tests/test_scim_oauth_validation.py` — OAuth happy/negative paths (401/403/415).
+- `tests/test_scim_api.py` — endpoint behaviour (PATCH active, DELETE soft-delete, PUT 501).
+- `tests/test_scim_api_negatives.py` — malformed payloads, error schema assertions.
+- `tests/test_api_decorators.py` — JWT validation (PyJWKClient) and scope enforcement.
+- `tests/test_api_docs.py` — ReDoc/OpenAPI routes.
 
-# Couverture + rapport HTML
-pytest --cov=app --cov-report=html
-open htmlcov/index.html
-```
+## Manual drills (optional)
+- `make quickstart` → login at `https://localhost`, exercise JML UI.
+- Issue a SCIM PATCH toggle (see docs/LOCAL_SCIM_TESTING.md) and confirm audit signature via `make verify-audit`.
 
-## Intégration continue
-- Workflow GitHub Actions : `.github/workflows/tests-coverage.yml`.
-- Étapes clés :
-  1. Installation dépendances (cache pip).
-  2. Exécution `pytest -m "not integration"` avec `--cov`.
-  3. Upload `coverage.xml` pour badge.
-  4. Conditions d’échec si couverture < 80 % ou tests en échec.
-- Extension prévue : matrix Python, ajout `pip-audit` et `bandit`.
-
-## Tests à haute valeur sécurité
-- **JWT validation** : vérifie signature, audience, expiration (PyJWKClient).
-- **CSRF** : ensures `X-CSRF-Token` obligatoire pour actions sensibles.
-- **Audit integrity** : recalcul HMAC et détection tampering (`tests/test_audit.py`).
-- **Secret rotation** : tests `tests/test_secret_rotation.py` (à ajouter) pour s’assurer que `make rotate-secret` reste idempotent.
-
-## Liens utiles
-- Architecture et flux : [Overview](OVERVIEW.md)
-- Contrôles sécurité : [Security Design](SECURITY_DESIGN.md)
-- Exemples API SCIM : [API Reference](API_REFERENCE.md)
+## Reporting
+- Coverage HTML: `pytest --cov=app --cov-report=html` → open `htmlcov/index.html`.
+- Pytest timings log (xdist) helps identify slow tests for optimisation.

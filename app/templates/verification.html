@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel verification-panel">
+  <!-- Warning banner -->
+  <div class="alert alert-warning">
+    ⚠️ PoC verification — not for production use
+    {% if demo_mode %}
+      <span class="badge badge-demo">DEMO MODE</span>
+    {% endif %}
+  </div>
+  
+  <div class="card">
+    <h1>SCIM Verification</h1>
+    <p class="card-subtitle">
+      Run live checks against the SCIM 2.0 API and audit log to confirm documented behavior.
+    </p>
+    <div class="verification-actions">
+      <form method="post" class="verification-form" style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="run">
+        <button type="submit" class="btn btn-primary">Run SCIM verification</button>
+      </form>
+      <form method="post" class="verification-form" style="display: inline; margin-left: 10px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="cleanup">
+        <button type="submit" class="btn btn-secondary">Cleanup verifier-* users</button>
+      </form>
+    </div>
+    {% if executed_at %}
+      <div class="run-summary">
+        <span class="summary-label">Last run:</span>
+        <span class="summary-value">{{ executed_at }}</span>
+        {% if overall_status == 'success' %}
+          <span class="summary-status status-success">✅ Success</span>
+        {% elif overall_status == 'partial' %}
+          <span class="summary-status status-partial">⚠️ Partial</span>
+        {% else %}
+          <span class="summary-status status-failure">❌ Failure</span>
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if cleanup_count > 0 %}
+      <div class="cleanup-summary">
+        <span class="summary-label">Cleanup:</span>
+        <span class="summary-value">{{ cleanup_count }} verifier-* users removed</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if results %}
+    <div class="card">
+      <h2>Verification results</h2>
+      <div class="table-wrapper">
+        <table class="verification-table">
+          <thead>
+            <tr>
+              <th>Check</th>
+              <th>Status</th>
+              <th>HTTP</th>
+              <th>Detail</th>
+              <th>Correlation ID</th>
+              <th>Duration ms</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in results %}
+              <tr>
+                <td>{{ item.name }}</td>
+                <td>
+                  {% if item.status == 'success' %}
+                    <span class="label-pill success">✅ success</span>
+                  {% elif item.status == 'failure' %}
+                    <span class="label-pill warning">❌ failure</span>
+                  {% else %}
+                    <span class="label-pill muted">⏭ skipped</span>
+                  {% endif %}
+                </td>
+                <td>{{ item.status_code or '—' }}</td>
+                <td>{{ item.detail }}</td>
+                <td>{{ item.correlation_id or '—' }}</td>
+                <td>{{ item.duration_ms or '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+  
+  {% if not rate_limiting_available %}
+    <!-- Rate limiting note -->
+    <div class="card">
+      <h3>Rate Limiting</h3>
+      <p>Flask-Limiter not available. Consider nginx rate limiting:</p>
+      <pre><code>location /verification {
+    limit_req zone=verification burst=5 nodelay;
+}</code></pre>
+    </div>
+  {% endif %}
+</section>
+
+<style>
+.alert-warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 12px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+}
+.badge-demo {
+    background-color: #e17055;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.8em;
+    margin-left: 10px;
+}
+.verification-actions {
+    margin: 15px 0;
+}
+.status-success { color: #27ae60; }
+.status-partial { color: #f39c12; }
+.status-failure { color: #e74c3c; }
+.cleanup-summary {
+    margin-top: 10px;
+    font-size: 0.9em;
+    color: #7f8c8d;
+}
+.verification-table th:nth-child(5), 
+.verification-table td:nth-child(5) { width: 120px; }
+.verification-table th:nth-child(6), 
+.verification-table td:nth-child(6) { width: 80px; text-align: right; }
+</style>
+{% endblock %}

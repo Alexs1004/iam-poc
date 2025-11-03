@@ -18,6 +18,7 @@ SHA256_CMD := $(PYTHON) -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.b
 JML := $(PYTHON) scripts/jml.py
 VENV_PYTHON := venv/bin/python
 PYTEST := $(VENV_PYTHON) -m pytest
+PYTEST_UNIT_FLAGS ?= -n auto --dist=loadscope
 
 
 UX_TARGETS := help help-all quickstart fresh-demo up down logs test test-e2e test-all rotate-secret doctor
@@ -452,7 +453,7 @@ venv: ## Create/refresh venv and install dependencies
 
 .PHONY: test
 test: venv ## Run unit tests (no integration)
-	@DEMO_MODE=true $(PYTEST) -m "not integration" $(ARGS)
+	@DEMO_MODE=true $(PYTEST) $(PYTEST_UNIT_FLAGS) -m "not integration" $(ARGS)
 
 .PHONY: test-e2e
 test-e2e: ensure-stack venv ## Run integration test suite (requires stack)
@@ -474,8 +475,12 @@ test-all: ## Run unit, integration, and security suites
 	fi; \
 	true
 	@$(MAKE) test $(if $(ARGS),ARGS="$(ARGS)",)
+ifneq ($(SKIP_E2E),true)
 	@$(MAKE) test-e2e $(if $(ARGS),ARGS="$(ARGS)",)
 	@$(MAKE) test/security $(if $(ARGS),ARGS="$(ARGS)",)
+else
+	@echo "[test-all] SKIP_E2E=true: skipping integration and security suites"
+endif
 	@echo "[test-all] ✅ All test suites completed"
 
 .PHONY: test/security

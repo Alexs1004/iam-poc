@@ -1,3 +1,7 @@
+# Roadmap — Mini IAM Lab (Archived)
+
+> Retained for historical visibility. Current priorities are documented in recruiting briefs and security design notes.
+
 # Roadmap — Mini IAM Lab
 
 ## Vision
@@ -19,7 +23,7 @@ Positionner le PoC comme un mini-laboratoire Azure IAM aligné sur les attentes 
 | **Q3** | Policy-as-Code & SCIM CLI | Terraform/Bicep, tests compliance, CLI de provisioning sécurisé. |
 | **Q4** | Production hardening | HA (multi-zone), scaling, playbooks incident response. |
 
-## Sujets d'étude en cours
+## Sujets d’étude en cours
 - **Zero Trust** : segmentation réseau, mutual TLS interne.
 - **Supply chain** : SBOM, signatures container (cosign).
 - **Compliance** : DPIA, alignement ISO 27001/SOC 2 (documentation).

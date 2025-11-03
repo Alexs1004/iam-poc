@@ -1,3 +1,7 @@
+# SCIM & OIDC Flow — Archived Reference
+
+> Sequence diagrams preserved for context. Current architecture details now consolidated in the main documentation set.
+
 # SCIM & OIDC Flow (Swiss Azure PoC)
 
 Ce document illustre le parcours d’authentification OIDC, le provisioning SCIM ainsi que le mapping d’attributs dans le cadre du PoC IAM orienté recrutement.
@@ -74,4 +78,3 @@ sequenceDiagram
 - **Limites** : opérations PATCH limitées à `replace` (nom, email, active).
 
 Références : RFC 7644, RFC 7643, FINMA Circ. 08/21 (sécurité des API), nLPD art. 8-12 (principes).
-

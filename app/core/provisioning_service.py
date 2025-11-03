@@ -439,7 +439,14 @@ def list_users_scim(query: Optional[dict] = None) -> dict:
         match = re.match(r'userName\s+eq\s+"([^"]+)"', filter_str, re.IGNORECASE)
         if match:
             username_filter = match.group(1)
-    
+        else:
+            # Guard: any filter expression that is not exactly userName eq "value" is not implemented
+            raise ScimError(
+                501,
+                "Requested SCIM feature is not available in this PoC.",
+                "notImplemented",
+            )
+
     # Get users from Keycloak
     try:
         token = get_service_token()

@@ -87,6 +87,9 @@ class AppConfig:
     # Audit
     audit_log_signing_key: str = ""
     
+    # Verification page
+    verify_page_enabled: bool = field(default=False)
+    
     # Demo passwords (for reference)
     demo_passwords: dict[str, str] = field(default_factory=dict)
     
@@ -324,6 +327,9 @@ def load_settings() -> AppConfig:
     # Audit
     audit_log_signing_key = os.environ.get("AUDIT_LOG_SIGNING_KEY", "")
     
+    # Verification page (enabled by default in demo mode, disabled in production)
+    verify_page_enabled = os.environ.get("VERIFY_PAGE_ENABLED", str(demo_mode)).lower() == "true"
+    
     # Demo passwords
     demo_passwords = {}
     if demo_mode:
@@ -366,6 +372,7 @@ def load_settings() -> AppConfig:
         iam_operator_role=iam_operator_role,
         assignable_roles=assignable_roles,
         audit_log_signing_key=audit_log_signing_key,
+        verify_page_enabled=verify_page_enabled,
         demo_passwords=demo_passwords,
     )
 
