@@ -160,6 +160,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -233,6 +234,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '501': { $ref: '#/components/responses/NotImplemented' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -278,6 +280,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '501': { $ref: '#/components/responses/NotImplemented' }
         '500': { $ref: '#/components/responses/InternalError' }
@@ -325,8 +328,8 @@ components:
       schema:
         type: integer
         minimum: 1
-        maximum: 100
-        default: 25
+        maximum: 200
+        default: 10
 
   responses:
     BadRequest:
@@ -395,6 +398,17 @@ components:
             status: "415"
             detail: Content-Type must be application/scim+json.
             scimType: invalidSyntax
+    PayloadTooLarge:
+      description: Request payload exceeds maximum allowed size (64 KB)
+      content:
+        application/scim+json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"]
+            status: "413"
+            detail: Request payload exceeds maximum allowed size (64 KB).
+            scimType: invalidValue
     NotImplemented:
       description: Feature not implemented (e.g. unsupported SCIM filter operator)
       content:

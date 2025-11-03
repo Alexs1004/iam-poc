@@ -2,6 +2,11 @@
 
 Authoritative description of the `/scim/v2` surface exposed by `app/api/scim.py`. All requests are served over HTTPS and return JSON bodies using the SCIM error schema (`schemas`, `status`, `detail`, optional `scimType`).
 
+## Interactive Documentation
+- **OpenAPI Specification**: [scim_openapi.yaml](../openapi/scim_openapi.yaml)
+- **ReDoc Interface**: https://localhost/scim/docs
+- **Swagger UI**: Available via ReDoc at runtime
+
 ## Base URLs
 - Reverse proxy (default demo stack): `https://localhost/scim/v2`
 - Direct Flask access (bypass nginx): `http://localhost:8000/scim/v2`
@@ -118,6 +123,8 @@ Responses mirror `GET /Users`.
 - `GET /ServiceProviderConfig` — advertises `patch.supported=true`, `filter.supported=true`, `bulk=false`, `sort=false`, `etag=false`, OAuth bearer authentication.
 - `GET /Schemas` — returns SCIM User schema (userName, emails, active).
 - `GET /ResourceTypes` — exposes `User` resource metadata.
+
+**Note**: Discovery endpoints are public (no OAuth required) per RFC 7644 specification.
 
 ## Error responses
 All errors use:
