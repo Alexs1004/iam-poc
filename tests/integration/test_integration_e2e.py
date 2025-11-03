@@ -19,6 +19,7 @@ Usage:
 """
 
 import os
+import time
 import pytest
 import requests
 from datetime import datetime
@@ -32,6 +33,11 @@ APP_BASE_URL = os.getenv("APP_BASE_URL", "https://localhost")
 SERVICE_CLIENT_ID = os.getenv("KEYCLOAK_SERVICE_CLIENT_ID", "automation-cli")
 SERVICE_CLIENT_SECRET = os.getenv("KEYCLOAK_SERVICE_CLIENT_SECRET", "")
 SERVICE_REALM = os.getenv("KEYCLOAK_SERVICE_REALM", "demo")
+
+# Rate limiting protection: Nginx limits SCIM to 60r/m (1 req/sec) with burst=10
+# Strategy: 1s between requests is minimum, add 2s delay at test start
+RATE_LIMIT_DELAY = 1.0  # Between requests within a test
+RATE_LIMIT_TEST_DELAY = 2.0  # At the start of each test
 
 pytestmark = [
     pytest.mark.integration,
@@ -113,6 +119,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     attribute management. Keycloak attribute updates require complex workflows 
     (email uniqueness validation, session revocation). Out of scope for PoC.
     """
+    # Rate limiting protection: Let burst regenerate before heavy test
+    time.sleep(RATE_LIMIT_TEST_DELAY)
+    
     base_url = f"{APP_BASE_URL}/scim/v2/Users"
     
     # ─────────────────────────────────────────────────────────────────────
@@ -142,6 +151,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     
     print(f"✅ Created user: {user_id}")
     
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
+    
     # ─────────────────────────────────────────────────────────────────────
     # Step 2: Get User by ID
     # ─────────────────────────────────────────────────────────────────────
@@ -154,6 +166,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     assert "_tempPassword" not in retrieved_user  # Never in GET response
     
     print(f"✅ Retrieved user: {user_id}")
+    
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
     
     # ─────────────────────────────────────────────────────────────────────
     # Step 3: List Users (filter by userName)
@@ -182,6 +197,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     assert found, f"User {user_id} not found in list results"
     print(f"✅ Listed user: {user_id}")
     
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
+    
     # ─────────────────────────────────────────────────────────────────────
     # Step 4: Update User (PUT - change name)
     # ─────────────────────────────────────────────────────────────────────
@@ -200,6 +218,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     assert updated_user["name"]["familyName"] == "Updated"
     
     print(f"✅ Updated user: {user_id}")
+    
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
     
     # ─────────────────────────────────────────────────────────────────────
     # Step 5: Disable User (PUT with active=false)
@@ -220,6 +241,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     
     print(f"✅ Disabled user: {user_id} (sessions revoked)")
     
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
+    
     # ─────────────────────────────────────────────────────────────────────
     # Step 6: Delete User (soft delete)
     # ─────────────────────────────────────────────────────────────────────
@@ -227,6 +251,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
     assert response.status_code == 204, f"Delete failed: {response.text}"
     
     print(f"✅ Deleted user: {user_id}")
+    
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
     
     # ─────────────────────────────────────────────────────────────────────
     # Step 7: Verify user still exists but disabled (idempotent delete)
@@ -246,6 +273,9 @@ def test_e2e_crud_flow_scim_api(scim_headers, test_username):
 
 def test_e2e_error_handling(scim_headers, test_username):
     """Test SCIM error responses (400, 404, 409)"""
+    # Rate limiting protection: Let burst regenerate before test with multiple requests
+    time.sleep(RATE_LIMIT_TEST_DELAY)
+    
     base_url = f"{APP_BASE_URL}/scim/v2/Users"
     
     # ─────────────────────────────────────────────────────────────────────
@@ -269,18 +299,24 @@ def test_e2e_error_handling(scim_headers, test_username):
     
     print("✅ Validated 400 error for missing userName")
     
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
+    
     # ─────────────────────────────────────────────────────────────────────
     # Test 2: Get non-existent user (404)
     # ─────────────────────────────────────────────────────────────────────
     fake_id = "00000000-0000-0000-0000-000000000000"
     response = requests.get(f"{base_url}/{fake_id}", headers=scim_headers, verify=False)
-    assert response.status_code == 404, "Should return 404 for non-existent user"
+    assert response.status_code == 404, f"Should return 404 for non-existent user, got {response.status_code}: {response.text}"
     
     error = response.json()
     assert error["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
     assert error["status"] == "404"
     
     print("✅ Validated 404 error for non-existent user")
+    
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
     
     # ─────────────────────────────────────────────────────────────────────
     # Test 3: Create duplicate user (409)
@@ -297,6 +333,9 @@ def test_e2e_error_handling(scim_headers, test_username):
     response1 = requests.post(base_url, json=create_payload, headers=scim_headers, verify=False)
     assert response1.status_code == 201, "First create should succeed"
     user_id = response1.json()["id"]
+    
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_DELAY)
     
     # Try to create duplicate
     response2 = requests.post(base_url, json=create_payload, headers=scim_headers, verify=False)
@@ -325,10 +364,13 @@ def test_e2e_error_handling(scim_headers, test_username):
 
 def test_e2e_service_provider_config(scim_headers):
     """Test SCIM ServiceProviderConfig endpoint"""
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_TEST_DELAY)
+    
     url = f"{APP_BASE_URL}/scim/v2/ServiceProviderConfig"
     
     response = requests.get(url, headers=scim_headers, verify=False)
-    assert response.status_code == 200
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
     
     config = response.json()
     assert config["schemas"] == ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"]
@@ -346,6 +388,9 @@ def test_e2e_service_provider_config(scim_headers):
 
 def test_e2e_pagination(scim_headers):
     """Test SCIM list with pagination parameters"""
+    # Rate limiting protection
+    time.sleep(RATE_LIMIT_TEST_DELAY)
+    
     base_url = f"{APP_BASE_URL}/scim/v2/Users"
     
     # Request first page
@@ -355,7 +400,7 @@ def test_e2e_pagination(scim_headers):
         headers=scim_headers,
         verify=False
     )
-    assert response.status_code == 200
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
     
     result = response.json()
     assert result["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:ListResponse"]

@@ -108,19 +108,19 @@ def callback():
         session["userinfo"] = {}
     
     # Smart redirect based on user role
-    from app.core.rbac import collect_roles, has_admin_role
+    from app.core.rbac import collect_roles, has_admin_role, decode_access_token
     
     id_claims = session.get("id_claims") or {}
     userinfo = session.get("userinfo") or {}
     access_token = token.get("access_token")
     
-    roles = collect_roles(id_claims, userinfo, access_token, cfg.keycloak_issuer)
+    # Decode JWT access token to extract claims
+    access_claims = decode_access_token(access_token, cfg.keycloak_issuer)
+    roles = collect_roles(id_claims, userinfo, access_claims)
     
     if has_admin_role(roles, cfg.realm_admin_role, cfg.iam_operator_role):
-        current_app.logger.info(f"Admin role detected, redirecting to /admin")
         return redirect(url_for("admin.admin_dashboard"))
     else:
-        current_app.logger.info(f"No admin role detected, redirecting to /me")
         return redirect(url_for("admin.me"))
 
 

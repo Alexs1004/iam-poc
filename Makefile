@@ -18,7 +18,7 @@ SHA256_CMD := $(PYTHON) -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.b
 JML := $(PYTHON) scripts/jml.py
 VENV_PYTHON := venv/bin/python
 PYTEST := $(VENV_PYTHON) -m pytest
-PYTEST_UNIT_FLAGS ?= -n auto --dist=loadscope
+PYTEST_UNIT_FLAGS ?= -n auto --dist=loadscope --cache-clear
 
 
 UX_TARGETS := help help-all quickstart fresh-demo up down logs test test-e2e test-all rotate-secret doctor

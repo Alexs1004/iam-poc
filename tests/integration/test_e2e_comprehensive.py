@@ -741,11 +741,12 @@ def test_ngx_02_security_headers_present(running_stack):
     - Referrer-Policy: strict-origin-when-cross-origin
     
     Note: /health endpoint excluded (monitoring endpoint, not user-facing)
+    Note: /admin/ redirects to /login, so we test /login instead
     """
     endpoints = [
         ("/", "homepage"),
         # ("/health", "health endpoint"),  # Excluded: monitoring endpoint, doesn't need CSP/HSTS
-        ("/admin/", "admin dashboard"),
+        ("/login", "login page"),  # Test this instead of /admin/ which redirects
     ]
     
     all_passed = True

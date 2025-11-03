@@ -317,32 +317,6 @@ def admin_audit():
     )
 
 
-@bp.route("/debug")
-def admin_debug():
-    """Debug endpoint to test user loading."""
-    from flask import jsonify
-    import os
-    
-    # Check what's in environment
-    secret_from_env = os.environ.get("KEYCLOAK_SERVICE_CLIENT_SECRET", "NOT_SET")
-    
-    try:
-        user_statuses, assignable_roles = _load_admin_context()
-        return jsonify({
-            "status": "success",
-            "user_count": len(user_statuses),
-            "secret_info": f"length={len(secret_from_env)}, starts={secret_from_env[:8]}...",
-            "users": [{"username": u["username"], "enabled": u["enabled"]} for u in user_statuses],
-            "roles": assignable_roles
-        })
-    except Exception as exc:
-        return jsonify({
-            "status": "error",
-            "message": str(exc),
-            "secret_info": f"length={len(secret_from_env)}, starts={secret_from_env[:8] if secret_from_env != 'NOT_SET' else 'NOT_SET'}..."
-        }), 500
-
-
 @bp.route("/")
 @require_admin_view
 def admin_dashboard():

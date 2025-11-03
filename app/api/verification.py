@@ -53,22 +53,15 @@ class CheckResult:
 def _check_access():
     """Check if user has access to verification page."""
     try:
-        print(f"[DEBUG] _check_access() called - verify_page_enabled: {settings.verify_page_enabled}")
-        
         if not settings.verify_page_enabled:
-            print(f"[DEBUG] Access denied - verification page disabled")
             abort(404)
         
         if settings.demo_mode:
-            print(f"[DEBUG] Demo mode - allowing anonymous access")
             # In demo mode, allow anonymous access
             return
         
-        print(f"[DEBUG] Production mode - checking authentication")
-        
         # In production mode, require authentication and proper role
         if not is_authenticated():
-            print(f"[DEBUG] Access denied - user not authenticated")
             abort(403)
         
         _, _, _, roles = current_user_context()
@@ -76,20 +69,11 @@ def _check_access():
             settings.realm_admin_role,
             settings.iam_operator_role,
             "iam-verifier",
-            "realm-managementrealm-admin"  # TEMPORARY: Add malformed role
         ]
         
-        # DEBUG: Log user roles and allowed roles for troubleshooting
-        print(f"[DEBUG] User roles: {roles}")
-        print(f"[DEBUG] Allowed roles: {allowed_roles}")
-        print(f"[DEBUG] Settings realm_admin_role: '{settings.realm_admin_role}'")
-        print(f"[DEBUG] Settings iam_operator_role: '{settings.iam_operator_role}'")
-        
         if not any(role.lower() in [r.lower() for r in roles] for role in allowed_roles):
-            print(f"[DEBUG] Access denied - no matching roles found")
             abort(403)
         
-        print(f"[DEBUG] Access granted")
     except Exception as e:
         # Log the actual error for debugging
         print(f"[ERROR] Exception in _check_access(): {type(e).__name__}: {e}")
@@ -501,10 +485,6 @@ def cleanup_verifier_users():
 @bp.route("/verification", methods=["GET", "POST"])
 def verification_page():
     """SCIM verification page with access control."""
-    print(f"[DEBUG] verification_page() called - method: {request.method}")
-    print(f"[DEBUG] User-Agent: {request.headers.get('User-Agent', 'N/A')}")
-    print(f"[DEBUG] IP: {request.remote_addr}")
-    
     _check_access()  # Enforce access control
     
     # Rate limiting is handled by nginx (see proxy/nginx.conf)

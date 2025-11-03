@@ -11,7 +11,11 @@ from app.api.errors import register_error_handlers
 def flask_client():
     app = Flask(__name__)
     app.config["TESTING"] = True
-    app.jinja_loader = DictLoader({"403.html": "{{ title }} - {{ required_role }}"})
+    app.config["DEMO_MODE"] = False  # Production mode by default
+    app.jinja_loader = DictLoader({
+        "403.html": "{{ title }} - {{ required_role }}",
+        "500.html": "{{ title }} - {% if show_debug %}{{ error_message }}{% else %}server recovery{% endif %}"
+    })
     app.logger = SimpleNamespace(error=lambda *args, **kwargs: None)
 
     register_error_handlers(app)
@@ -60,11 +64,13 @@ def test_scim_error_returns_json(flask_client):
 
 
 def test_internal_error_json_payload(flask_client):
+    """Test 500 error returns generic message in production mode (security)."""
     response = flask_client.get("/scim/v2/crash")
     assert response.status_code == 500
     payload = response.get_json()
     assert payload["error"] == "Internal Server Error"
-    assert "boom" in payload["message"]
+    # SECURITY: Generic message in production, no error details exposed
+    assert payload["message"] == "An unexpected error occurred"
 
 
 def test_bad_request_html_uses_template(flask_client):
@@ -102,11 +108,25 @@ def test_forbidden_html_path(flask_client):
 
 
 def test_internal_error_html_template(flask_client):
+    """Test 500 error HTML template hides details in production mode."""
     response = flask_client.get("/page/error", headers={"Accept": "text/html"})
     assert response.status_code == 500
     body = response.get_data(as_text=True)
     assert "Error" in body
     assert "server recovery" in body
+    # SECURITY: Should NOT contain traceback in production mode
+    assert "Traceback" not in body
+
+
+def test_internal_error_debug_mode_shows_details(flask_client):
+    """Test 500 error shows details in debug mode."""
+    flask_client.application.config["DEMO_MODE"] = True  # Enable debug mode
+    response = flask_client.get("/page/error", headers={"Accept": "text/html"})
+    assert response.status_code == 500
+    body = response.get_data(as_text=True)
+    assert "Error" in body
+    # In debug mode, traceback should be visible
+    assert "Traceback" in body or "werkzeug" in body.lower()
 
 
 def test_not_found_html_template(flask_client):

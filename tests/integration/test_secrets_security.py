@@ -230,11 +230,12 @@ def test_rotation_script_exists_and_validates(tmp_path):
     """Test that rotation script exists and has validation checks."""
     from pathlib import Path
     
-    rotation_script = Path(__file__).parent.parent / "scripts" / "rotate_secret.sh"
+    # Get project root (2 levels up from tests/integration/)
+    rotation_script = Path(__file__).parent.parent.parent / "scripts" / "rotate_secret.sh"
     
     # Script must exist
     assert rotation_script.exists(), \
-        "scripts/rotate_secret.sh must exist for production secret rotation"
+        f"scripts/rotate_secret.sh must exist for production secret rotation. Looked at: {rotation_script}"
     
     # Script should be executable
     assert os.access(rotation_script, os.X_OK) or True, \
