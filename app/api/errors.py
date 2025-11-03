@@ -51,13 +51,25 @@ def register_error_handlers(app):
     @app.errorhandler(500)
     def internal_error(error):
         """Handle 500 Internal Server Error."""
+        import traceback
+        error_details = traceback.format_exc()
+        
+        # ALWAYS log the full error (even in production) - logs are secure
         app.logger.error(f"Internal error: {error}", exc_info=True)
+        print(f"[ERROR 500] {error}")
+        print(error_details)
+        
         if _wants_json():
             return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred"}), 500
+        
+        # SECURITY: Show traceback ONLY in debug/demo mode, never in production
+        show_details = app.debug or app.config.get('DEMO_MODE', False)
+        
         return render_template(
-            "403.html",  # Reuse 403 template with generic message
-            title="Error",
-            required_role="server recovery",
+            "500.html",
+            title="Internal Server Error",
+            error_message=error_details if show_details else None,
+            show_debug=show_details,
         ), 500
     
     @app.errorhandler(Exception)
@@ -67,16 +79,26 @@ def register_error_handlers(app):
         if isinstance(error, HTTPException):
             return error
         
-        # Log the error
+        import traceback
+        error_details = traceback.format_exc()
+        
+        # ALWAYS log the error (even in production) - logs are secure
         app.logger.error(f"Unhandled exception: {error}", exc_info=True)
+        print(f"[ERROR UNHANDLED] {error}")
+        print(error_details)
         
         # Return 500
         if _wants_json():
-            return jsonify({"error": "Internal Server Error", "message": str(error)}), 500
+            return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred"}), 500
+        
+        # SECURITY: Show traceback ONLY in debug/demo mode, never in production
+        show_details = app.debug or app.config.get('DEMO_MODE', False)
+        
         return render_template(
-            "403.html",
-            title="Error",
-            required_role="server recovery",
+            "500.html",
+            title="Internal Server Error",
+            error_message=error_details if show_details else None,
+            show_debug=show_details,
         ), 500
 
 

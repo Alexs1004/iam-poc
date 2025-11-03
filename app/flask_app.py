@@ -73,6 +73,7 @@ def create_app() -> Flask:
     
     app.config["TRUSTED_PROXY_NETWORKS"] = trusted_proxy_networks
     app.config["CSRF_SESSION_KEY"] = "_csrf_token"
+    app.config["DEMO_MODE"] = cfg.demo_mode  # Expose for error handlers
     
     # Initialize OIDC
     from app.api import auth

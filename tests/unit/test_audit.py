@@ -124,7 +124,18 @@ def test_verify_audit_log_with_valid_signatures(temp_audit_dir):
 
 
 def test_verify_audit_log_detects_tampering(temp_audit_dir):
-    """Test that signature verification detects tampered events."""
+    """Test signature verification detects tampered events (NIST 800-53 AU-10).
+    
+    Security scenario: Attacker attempts to modify audit logs to hide malicious activity.
+    
+    Compliance:
+    - NIST 800-53 AU-10: Non-repudiation (HMAC-SHA256 signatures)
+    - SOC 2 CC6.1: Logical and Physical Access Controls
+    - GDPR Art. 32: Integrity and confidentiality of processing
+    
+    Attack simulation: Modify username from 'alice' to 'mallory' without updating signature.
+    Expected result: Signature validation MUST fail (tampering detected).
+    """
     _, audit_file = temp_audit_dir
     
     # Log an event
@@ -137,11 +148,12 @@ def test_verify_audit_log_detects_tampering(temp_audit_dir):
         success=True,
     )
     
-    # Read and tamper with the event
+    # Read and tamper with the event (simulating attacker)
     with audit_file.open("r") as f:
         event = json.loads(f.readline())
     
-    # Modify the username without updating signature
+    # Modify the username without updating signature (ATTACK)
+    original_username = event["username"]
     event["username"] = "mallory"
     
     # Overwrite file with tampered event
@@ -151,7 +163,13 @@ def test_verify_audit_log_detects_tampering(temp_audit_dir):
     # Verification should detect tampering
     total, valid = audit.verify_audit_log()
     assert total == 1
-    assert valid == 0  # Signature invalid
+    assert valid == 0, "CRITICAL: Audit log tampering was NOT detected - signature validation failed"
+    
+    # Additional validation: ensure original value was changed
+    with audit_file.open("r") as f:
+        tampered_event = json.loads(f.readline())
+    assert tampered_event["username"] == "mallory"
+    assert tampered_event["username"] != original_username
 
 
 def test_log_event_without_signing_key(temp_audit_dir, monkeypatch):

@@ -5,7 +5,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import requests
@@ -30,17 +30,14 @@ SCIM_MEDIA_TYPE = "application/scim+json"
 
 bp = Blueprint("verification", __name__)
 
-# Try to import Flask-Limiter if available
-try:
-    from flask_limiter import Limiter
-    from flask_limiter.util import get_remote_address
-    limiter = Limiter(key_func=get_remote_address)
-    RATE_LIMITING_AVAILABLE = True
-except ImportError:
-    limiter = None
-    RATE_LIMITING_AVAILABLE = False
+# Rate limiting is handled by nginx reverse proxy
+# See proxy/nginx.conf for configuration:
+#   - /verification: 10 req/min, burst=5
+#   - /scim/v2/*: 60 req/min, burst=10
+#   - /admin/*: 30 req/min, burst=8
+RATE_LIMITING_AVAILABLE = True  # Nginx rate limiting is configured
 
-
+# 
 @dataclass
 class CheckResult:
     """Container for individual verification results."""
@@ -55,43 +52,50 @@ class CheckResult:
 
 def _check_access():
     """Check if user has access to verification page."""
-    print(f"[DEBUG] _check_access() called - verify_page_enabled: {settings.verify_page_enabled}")
-    
-    if not settings.verify_page_enabled:
-        print(f"[DEBUG] Access denied - verification page disabled")
-        abort(404)
-    
-    if settings.demo_mode:
-        print(f"[DEBUG] Demo mode - allowing anonymous access")
-        # In demo mode, allow anonymous access
-        return
-    
-    print(f"[DEBUG] Production mode - checking authentication")
-    
-    # In production mode, require authentication and proper role
-    if not is_authenticated():
-        print(f"[DEBUG] Access denied - user not authenticated")
-        abort(403)
-    
-    _, _, _, roles = current_user_context()
-    allowed_roles = [
-        settings.realm_admin_role,
-        settings.iam_operator_role,
-        "iam-verifier",
-        "realm-managementrealm-admin"  # TEMPORARY: Add malformed role
-    ]
-    
-    # DEBUG: Log user roles and allowed roles for troubleshooting
-    print(f"[DEBUG] User roles: {roles}")
-    print(f"[DEBUG] Allowed roles: {allowed_roles}")
-    print(f"[DEBUG] Settings realm_admin_role: '{settings.realm_admin_role}'")
-    print(f"[DEBUG] Settings iam_operator_role: '{settings.iam_operator_role}'")
-    
-    if not any(role.lower() in [r.lower() for r in roles] for role in allowed_roles):
-        print(f"[DEBUG] Access denied - no matching roles found")
-        abort(403)
-    
-    print(f"[DEBUG] Access granted")
+    try:
+        print(f"[DEBUG] _check_access() called - verify_page_enabled: {settings.verify_page_enabled}")
+        
+        if not settings.verify_page_enabled:
+            print(f"[DEBUG] Access denied - verification page disabled")
+            abort(404)
+        
+        if settings.demo_mode:
+            print(f"[DEBUG] Demo mode - allowing anonymous access")
+            # In demo mode, allow anonymous access
+            return
+        
+        print(f"[DEBUG] Production mode - checking authentication")
+        
+        # In production mode, require authentication and proper role
+        if not is_authenticated():
+            print(f"[DEBUG] Access denied - user not authenticated")
+            abort(403)
+        
+        _, _, _, roles = current_user_context()
+        allowed_roles = [
+            settings.realm_admin_role,
+            settings.iam_operator_role,
+            "iam-verifier",
+            "realm-managementrealm-admin"  # TEMPORARY: Add malformed role
+        ]
+        
+        # DEBUG: Log user roles and allowed roles for troubleshooting
+        print(f"[DEBUG] User roles: {roles}")
+        print(f"[DEBUG] Allowed roles: {allowed_roles}")
+        print(f"[DEBUG] Settings realm_admin_role: '{settings.realm_admin_role}'")
+        print(f"[DEBUG] Settings iam_operator_role: '{settings.iam_operator_role}'")
+        
+        if not any(role.lower() in [r.lower() for r in roles] for role in allowed_roles):
+            print(f"[DEBUG] Access denied - no matching roles found")
+            abort(403)
+        
+        print(f"[DEBUG] Access granted")
+    except Exception as e:
+        # Log the actual error for debugging
+        print(f"[ERROR] Exception in _check_access(): {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise  # Re-raise to let error handler catch it
 
 
 def _safe_username_check(username: str) -> bool:
@@ -503,11 +507,8 @@ def verification_page():
     
     _check_access()  # Enforce access control
     
-    # Apply rate limiting for POST requests if available
-    if request.method == "POST" and RATE_LIMITING_AVAILABLE and limiter:
-        # TODO: Rate limiting not available - consider nginx rate limiting:
-        # location /verification { limit_req zone=verification burst=5 nodelay; }
-        pass
+    # Rate limiting is handled by nginx (see proxy/nginx.conf)
+    # No application-level rate limiting needed
     
     cfg = current_app.config["APP_CONFIG"]
     results: list[CheckResult] = []
@@ -520,22 +521,32 @@ def verification_page():
         
         if action == "cleanup":
             cleanup_count = cleanup_verifier_users()
-            executed_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-            results = [CheckResult(
-                name="Cleanup verifier users", 
-                status="success", 
-                status_code=200, 
-                detail=f"Cleaned up {cleanup_count} verifier-* users"
-            )]
+            executed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace('+00:00', 'Z')
+            
+            # SKIP if nothing to clean (no test users found), PASS if cleaned at least 1
+            if cleanup_count == 0:
+                results = [CheckResult(
+                    name="Cleanup verifier users", 
+                    status="skipped", 
+                    status_code=200, 
+                    detail="No verifier-* test users found (already cleaned or tests not yet run)"
+                )]
+            else:
+                results = [CheckResult(
+                    name="Cleanup verifier users", 
+                    status="success", 
+                    status_code=200, 
+                    detail=f"Cleaned up {cleanup_count} verifier-* test user(s)"
+                )]
         else:
             client = current_app.test_client()
             access_token = _extract_user_access_token(cfg)
             try:
                 runner = VerificationRunner(client=client, user_access_token=access_token)
                 results = runner.run()
-                executed_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                executed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace('+00:00', 'Z')
             except Exception as exc:  # pragma: no cover - defensive catch for UI
-                executed_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+                executed_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace('+00:00', 'Z')
                 detail = str(exc)
                 results = [CheckResult(name="Verification runner", status="failure", status_code=None, detail=detail)]
 
