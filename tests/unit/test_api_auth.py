@@ -56,35 +56,6 @@ def client(app_with_auth):
         yield client
 
 
-def test_login_force_resets_session_and_sets_pkce(monkeypatch, client):
-    captured = {}
-
-    class FakeClient:
-        def authorize_redirect(self, **kwargs):
-            captured.update(kwargs)
-            return "redirecting"
-
-    monkeypatch.setattr(auth, "get_oidc_client", lambda: FakeClient())
-
-    with client.session_transaction() as sess:
-        sess["token"] = {"access_token": "old"}
-        sess["userinfo"] = {"name": "alice"}
-        sess["id_claims"] = {"sub": "123"}
-
-    response = client.get("/login?force=1")
-
-    assert response.data == b"redirecting"
-    assert captured["redirect_uri"] == "https://localhost/callback"
-    assert captured["code_challenge_method"] == "S256"
-    assert "code_challenge" in captured
-
-    with client.session_transaction() as sess:
-        assert "token" not in sess
-        assert "userinfo" not in sess
-        assert "id_claims" not in sess
-        assert "pkce_code_verifier" in sess
-
-
 def test_callback_without_verifier_redirects_to_login(monkeypatch, client):
     monkeypatch.setattr(auth, "get_oidc_client", lambda: None)
 
@@ -173,3 +144,186 @@ def test_logout_without_id_token_uses_client_id(client):
     response = client.get("/logout", follow_redirects=False)
     params = parse_qs(urlparse(response.headers["Location"]).query)
     assert params["client_id"] == ["flask-app"]
+
+
+def test_logout_with_reauth_parameter(client):
+    """Test that logout?reauth=1 sets cookie with proper security attributes."""
+    with client.session_transaction() as sess:
+        sess["token"] = {"id_token": "id123"}
+    
+    response = client.get("/logout?reauth=1", follow_redirects=False)
+    assert response.status_code == 302
+    
+    # Check that cookie is set via Set-Cookie header with security attributes
+    set_cookie_headers = response.headers.getlist('Set-Cookie')
+    cookie_str = '; '.join(set_cookie_headers)
+    assert "reauth_requested=1" in cookie_str
+    assert "Max-Age=30" in cookie_str
+    assert "HttpOnly" in cookie_str
+    assert "Secure" in cookie_str
+    assert "SameSite=Strict" in cookie_str
+
+
+def test_pkce_code_verifier_generation():
+    """Test PKCE code verifier is generated with correct length and characters."""
+    from app.api.auth import _generate_code_verifier
+    
+    verifier = _generate_code_verifier(64)
+    assert len(verifier) == 64
+    # Should only contain allowed characters
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+    assert all(c in allowed for c in verifier)
+
+
+def test_pkce_code_challenge_generation():
+    """Test PKCE code challenge is properly base64url encoded SHA256 hash."""
+    from app.api.auth import _build_code_challenge
+    
+    # Test with known verifier
+    verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+    challenge = _build_code_challenge(verifier)
+    
+    # Should be base64url without padding
+    assert "=" not in challenge
+    assert len(challenge) == 43  # SHA256 = 32 bytes = 43 base64url chars without padding
+    # Should only contain base64url characters
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+    assert all(c in allowed for c in challenge)
+
+
+def test_login_initiates_oidc_flow(monkeypatch, client):
+    """Test login route initiates OIDC flow with PKCE."""
+    redirect_called = []
+    
+    class FakeClient:
+        def authorize_redirect(self, redirect_uri, code_challenge, code_challenge_method):
+            redirect_called.append({
+                'redirect_uri': redirect_uri,
+                'code_challenge': code_challenge,
+                'code_challenge_method': code_challenge_method
+            })
+            from flask import redirect
+            return redirect("https://keycloak/authorize?code_challenge=" + code_challenge)
+    
+    monkeypatch.setattr(auth, "get_oidc_client", lambda: FakeClient())
+    
+    response = client.get("/login", follow_redirects=False)
+    
+    assert response.status_code == 302
+    assert len(redirect_called) == 1
+    assert redirect_called[0]['code_challenge_method'] == "S256"
+    assert redirect_called[0]['redirect_uri'] == "https://localhost/callback"
+    assert len(redirect_called[0]['code_challenge']) == 43  # base64url SHA256
+
+
+def test_index_page_for_authenticated_user(monkeypatch, client):
+    """Test index page renders for authenticated user."""
+    # Mock authentication
+    monkeypatch.setattr("app.core.rbac.is_authenticated", lambda: True)
+    monkeypatch.setattr("app.core.rbac.current_user_context", lambda: ("alice", "alice@example.com", "sub123", ["user"]))
+    monkeypatch.setattr("app.core.rbac.has_admin_role", lambda roles, r1, r2: False)
+    
+    # Mock settings at the config level
+    from types import SimpleNamespace
+    fake_settings = SimpleNamespace(
+        realm_admin_role="realm-admin",
+        iam_operator_role="iam-operator",
+        demo_mode=False
+    )
+    monkeypatch.setattr("app.config.settings.settings", fake_settings)
+    
+    # Mock render_template to avoid loading actual template
+    rendered = []
+    def fake_render(template, **kwargs):
+        rendered.append({'template': template, 'kwargs': kwargs})
+        return f"rendered {template}"
+    
+    from flask import Flask
+    import app.api.auth as auth_module
+    
+    # Patch at Flask's render_template since it's imported inside the function
+    with monkeypatch.context() as m:
+        m.setattr("flask.render_template", fake_render)
+        
+        response = client.get("/", follow_redirects=False)
+        
+        assert response.status_code == 200
+        assert len(rendered) == 1
+        assert rendered[0]['template'] == "index.html"
+        assert rendered[0]['kwargs']['is_authenticated'] is True
+        assert rendered[0]['kwargs']['is_admin'] is False
+
+
+def test_index_page_for_authenticated_admin(monkeypatch, client):
+    """Test index page renders for authenticated admin."""
+    # Mock authentication as admin
+    monkeypatch.setattr("app.core.rbac.is_authenticated", lambda: True)
+    monkeypatch.setattr("app.core.rbac.current_user_context", lambda: ("admin", "admin@example.com", "sub456", ["realm-admin"]))
+    monkeypatch.setattr("app.core.rbac.has_admin_role", lambda roles, r1, r2: True)
+    
+    # Mock settings
+    from types import SimpleNamespace
+    fake_settings = SimpleNamespace(
+        realm_admin_role="realm-admin",
+        iam_operator_role="iam-operator",
+        demo_mode=False
+    )
+    monkeypatch.setattr("app.config.settings.settings", fake_settings)
+    
+    # Mock render_template
+    rendered = []
+    def fake_render(template, **kwargs):
+        rendered.append({'template': template, 'kwargs': kwargs})
+        return f"rendered {template}"
+    
+    with monkeypatch.context() as m:
+        m.setattr("flask.render_template", fake_render)
+        
+        response = client.get("/", follow_redirects=False)
+        
+        assert response.status_code == 200
+        assert len(rendered) == 1
+        assert rendered[0]['kwargs']['is_admin'] is True
+
+
+def test_index_page_with_reauth_cookie_and_not_authenticated(client):
+    """Test index redirects to login when reauth cookie present and user not authenticated."""
+    # Set the reauth cookie without being authenticated
+    client.set_cookie('reauth_requested', '1')
+    
+    response = client.get("/", follow_redirects=False)
+    
+    assert response.status_code == 302
+    assert "/login" in response.headers["Location"]
+    
+    # Check cookie is cleared in the response
+    set_cookie_headers = response.headers.getlist('Set-Cookie')
+    cookie_str = '; '.join(set_cookie_headers)
+    assert "reauth_requested=" in cookie_str
+    assert "Max-Age=0" in cookie_str
+
+
+def test_index_page_with_exception_in_has_admin_role_check(monkeypatch, client):
+    """Test index handles exception during admin role check (lines 175-176)."""
+    from app.config.settings import settings as real_settings
+    
+    def fake_is_authenticated():
+        return True
+    
+    def fake_current_user_context():
+        raise RuntimeError("JWKS fetch failed")  # Simulate error
+    
+    def fake_render(template_name, **kwargs):
+        return f"Rendered {template_name} with is_admin={kwargs.get('is_admin')}"
+    
+    with monkeypatch.context() as m:
+        m.setattr("app.core.rbac.is_authenticated", fake_is_authenticated)
+        m.setattr("app.core.rbac.current_user_context", fake_current_user_context)
+        m.setattr("app.config.settings.settings", real_settings)
+        m.setattr("flask.render_template", fake_render)
+        
+        response = client.get("/", follow_redirects=False)
+        
+        assert response.status_code == 200
+        body = response.get_data(as_text=True)
+        assert "is_admin=False" in body  # Exception handled, is_admin defaults to False

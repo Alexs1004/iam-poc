@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel error-panel">
+  <div class="error-hero">
+    <h1>Access Denied</h1>
+    <p class="error-code">403 Forbidden</p>
+  </div>
+  <div class="alert alert-error">
+    <strong>Required role:</strong> <code>{{ required_role }}</code>
+  </div>
+  <p class="error-hint">
+    Sign in with an account that has the <strong>{{ required_role }}</strong> role, or contact an administrator to update your access permissions.
+  </p>
+  <div class="error-actions">
+    <a href="{{ url_for('auth.logout', reauth=1) }}" class="btn-primary">Sign in as different user</a>
+    <a href="{{ url_for('auth.index') }}" class="btn-outline">Back to Home</a>
+  </div>
+</section>
+{% endblock %}

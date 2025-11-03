@@ -64,13 +64,6 @@ def login():
     cfg = current_app.config["APP_CONFIG"]
     client = get_oidc_client()
     
-    force = request.args.get("force")
-    extra = {"prompt": "login", "max_age": "0"} if force else {}
-    if force:
-        session.pop("token", None)
-        session.pop("userinfo", None)
-        session.pop("id_claims", None)
-    
     code_verifier = _generate_code_verifier()
     session["pkce_code_verifier"] = code_verifier
     code_challenge = _build_code_challenge(code_verifier)
@@ -79,7 +72,6 @@ def login():
         redirect_uri=cfg.oidc_redirect_uri,
         code_challenge=code_challenge,
         code_challenge_method="S256",
-        **extra,
     )
 
 
@@ -124,17 +116,25 @@ def callback():
         return redirect(url_for("admin.me"))
 
 
-@bp.route("/logout")
+@bp.route("/logout", methods=["GET", "POST"])
 def logout():
     """Logout user and redirect to Keycloak logout endpoint."""
     cfg = current_app.config["APP_CONFIG"]
     
     token = session.get("token") or {}
     id_token = token.get("id_token")
+    
+    # Check if we should re-authenticate after logout
+    reauth = request.args.get("reauth", "0") == "1"
+    
+    # Store reauth intent in a cookie before clearing session
+    from flask import make_response
     session.clear()
     
+    # Keycloak logout endpoint
     end_session_endpoint = f"{cfg.keycloak_public_issuer.rstrip('/')}/protocol/openid-connect/logout"
     
+    # Always use the standard post_logout_redirect_uri (which is authorized)
     params = {"post_logout_redirect_uri": cfg.post_logout_redirect_uri}
     if id_token:
         params["id_token_hint"] = id_token
@@ -142,17 +142,43 @@ def logout():
         params["client_id"] = cfg.oidc_client_id
     
     logout_url = f"{end_session_endpoint}?{urlencode(params)}"
+    
+    # If reauth requested, set a temporary cookie to trigger login on home page
+    if reauth:
+        response = make_response(redirect(logout_url))
+        response.set_cookie("reauth_requested", "1", max_age=30, httponly=True, secure=True, samesite="Strict")
+        return response
+    
     return redirect(logout_url)
 
 
 @bp.route("/")
 def index():
     """Home page."""
-    from flask import render_template
-    from app.core.rbac import is_authenticated
+    from flask import render_template, make_response
+    from app.core.rbac import is_authenticated, current_user_context, has_admin_role
+    from app.config.settings import settings
+    
+    # Check if reauth was requested (via cookie set during logout)
+    reauth_requested = request.cookies.get("reauth_requested") == "1"
+    if reauth_requested and not is_authenticated():
+        # Clear the cookie and redirect to login
+        response = make_response(redirect(url_for("auth.login")))
+        response.set_cookie("reauth_requested", "", max_age=0)
+        return response
+    
+    is_admin = False
+    if is_authenticated():
+        try:
+            _, _, _, roles = current_user_context()
+            is_admin = has_admin_role(roles, settings.realm_admin_role, settings.iam_operator_role)
+        except Exception:
+            pass
     
     return render_template(
         "index.html",
         title="Welcome",
         is_authenticated=is_authenticated(),
+        is_admin=is_admin,
+        demo_mode=settings.demo_mode,
     )

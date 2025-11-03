@@ -3,36 +3,51 @@
 <section class="panel">
   <div class="hero hero--split">
     <div class="hero-content">
-      <span class="hero-kicker">Identity &amp; Access Demo</span>
-      <h1>Keycloak-powered IAM playground</h1>
+      <span class="hero-kicker">SCIM 2.0 · Azure Key Vault · OIDC</span>
+      <h1>Enterprise IAM with cryptographic audit</h1>
       <p class="hero-lead">
-        Explore joiner/mover/leaver automation against a managed realm, inspect your OpenID Connect claims, and enforce RBAC with a least-privilege service account.
+        RFC 7644-compliant SCIM API for user provisioning, secured with Azure Key Vault secret management and HMAC-SHA256 signed audit trails. Built on Keycloak with OAuth/OIDC token validation.
       </p>
       <ul class="hero-points">
-        <li><strong>MFA enrolment:</strong> sign in to trigger TOTP and view decoded tokens.</li>
-        <li><strong>Lifecycle orchestration:</strong> promote Alice to <code>iam-operator</code> and elevate Joe to <code>realm-admin</code>.</li>
-        <li><strong>Zero secret sprawl:</strong> automation runs through a client-credentialed Keycloak service account.</li>
+        <li><strong>SCIM 2.0 API:</strong> standardized user lifecycle (create, read, update, delete, filter).</li>
+        <li><strong>Azure Key Vault:</strong> production-ready secrets rotation with zero code changes.</li>
+        <li><strong>Cryptographic audit:</strong> tamper-proof logs with HMAC-SHA256 signatures.</li>
+        <li><strong>240+ tests:</strong> ~90% coverage with unit and E2E integration tests.</li>
       </ul>
-            <p class="intro">Your identity is verified. Check your profile or visit the admin panel.</p>
       <div class="action-buttons">
         {% if is_authenticated %}
-          <a class="btn-primary" href="{{ url_for('admin.me') }}">View my profile</a>
-          <a class="btn-secondary" href="{{ url_for('admin.admin_dashboard') }}">Admin area</a>
-          <a class="btn-secondary" href="{{ keycloak_console_url if keycloak_console_url else 'https://localhost/admin/demo/console/' }}" target="_blank" rel="noopener noreferrer">Keycloak Console (demo)</a>
+          <a class="btn-primary" href="{{ url_for('verification.verification_page') }}">Run SCIM Verification</a>
+          {% if is_admin %}
+            <a class="btn-secondary" href="{{ url_for('admin.admin_dashboard') }}">Admin Dashboard</a>
+          {% endif %}
+          <a class="btn-outline" href="{{ url_for('admin.me') }}">View Profile</a>
         {% else %}
-          <a class="btn-primary" href="{{ url_for('auth.login') }}">Sign in with Keycloak</a>
-          <a class="btn-secondary" href="{{ keycloak_console_url if keycloak_console_url else 'https://localhost/admin/demo/console/' }}" target="_blank" rel="noopener noreferrer">Keycloak Console (admin)</a>
+          {% if demo_mode %}
+            <a class="btn-primary" href="{{ url_for('verification.verification_page') }}">Try SCIM Verification</a>
+            <a class="btn-secondary" href="{{ url_for('auth.login') }}">Sign in with OIDC</a>
+          {% else %}
+            <a class="btn-primary" href="{{ url_for('auth.login') }}">Sign in with OIDC</a>
+          {% endif %}
         {% endif %}
       </div>
     </div>
     <div class="hero-visual">
       <div class="hero-card">
-        <h2>What you can try</h2>
+        <h2>Technical capabilities</h2>
         <ul>
-          <li>Create a joiner with a temporary password and optional TOTP enforcement.</li>
-          <li>Move an identity between roles and require a password update instantly.</li>
-          <li>Deactivate a leaver and confirm the change in the realm snapshot.</li>
+          <li><strong>SCIM API</strong> — RFC 7644 compliant with OpenAPI documentation</li>
+          <li><strong>Security</strong> — JWT validation, rate limiting, OWASP headers (HSTS, CSP)</li>
+          <li><strong>Automation</strong> — Joiner/Mover/Leaver workflows via service account</li>
+          <li><strong>Verification</strong> — One-click validation of SCIM behavior and audit integrity</li>
+          <li><strong>Production-ready</strong> — Azure Key Vault, secret rotation, Docker Compose</li>
         </ul>
+        <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+          <h3 style="font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.75rem;">Quick Access</h3>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+            <a href="{{ url_for('docs.scim_docs') }}" class="btn-secondary" style="font-size: 0.875rem; padding: 0.5rem 1rem;">SCIM API Docs</a>
+            <a href="{{ keycloak_console_url if keycloak_console_url else 'https://localhost/admin/demo/console/' }}" target="_blank" rel="noopener noreferrer" class="btn-secondary" style="font-size: 0.875rem; padding: 0.5rem 1rem;">Keycloak Console</a>
+          </div>
+        </div>
       </div>
     </div>
   </div>

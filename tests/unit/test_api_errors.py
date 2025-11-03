@@ -13,8 +13,9 @@ def flask_client():
     app.config["TESTING"] = True
     app.config["DEMO_MODE"] = False  # Production mode by default
     app.jinja_loader = DictLoader({
-        "403.html": "{{ title }} - {{ required_role }}",
-        "500.html": "{{ title }} - {% if show_debug %}{{ error_message }}{% else %}server recovery{% endif %}"
+        "base.html": "{% block content %}{% endblock %}",
+        "errors/403.html": "{{ title }} - {{ required_role }}",
+        "errors/500.html": "{{ title }} - {% if show_debug %}{{ error_message }}{% else %}server recovery{% endif %}"
     })
     app.logger = SimpleNamespace(error=lambda *args, **kwargs: None)
 
@@ -135,3 +136,35 @@ def test_not_found_html_template(flask_client):
     body = response.get_data(as_text=True)
     assert "Not Found" in body
     assert "valid URL" in body
+
+
+def test_not_found_json_response(flask_client):
+    """Test 404 error with JSON Accept header (line 44)."""
+    response = flask_client.get("/missing-page", headers={"Accept": "application/json"})
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "Not Found", "message": "Resource not found"}
+
+
+def test_internal_error_json_response(flask_client):
+    """Test 500 error with JSON Accept header (line 63)."""
+    response = flask_client.get("/scim/v2/crash", headers={"Accept": "application/json"})
+    assert response.status_code == 500
+    payload = response.get_json()
+    assert payload["error"] == "Internal Server Error"
+    assert payload["message"] == "An unexpected error occurred"
+
+
+def test_unhandled_exception_html_response(flask_client):
+    """Test unhandled exception with HTML Accept header (lines 95-97)."""
+    response = flask_client.get("/page/error", headers={"Accept": "text/html"})
+    assert response.status_code == 500
+    body = response.get_data(as_text=True)
+    assert "Internal Server Error" in body
+
+
+def test_unhandled_exception_httpexception_passthrough(flask_client):
+    """Test HTTPException pass-through in generic exception handler (line 80)."""
+    response = flask_client.get("/page/forbidden", headers={"Accept": "text/html"})
+    assert response.status_code == 403  # Should pass through to 403 handler
+    body = response.get_data(as_text=True)
+    assert "Forbidden" in body

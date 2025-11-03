@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel error-panel">
+  <div class="error-hero">
+    <h1>Internal Server Error</h1>
+    <p class="error-code">500 Error</p>
+  </div>
+  
+  <div class="alert alert-error">
+    An unexpected error occurred while processing your request.
+  </div>
+  
+  {% if show_debug and error_message %}
+  <details class="error-debug">
+    <summary>Error details (debug/demo mode only)</summary>
+    <pre class="error-trace">{{ error_message }}</pre>
+  </details>
+  <div class="alert alert-warning">
+    <strong>Security Notice:</strong> Error details are shown because you're in <strong>debug/demo mode</strong>. 
+    In production, only generic error messages are displayed to prevent information disclosure.
+  </div>
+  {% else %}
+  <p class="error-hint">
+    The server encountered an unexpected condition. This error has been logged and will be investigated by system administrators.
+  </p>
+  <p class="error-hint muted">
+    If this problem persists, please contact support with the approximate time this error occurred.
+  </p>
+  {% endif %}
+  
+  <div class="error-actions">
+    <a href="{{ url_for('auth.index') }}" class="btn-primary">Back to Home</a>
+    <a href="javascript:history.back()" class="btn-outline">Go Back</a>
+  </div>
+</section>
+{% endblock %}

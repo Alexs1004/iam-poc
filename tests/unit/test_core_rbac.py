@@ -218,3 +218,101 @@ def test_refresh_session_token_handles_refresh_failure(app_ctx, monkeypatch):
 
     assert rbac.refresh_session_token() is False
     assert "token" not in session
+
+
+def test_collect_roles_handles_non_dict_sources():
+    """Test collect_roles with invalid source types (lines 20, 28)."""
+    sources = [
+        None,  # None source
+        "invalid",  # String source
+        {"realm_access": "not-a-dict"},  # Invalid realm_access
+        {"resource_access": {"app": "not-a-dict"}},  # Invalid client access
+        {"realm_access": {"roles": ["valid"]}},  # Valid for comparison
+    ]
+    roles = rbac.collect_roles(*sources)
+    assert roles == ["valid"]
+
+
+def test_decode_access_token_with_empty_token():
+    """Test decode_access_token with empty token (line 38)."""
+    assert rbac.decode_access_token("", "issuer") == {}
+    assert rbac.decode_access_token(None, "issuer") == {}
+
+
+def test_refresh_session_token_with_expires_in_conversion_error(app_ctx, monkeypatch):
+    """Test refresh_session_token handles invalid expires_in (lines 140-147)."""
+    session["token"] = {"access_token": "a", "refresh_token": "r", "expires_at": 900, "expires_in": "invalid"}
+    monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
+
+    class FakeClient:
+        def refresh_token(self, endpoint, refresh_token):
+            return {"access_token": "new", "expires_in": "not-an-int"}
+        
+        def parse_id_token(self, token):
+            raise RuntimeError("parse failure")
+
+    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+
+    result = rbac.refresh_session_token()
+    assert result is True
+    assert "id_claims" not in session
+
+
+def test_current_user_context_without_token(app_ctx):
+    """Test current_user_context with no token (line 105)."""
+    token, id_claims, userinfo, roles = rbac.current_user_context()
+    assert token is None
+    assert id_claims == {}
+    assert userinfo == {}
+    assert roles == []
+
+
+def test_current_username_with_no_valid_fields(app_ctx, monkeypatch):
+    """Test current_username when all username fields are invalid (line 90, 95)."""
+    monkeypatch.setattr(
+        rbac,
+        "current_user_context",
+        lambda: (
+            {"token": "x"},
+            {"preferred_username": None, "email": "", "name": 123},  # Invalid values
+            {"preferred_username": [], "email": None},  # Invalid types
+            [],
+        ),
+    )
+    assert rbac.current_username() == ""
+
+
+def test_refresh_session_token_with_null_new_token(app_ctx, monkeypatch):
+    """Test refresh_session_token when refresh returns None (line 173-174)."""
+    session["token"] = {"access_token": "a", "refresh_token": "r", "expires_at": 900}
+    monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
+
+    class FakeClient:
+        def refresh_token(self, endpoint, refresh_token):
+            return None  # Simulate null response
+
+    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+
+    result = rbac.refresh_session_token()
+    assert result is False
+    assert "token" not in session
+
+
+def test_refresh_session_token_without_expires_at_fallback(app_ctx, monkeypatch):
+    """Test refresh_session_token expires_at fallback (line 185-186)."""
+    session["token"] = {"access_token": "a", "refresh_token": "r", "expires_at": 1030}  # Expires in 30s
+    monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
+
+    class FakeClient:
+        def refresh_token(self, endpoint, refresh_token):
+            # Return token without expires_in and expires_at
+            return {"access_token": "new", "refresh_token": "r"}
+        
+        def parse_id_token(self, token):
+            return {"sub": "user"}
+
+    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+
+    result = rbac.refresh_session_token()
+    assert result is True
+    assert session["token"]["expires_at"] == 1030  # Old expires_at preserved (line 186)

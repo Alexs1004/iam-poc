@@ -4,8 +4,8 @@ Authoritative description of the `/scim/v2` surface exposed by `app/api/scim.py`
 
 ## Interactive Documentation
 - **OpenAPI Specification**: [scim_openapi.yaml](../openapi/scim_openapi.yaml)
-- **ReDoc Interface**: https://localhost/scim/docs
-- **Swagger UI**: Available via ReDoc at runtime
+- **ReDoc Interface**: https://localhost/scim/docs (read-only, production-safe)
+- **Raw OpenAPI JSON**: https://localhost/openapi.json
 
 ## Base URLs
 - Reverse proxy (default demo stack): `https://localhost/scim/v2`

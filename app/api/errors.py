@@ -12,7 +12,7 @@ def register_error_handlers(app):
         if _wants_json():
             return jsonify({"error": "Bad Request", "message": str(error)}), 400
         return render_template(
-            "403.html",  # Reuse 403 template
+            "errors/403.html",  # Reuse 403 template
             title="Bad Request",
             required_role="Valid request format",
         ), 400
@@ -32,7 +32,7 @@ def register_error_handlers(app):
         if _wants_json():
             return jsonify({"error": "Forbidden", "message": "Insufficient permissions"}), 403
         return render_template(
-            "403.html",
+            "errors/403.html",
             title="Forbidden",
             required_role="appropriate permissions",
         ), 403
@@ -43,7 +43,7 @@ def register_error_handlers(app):
         if _wants_json():
             return jsonify({"error": "Not Found", "message": "Resource not found"}), 404
         return render_template(
-            "403.html",  # Reuse 403 template
+            "errors/403.html",  # Reuse 403 template
             title="Not Found",
             required_role="valid URL",
         ), 404
@@ -66,7 +66,7 @@ def register_error_handlers(app):
         show_details = app.debug or app.config.get('DEMO_MODE', False)
         
         return render_template(
-            "500.html",
+            "errors/500.html",
             title="Internal Server Error",
             error_message=error_details if show_details else None,
             show_debug=show_details,
@@ -95,7 +95,7 @@ def register_error_handlers(app):
         show_details = app.debug or app.config.get('DEMO_MODE', False)
         
         return render_template(
-            "500.html",
+            "errors/500.html",
             title="Internal Server Error",
             error_message=error_details if show_details else None,
             show_debug=show_details,

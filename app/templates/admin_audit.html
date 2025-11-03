@@ -1,230 +1,121 @@
 {% extends "base.html" %}
 
-{% block title %}Audit Trail - IAM PoC{% endblock %}
-
 {% block content %}
-<div class="container">
-    <div class="header-section">
-        <h1>🔍 Audit Trail — JML Events</h1>
-        <nav class="breadcrumb">
-            <a href="{{ url_for('auth.index') }}">Home</a> &gt;
-            <a href="{{ url_for('admin.admin_dashboard') }}">Admin</a> &gt;
-            <span>Audit Trail</span>
-        </nav>
+<section class="panel admin-dashboard">
+  <div class="admin-hero">
+    <div class="admin-hero-body">
+      <h1>Audit Trail — JML Events</h1>
+      <p class="intro">
+        Cryptographically signed audit log tracking all lifecycle operations. Each event includes HMAC-SHA256 signature for tamper detection and integrity verification.
+      </p>
+      <div class="hero-actions">
+        <a class="btn-console" href="{{ url_for('admin.admin_dashboard') }}">
+          ← Back to Admin Dashboard
+        </a>
+        {% if keycloak_console_url %}
+        <a class="btn-console" href="{{ keycloak_console_url }}" target="_blank" rel="noopener noreferrer">
+          Open Keycloak Console
+        </a>
+        {% endif %}
+      </div>
     </div>
-
-    <div class="audit-summary">
-        <div class="stat-card">
-            <h3>{{ total_events }}</h3>
-            <p>Total Events</p>
-        </div>
-        <div class="stat-card">
-            <h3>{{ valid_signatures }}</h3>
-            <p>Valid Signatures</p>
-        </div>
-        <div class="stat-card {% if total_events != valid_signatures %}warning{% else %}success{% endif %}">
-            <h3>{{ integrity_status }}</h3>
-            <p>Integrity Status</p>
-        </div>
+    <div class="admin-hero-meta">
+      <span class="hero-label">Total Events</span>
+      <span class="hero-value">{{ total_events }}</span>
+      <span class="hero-subtext">{{ integrity_status }}</span>
     </div>
+  </div>
 
-    {% if events %}
-    <div class="audit-log">
-        <table class="audit-table">
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-label">Total Events</span>
+      <span class="stat-value">{{ total_events }}</span>
+      <span class="stat-hint">Recorded JML operations</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Valid Signatures</span>
+      <span class="stat-value">{{ valid_signatures }}</span>
+      <span class="stat-hint">HMAC-SHA256 verified</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Integrity Status</span>
+      <span class="stat-value {% if total_events != valid_signatures %}stat-warning{% else %}stat-success{% endif %}">
+        {{ integrity_status }}
+      </span>
+      <span class="stat-hint">
+        {% if total_events == valid_signatures %}
+          ✓ No tampering detected
+        {% else %}
+          ⚠ Verification issues found
+        {% endif %}
+      </span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-heading">
+      <h2>Audit Log ({{ events|length }})</h2>
+      <p class="card-subtitle">Chronological record of all JML operations with cryptographic signatures.</p>
+    </div>
+    <div class="card-body">
+      {% if events %}
+        <div class="admin-table-wrapper">
+          <table class="user-table audit-table">
             <thead>
-                <tr>
-                    <th>Timestamp</th>
-                    <th>Event Type</th>
-                    <th>Username</th>
-                    <th>Operator</th>
-                    <th>Status</th>
-                    <th>Details</th>
-                </tr>
+              <tr>
+                <th>Timestamp</th>
+                <th>Event Type</th>
+                <th>Username</th>
+                <th>Operator</th>
+                <th>Status</th>
+                <th>Details</th>
+              </tr>
             </thead>
             <tbody>
-                {% for event in events %}
-                <tr class="{% if not event.success %}error-row{% endif %}">
-                    <td>{{ event.timestamp[:19] }}</td>
-                    <td>
-                        <span class="event-badge event-{{ event.event_type }}">
-                            {{ event.event_type }}
-                        </span>
-                    </td>
-                    <td><code>{{ event.username }}</code></td>
-                    <td>{{ event.operator }}</td>
-                    <td>
-                        {% if event.success %}
-                        <span class="status-success">✓ Success</span>
-                        {% else %}
-                        <span class="status-error">✗ Failed</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <details>
-                            <summary>View details</summary>
-                            <pre>{{ event.details | tojson(indent=2) }}</pre>
-                        </details>
-                    </td>
-                </tr>
-                {% endfor %}
+              {% for event in events %}
+              <tr class="{% if not event.success %}audit-row-error{% endif %}">
+                <td>
+                  <div class="audit-timestamp">
+                    <span class="timestamp-date">{{ event.timestamp[:10] }}</span>
+                    <span class="timestamp-time">{{ event.timestamp[11:19] }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="event-badge event-{{ event.event_type }}">
+                    {{ event.event_type }}
+                  </span>
+                </td>
+                <td>
+                  <code class="audit-username">{{ event.username }}</code>
+                </td>
+                <td>
+                  <span class="audit-operator">{{ event.operator }}</span>
+                </td>
+                <td>
+                  {% if event.success %}
+                    <span class="label-pill success">✓ Success</span>
+                  {% else %}
+                    <span class="label-pill warning">✗ Failed</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <details class="audit-details">
+                    <summary>View details</summary>
+                    <pre class="audit-json">{{ event.details | tojson(indent=2) }}</pre>
+                  </details>
+                </td>
+              </tr>
+              {% endfor %}
             </tbody>
-        </table>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <h3>No audit events yet</h3>
+          <p>JML operations (Joiner/Mover/Leaver) will be automatically logged here with cryptographic signatures.</p>
+        </div>
+      {% endif %}
     </div>
-    {% else %}
-    <div class="empty-state">
-        <p>No audit events recorded yet.</p>
-        <p>JML operations (joiner/mover/leaver) will appear here automatically.</p>
-    </div>
-    {% endif %}
-
-    <div class="actions">
-        <a href="{{ url_for('admin.admin_dashboard') }}" class="btn btn-secondary">← Back to Admin</a>
-    </div>
-</div>
-
-<style>
-.audit-summary {
-    display: flex;
-    gap: 1rem;
-    margin: 2rem 0;
-}
-
-.stat-card {
-    flex: 1;
-    background: #f8f9fa;
-    padding: 1.5rem;
-    border-radius: 8px;
-    text-align: center;
-}
-
-.stat-card.warning {
-    background: #fff3cd;
-    border: 1px solid #ffc107;
-}
-
-.stat-card.success {
-    background: #d4edda;
-    border: 1px solid #28a745;
-}
-
-.stat-card h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 2rem;
-    color: #333;
-}
-
-.stat-card p {
-    margin: 0;
-    color: #666;
-    font-size: 0.9rem;
-}
-
-.audit-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.audit-table thead {
-    background: #2c3e50;
-    color: white;
-}
-
-.audit-table th {
-    padding: 1rem;
-    text-align: left;
-    font-weight: 600;
-}
-
-.audit-table td {
-    padding: 0.75rem 1rem;
-    border-top: 1px solid #e9ecef;
-}
-
-.audit-table tr:hover {
-    background: #f8f9fa;
-}
-
-.audit-table tr.error-row {
-    background: #fff5f5;
-}
-
-.event-badge {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.event-joiner {
-    background: #d4edda;
-    color: #155724;
-}
-
-.event-mover {
-    background: #d1ecf1;
-    color: #0c5460;
-}
-
-.event-leaver {
-    background: #f8d7da;
-    color: #721c24;
-}
-
-.status-success {
-    color: #28a745;
-    font-weight: 600;
-}
-
-.status-error {
-    color: #dc3545;
-    font-weight: 600;
-}
-
-details {
-    cursor: pointer;
-}
-
-details summary {
-    color: #007bff;
-    font-size: 0.9rem;
-}
-
-details pre {
-    margin-top: 0.5rem;
-    padding: 0.5rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    overflow-x: auto;
-}
-
-.empty-state {
-    text-align: center;
-    padding: 3rem;
-    color: #6c757d;
-}
-
-.actions {
-    margin-top: 2rem;
-    text-align: center;
-}
-
-.btn-secondary {
-    background: #6c757d;
-    color: white;
-    padding: 0.75rem 1.5rem;
-    border-radius: 4px;
-    text-decoration: none;
-    display: inline-block;
-}
-
-.btn-secondary:hover {
-    background: #5a6268;
-}
-</style>
+  </div>
+</section>
 {% endblock %}
