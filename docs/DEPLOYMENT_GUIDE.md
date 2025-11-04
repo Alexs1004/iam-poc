@@ -1,6 +1,75 @@
-# Deployment Guide — Azure
+# Deployment Guide — Azure-Native Roadmap
+
+> **Current State** : Azure Key Vault integrated, production-ready secrets management  
+> **Target State** : Full Azure-native (Entra ID, Managed Identity, App Service, Monitor)
 
 This guide documents the Azure deployment path supported by `app/config/settings.py` and `app/core/provisioning_service.py`. Adjust values to match your environment; add TODO markers where additional work is required.
+
+---
+
+## 🚀 Azure-Native Evolution (4 Phases)
+
+### Phase 1 : Identity Provider Migration ✅ **Next Priority**
+**Objective** : Replace Keycloak with Azure Entra ID (ex-Azure AD)
+
+**Actions** :
+- [ ] Configure Entra ID App Registration (SCIM client)
+- [ ] Enable Conditional Access Policies (MFA, device compliance)
+- [ ] Migrate OIDC/OAuth flows to Entra ID endpoints
+- [ ] Update JWT validation to Entra ID JWKS
+- [ ] Test B2B guest access (inter-organization SCIM)
+
+**Benefits** :
+- Cloud-native authentication (no self-hosted Keycloak)
+- Advanced MFA policies (Authenticator, FIDO2)
+- Integration with Microsoft 365 identities
+
+### Phase 2 : Secrets & Identity Management ✅ **Partially Complete**
+**Objective** : Eliminate Service Principals, adopt Managed Identity
+
+**Actions** :
+- [x] Azure Key Vault integration (completed)
+- [x] Secret rotation automation (`make rotate-secret`)
+- [ ] Replace Service Principal with Managed Identity
+- [ ] Implement Workload Identity for AKS/Container Apps
+- [ ] Remove `.env` dependency (full Key Vault migration)
+
+**Benefits** :
+- Zero credentials in code/config
+- Automatic credential rotation
+- RBAC-based access control
+
+### Phase 3 : Observability & Compliance
+**Objective** : Production-grade monitoring and audit
+
+**Actions** :
+- [ ] Azure Monitor Application Insights integration
+- [ ] Log Analytics workspace for centralized logs
+- [ ] Azure Sentinel SIEM for FINMA compliance
+- [ ] Immutable Blob Storage for audit logs (nLPD retention)
+- [ ] Alerting rules for security events (failed auth, privilege escalation)
+
+**Benefits** :
+- Real-time threat detection
+- Compliance audit trails (FINMA)
+- Performance monitoring
+
+### Phase 4 : Production Infrastructure
+**Objective** : Scalable, resilient deployment
+
+**Actions** :
+- [ ] Azure App Service with auto-scaling
+- [ ] Azure SQL Database (replace SQLite)
+- [ ] Azure Cache for Redis (distributed sessions)
+- [ ] Azure Front Door (global load balancing, WAF)
+- [ ] Azure Policy enforcement (compliance guardrails)
+
+**Benefits** :
+- High availability (99.9% SLA)
+- Global distribution
+- Built-in DDoS protection
+
+---
 
 ## Prerequisites
 - Azure subscription with rights to create resource groups, Key Vault, and Managed Identities.
@@ -88,8 +157,35 @@ make load-secrets     # fetches secrets into .runtime/secrets/
 - [ ] `/scim/docs` protected (VPN, auth proxy, or IP allowlist) — TODO enforce via gateway policy.
 - [ ] TLS 1.2+/HSTS/CSP confirmed at the edge.
 - [ ] Azure Monitor alerts cover 5xx spikes and Key Vault access anomalies.
+- [ ] **Swiss Compliance** :
+  - [ ] Data residency: Confirm Azure region (Switzerland North/West for Swiss data)
+  - [ ] nLPD: Audit log retention ≥ 12 months (Azure Log Analytics)
+  - [ ] FINMA: Export audit trail to SIEM (Azure Sentinel)
+  - [ ] GDPR: Document data processing activities (DPIA if needed)
 
 ## Recovery
 - Snapshot or backup the Keycloak database and volume.
 - Retain audit logs offsite (`make verify-audit` + immutable storage).
 - Maintain staging reset procedure (`make fresh-demo` equivalent) and production rollback playbooks.
+
+---
+
+## 🔗 Related Documentation
+- [Security Design](SECURITY_DESIGN.md) — OWASP ASVS L2, nLPD/RGPD/FINMA controls
+- [Threat Model](THREAT_MODEL.md) — STRIDE analysis, Swiss compliance threats
+- [API Reference](API_REFERENCE.md) — SCIM 2.0 endpoints, OAuth scopes
+- [Swiss Hiring Pack](Hiring_Pack.md) — Azure skills demonstration for recruiters
+
+---
+
+## 🇨🇭 Swiss Azure Regions
+
+For Swiss data residency requirements (nLPD, financial sector):
+
+| Region | Code | Latency (Geneva) | Use Case |
+|--------|------|------------------|----------|
+| **Switzerland North** | `switzerlandnorth` | <5ms | Primary (Zurich datacenter) |
+| **Switzerland West** | `switzerlandwest` | <10ms | DR/backup (Geneva datacenter) |
+| West Europe | `westeurope` | ~15ms | Non-critical workloads |
+
+**Recommendation** : Deploy production in `switzerlandnorth` with geo-replication to `switzerlandwest` for FINMA compliance.

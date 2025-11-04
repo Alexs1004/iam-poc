@@ -1,6 +1,30 @@
 # Security Design — Mini IAM Lab
 
+> **Positionnement Swiss Compliance** : Architecture conforme nLPD, RGPD, FINMA  
+> **Standards** : OWASP ASVS L2, RFC 7644 (SCIM 2.0), RFC 6749 (OAuth 2.0), NIST 800-63B
+
 Authoritative view of the security controls implemented in this SCIM PoC. Derived from `app/api/*`, `app/core/*`, `app/flask_app.py`, `proxy/nginx.conf`, and tests under `tests/test_api_*`.
+
+---
+
+## 🇨🇭 Swiss Compliance Context
+
+### nLPD (nouvelle Loi sur la Protection des Données)
+- **Traçabilité** : Audit trail HMAC-SHA256 avec timestamps ISO 8601
+- **Conservation** : Logs avec permissions restrictives (400), rotation planifiée
+- **Transparence** : API SCIM pour portabilité des données
+
+### RGPD (Règlement Général sur la Protection des Données)
+- **Droit à l'oubli** : Soft-delete via `PATCH .../Users/{id}` (`active=false`)
+- **Portabilité** : Export JSON via `GET /scim/v2/Users` (standard RFC 7644)
+- **Consentement** : Audit log trace toutes modifications (`jml-events.jsonl`)
+
+### FINMA (Autorité fédérale de surveillance des marchés financiers)
+- **Non-répudiation** : Signatures HMAC-SHA256 sur chaque événement JML
+- **Intégrité** : Détection altération via `make verify-audit`
+- **Auditabilité** : Corrélation-ID, timestamps, actor tracking
+
+---
 
 ## 🚨 Known TODO (Temporary Scope Bypass)
 
@@ -33,9 +57,11 @@ Authoritative view of the security controls implemented in this SCIM PoC. Derive
 - **Bearer theft**: tokens are required on every request; expired/invalid tokens yield 401 with SCIM error payload.
 - **Scope abuse**: write methods refuse tokens missing `scim:write`. Service account exception noted above; rotate secrets regularly.
 - **Payload tampering**: PATCH handler only allows `replace active` with boolean value; malformed JSON returns 400.
-- **Audit repudiation**: each JML event is signed; `make verify-audit` recomputes hashes to detect tampering.
+- **Audit repudiation** ✅ **nLPD/FINMA compliance**: each JML event is signed with HMAC-SHA256; `make verify-audit` recomputes hashes to detect tampering (non-repudiation requirement for financial sector).
 - **Secrets leakage**: production mode loads secrets from Azure Key Vault (soft-delete + purge protection recommended). Demo mode generates ephemeral secrets (printed to stdout).
 - **Rate limiting**: not applied in code; rely on reverse proxy/WAF (TODO: add nginx `limit_req` or App Gateway policy).
+- **Data portability** ✅ **RGPD compliance**: SCIM standard enables data export via `GET /Users` (RFC 7644).
+- **Right to erasure** ✅ **RGPD compliance**: Soft-delete via `PATCH .../Users/{id}` with `active=false` (reversible, audit-logged).
 
 ## Error handling model
 `ScimError` guarantees RFC 7644 compliant responses:
@@ -50,6 +76,19 @@ Authoritative view of the security controls implemented in this SCIM PoC. Derive
 ## Open gaps / TODO
 - Remove service-account scope bypass once Keycloak client scopes are configured.
 - Add automated rate limiting / WAF rules for SCIM endpoints.
+- **Swiss Compliance Roadmap** :
+  - [ ] Archive audit logs to Azure Blob Storage with immutability policy (nLPD retention)
+  - [ ] Implement GDPR data subject access request (DSAR) endpoint
+  - [ ] Add audit log export to SIEM (Azure Sentinel) for FINMA compliance
+  - [ ] Document data residency strategy (Swiss data center availability)
+
+---
+
+## 🔗 Related Documentation
+- [Threat Model](THREAT_MODEL.md) — STRIDE analysis, MITRE ATT&CK mapping
+- [API Reference](API_REFERENCE.md) — SCIM 2.0 endpoints, OAuth scopes
+- [Deployment Guide](DEPLOYMENT_GUIDE.md) — Azure Key Vault, Managed Identity
+- [Swiss Hiring Pack](Hiring_Pack.md) — CV ↔ Repo skills mapping
 - Extend audit shipping to immutable storage (Azure Blob immutability policy).
 - Instrument Flask with OpenTelemetry/App Insights for centralised monitoring.
 

@@ -21,7 +21,7 @@ PYTEST := $(VENV_PYTHON) -m pytest
 PYTEST_UNIT_FLAGS ?= -n auto --dist=loadscope --cache-clear
 
 
-UX_TARGETS := help help-all quickstart fresh-demo up down logs test test-e2e test-all rotate-secret doctor
+UX_TARGETS := help help-all quickstart fresh-demo up down logs test test-coverage test-coverage-report test-e2e test-all rotate-secret doctor
 
 COMMON_FLAGS = --kc-url $${KEYCLOAK_URL} --auth-realm $${KEYCLOAK_SERVICE_REALM} --svc-client-id $${KEYCLOAK_SERVICE_CLIENT_ID} --svc-client-secret $${KEYCLOAK_SERVICE_CLIENT_SECRET}
 WITH_ENV := set -a; source .env; set +a; \
@@ -454,6 +454,63 @@ venv: ## Create/refresh venv and install dependencies
 .PHONY: test
 test: venv ## Run unit tests (no integration)
 	@DEMO_MODE=true $(PYTEST) $(PYTEST_UNIT_FLAGS) -m "not integration" $(ARGS)
+
+.PHONY: test-coverage
+test-coverage: ensure-stack venv ## Run all tests with coverage report (HTML + terminal)
+	@echo "[test-coverage] Running tests with coverage analysis..."
+	@DEMO_MODE=true $(PYTEST) tests/ --cov=app --cov-report=html --cov-report=term-missing $(ARGS)
+	@echo "[test-coverage] ✓ Coverage report generated"
+	@echo "[test-coverage] View with: make test-coverage-report"
+
+.PHONY: test-coverage-report
+test-coverage-report: ## Show coverage report information and viewing options
+	@echo "[test-coverage-report] ✓ Coverage report location:"
+	@echo "    📊 file://$(PWD)/htmlcov/index.html"
+	@echo ""
+	@echo "Available commands:"
+	@echo "  • make test-coverage-vscode  → Open in VS Code (recommended)"
+	@echo "  • make test-coverage-open    → Open in system browser (if available)"
+	@echo "  • make test-coverage-serve   → Serve on http://localhost:8888"
+	@echo ""
+
+.PHONY: test-coverage-open
+test-coverage-open: ## Try to open coverage report in system browser
+	@if [ ! -f htmlcov/index.html ]; then \
+		echo "❌ Coverage report not found. Run 'make test-coverage' first."; \
+		exit 1; \
+	fi
+	@echo "[test-coverage-open] Attempting to open in browser..."
+	@if command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open htmlcov/index.html 2>/dev/null || echo "⚠️  xdg-open failed. Use 'make test-coverage-serve' instead."; \
+	elif command -v open >/dev/null 2>&1; then \
+		open htmlcov/index.html; \
+	else \
+		echo "⚠️  No browser opener found. Use 'make test-coverage-serve' instead."; \
+	fi
+
+.PHONY: test-coverage-serve
+test-coverage-serve: ## Serve coverage report on http://localhost:8888
+	@if [ ! -f htmlcov/index.html ]; then \
+		echo "❌ Coverage report not found. Run 'make test-coverage' first."; \
+		exit 1; \
+	fi
+	@echo "[test-coverage-serve] 🌐 Serving coverage report on http://localhost:8888"
+	@echo "Press Ctrl+C to stop the server."
+	@cd htmlcov && $(PYTHON) -m http.server 8888
+
+.PHONY: test-coverage-vscode
+test-coverage-vscode: ## Open coverage report in VS Code (recommended for CLI environments)
+	@if [ ! -f htmlcov/index.html ]; then \
+		echo "❌ Coverage report not found. Run 'make test-coverage' first."; \
+		exit 1; \
+	fi
+	@if command -v code >/dev/null 2>&1; then \
+		echo "[test-coverage-vscode] Opening in VS Code..."; \
+		code htmlcov/index.html; \
+	else \
+		echo "⚠️  VS Code CLI not found. Using file path instead:"; \
+		echo "    file://$(PWD)/htmlcov/index.html"; \
+	fi
 
 .PHONY: test-e2e
 test-e2e: ensure-stack venv ## Run integration test suite (requires stack)

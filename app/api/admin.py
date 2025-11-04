@@ -59,7 +59,7 @@ def require_any_role(*required_roles):
 
 
 def require_admin_view(fn):
-    """Allow viewing admin dashboard (analyst, manager, iam-operator, realm-admin)."""
+    """Allow viewing admin dashboard (manager, iam-operator, realm-admin only)."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not is_authenticated():
@@ -70,7 +70,6 @@ def require_admin_view(fn):
         _, _, _, roles = current_user_context()
         
         allowed_roles = [
-            "analyst",
             "manager",
             cfg.realm_admin_role,
             cfg.iam_operator_role
@@ -81,7 +80,7 @@ def require_admin_view(fn):
                 "403.html",
                 title="Forbidden",
                 is_authenticated=True,
-                required_role="analyst, manager, iam-operator, or realm-admin",
+                required_role="manager, iam-operator, or realm-admin",
             ), 403
         
         return fn(*args, **kwargs)
