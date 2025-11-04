@@ -38,22 +38,46 @@ def require_any_role(*required_roles):
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
+            # Check authentication first
             if not is_authenticated():
-                # Explicit redirect to login page (not back to admin)
                 return redirect(url_for("auth.login"), code=302)
             
-            cfg = current_app.config["APP_CONFIG"]
-            _, _, _, roles = current_user_context()
+            try:
+                # Safely load user context
+                cfg = current_app.config["APP_CONFIG"]
+                _, _, _, roles = current_user_context()
+                
+                # Handle None/empty roles (fail-safe)
+                if roles is None:
+                    roles = []
+                
+                # Case-insensitive role check with safe iteration
+                user_roles_lower = [r.lower() for r in roles]
+                required_roles_lower = [r.lower() for r in required_roles]
+                
+                if not any(role in user_roles_lower for role in required_roles_lower):
+                    # Log for debugging
+                    current_app.logger.warning(
+                        f"Access denied: user has roles {roles}, "
+                        f"required one of {required_roles}"
+                    )
+                    
+                    # Use abort(403) to trigger centralized error handler
+                    abort(403)
+                
+                return fn(*args, **kwargs)
             
-            if not any(role.lower() in [r.lower() for r in roles] for role in required_roles):
-                return render_template(
-                    "403.html",
-                    title="Forbidden",
-                    is_authenticated=True,
-                    required_role=required_roles[0] if len(required_roles) == 1 else ", ".join(required_roles),
-                ), 403
-            
-            return fn(*args, **kwargs)
+            except Exception as exc:
+                # Catch any exception in authorization logic
+                # Fail closed: deny access instead of 500 error
+                current_app.logger.error(
+                    f"Error in require_any_role decorator: {exc}",
+                    exc_info=True
+                )
+                
+                # Use abort(403) to trigger centralized error handler
+                abort(403)
+        
         return wrapper
     return decorator
 
@@ -62,28 +86,52 @@ def require_admin_view(fn):
     """Allow viewing admin dashboard (manager, iam-operator, realm-admin only)."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        # Check authentication first
         if not is_authenticated():
-            # Explicit redirect to login page (not back to admin)
             return redirect(url_for("auth.login"), code=302)
         
-        cfg = current_app.config["APP_CONFIG"]
-        _, _, _, roles = current_user_context()
+        try:
+            # Safely load user context
+            cfg = current_app.config["APP_CONFIG"]
+            _, _, _, roles = current_user_context()
+            
+            # Handle None/empty roles (fail-safe)
+            if roles is None:
+                roles = []
+            
+            allowed_roles = [
+                "manager",
+                cfg.realm_admin_role,
+                cfg.iam_operator_role
+            ]
+            
+            # Case-insensitive role check with safe iteration
+            user_roles_lower = [r.lower() for r in roles]
+            allowed_roles_lower = [r.lower() for r in allowed_roles]
+            
+            if not any(role in user_roles_lower for role in allowed_roles_lower):
+                # Log for debugging (not visible to user)
+                current_app.logger.warning(
+                    f"Access denied to admin dashboard: user has roles {roles}, "
+                    f"required one of {allowed_roles}"
+                )
+                
+                # Use abort(403) to trigger centralized error handler
+                abort(403)
+            
+            return fn(*args, **kwargs)
         
-        allowed_roles = [
-            "manager",
-            cfg.realm_admin_role,
-            cfg.iam_operator_role
-        ]
-        
-        if not any(role.lower() in [r.lower() for r in roles] for role in allowed_roles):
-            return render_template(
-                "403.html",
-                title="Forbidden",
-                is_authenticated=True,
-                required_role="manager, iam-operator, or realm-admin",
-            ), 403
-        
-        return fn(*args, **kwargs)
+        except Exception as exc:
+            # Catch any exception in authorization logic
+            # Fail closed: deny access instead of 500 error
+            current_app.logger.error(
+                f"Error in require_admin_view decorator: {exc}",
+                exc_info=True
+            )
+            
+            # Use abort(403) to trigger centralized error handler
+            abort(403)
+    
     return wrapper
 
 
@@ -91,24 +139,48 @@ def require_jml_operator(fn):
     """Restrict JML operations to operators only (iam-operator, realm-admin)."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
+        # Check authentication first
         if not is_authenticated():
-            # Explicit redirect to login page (not back to admin)
             return redirect(url_for("auth.login"), code=302)
         
-        cfg = current_app.config["APP_CONFIG"]
-        _, _, _, roles = current_user_context()
+        try:
+            # Safely load user context
+            cfg = current_app.config["APP_CONFIG"]
+            _, _, _, roles = current_user_context()
+            
+            # Handle None/empty roles (fail-safe)
+            if roles is None:
+                roles = []
+            
+            allowed_roles = [cfg.realm_admin_role, cfg.iam_operator_role]
+            
+            # Case-insensitive role check with safe iteration
+            user_roles_lower = [r.lower() for r in roles]
+            allowed_roles_lower = [r.lower() for r in allowed_roles]
+            
+            if not any(role in user_roles_lower for role in allowed_roles_lower):
+                # Log for debugging
+                current_app.logger.warning(
+                    f"Access denied to JML operation: user has roles {roles}, "
+                    f"required one of {allowed_roles}"
+                )
+                
+                # Use abort(403) to trigger centralized error handler
+                abort(403)
+            
+            return fn(*args, **kwargs)
         
-        allowed_roles = [cfg.realm_admin_role, cfg.iam_operator_role]
-        
-        if not any(role.lower() in [r.lower() for r in roles] for role in allowed_roles):
-            return render_template(
-                "403.html",
-                title="Forbidden",
-                is_authenticated=True,
-                required_role="iam-operator or realm-admin",
-            ), 403
-        
-        return fn(*args, **kwargs)
+        except Exception as exc:
+            # Catch any exception in authorization logic
+            # Fail closed: deny access instead of 500 error
+            current_app.logger.error(
+                f"Error in require_jml_operator decorator: {exc}",
+                exc_info=True
+            )
+            
+            # Use abort(403) to trigger centralized error handler
+            abort(403)
+    
     return wrapper
 
 
