@@ -458,8 +458,9 @@ test: venv ## Run unit tests (no integration)
 .PHONY: test-e2e
 test-e2e: ensure-stack venv ## Run integration test suite (requires stack)
 	@set -a; source .env 2>/dev/null || true; set +a; \
+	demo_mode="$${DEMO_MODE:-}"; \
 	unset DEMO_MODE AZURE_USE_KEYVAULT FLASK_SECRET_KEY KEYCLOAK_SERVICE_CLIENT_SECRET KEYCLOAK_ADMIN_PASSWORD AUDIT_LOG_SIGNING_KEY KEYCLOAK_URL KEYCLOAK_URL_HOST APP_BASE_URL KEYCLOAK_ISSUER KEYCLOAK_PUBLIC_ISSUER; \
-	if [ "$${DEMO_MODE:-}" = "true" ]; then \
+	if [ "$$demo_mode" = "true" ]; then \
 		echo "[test-e2e] DEMO_MODE=true: unit tests are sufficient for demo mode (run 'make test'). To execute integration suites, switch back to production configuration (DEMO_MODE=false, AZURE_USE_KEYVAULT=true) then run 'make load-secrets' and 'set -a; source .env; set +a'." >&2; \
 		exit 1; \
 	fi; \
@@ -468,8 +469,9 @@ test-e2e: ensure-stack venv ## Run integration test suite (requires stack)
 .PHONY: test-all
 test-all: ## Run unit, integration, and security suites
 	@set -a; source .env 2>/dev/null || true; set +a; \
+	demo_mode="$${DEMO_MODE:-}"; \
 	unset DEMO_MODE AZURE_USE_KEYVAULT FLASK_SECRET_KEY KEYCLOAK_SERVICE_CLIENT_SECRET KEYCLOAK_ADMIN_PASSWORD AUDIT_LOG_SIGNING_KEY KEYCLOAK_URL KEYCLOAK_URL_HOST APP_BASE_URL KEYCLOAK_ISSUER KEYCLOAK_PUBLIC_ISSUER; \
-	if [ "$${DEMO_MODE:-}" = "true" ]; then \
+	if [ "$$demo_mode" = "true" ]; then \
 		echo "[test-all] DEMO_MODE=true: unit tests are sufficient for demo mode (run 'make test'). To run the full suites, switch back to production configuration (DEMO_MODE=false, AZURE_USE_KEYVAULT=true) then run 'make load-secrets' and 'set -a; source .env; set +a'." >&2; \
 		exit 1; \
 	fi; \
@@ -486,8 +488,9 @@ endif
 .PHONY: test/security
 test/security: venv ## Run critical security tests
 	@set -a; source .env 2>/dev/null || true; set +a; \
+	demo_mode="$${DEMO_MODE:-}"; \
 	unset DEMO_MODE AZURE_USE_KEYVAULT FLASK_SECRET_KEY KEYCLOAK_SERVICE_CLIENT_SECRET KEYCLOAK_ADMIN_PASSWORD AUDIT_LOG_SIGNING_KEY KEYCLOAK_URL KEYCLOAK_URL_HOST APP_BASE_URL KEYCLOAK_ISSUER KEYCLOAK_PUBLIC_ISSUER; \
-	if [ "$${DEMO_MODE:-}" = "true" ]; then \
+	if [ "$$demo_mode" = "true" ]; then \
 		echo "[test/security] DEMO_MODE=true: unit tests are sufficient for demo mode (run 'make test'). To execute security suites, switch back to production configuration (DEMO_MODE=false, AZURE_USE_KEYVAULT=true) then run 'make load-secrets' and 'set -a; source .env; set +a'." >&2; \
 		exit 1; \
 	fi; \
