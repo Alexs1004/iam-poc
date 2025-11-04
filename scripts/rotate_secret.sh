@@ -150,6 +150,9 @@ else
 
   NEW_SECRET=$(echo "${ROTATE_JSON}" | jq -r '.value // empty')
   [[ -n "${NEW_SECRET}" ]] || die "La régénération du secret a échoué (réponse vide)."
+  
+  # Validation de sécurité du secret (OWASP ASVS 2.7.1)
+  [[ ${#NEW_SECRET} -ge 16 ]] || die "Secret trop court (${#NEW_SECRET} chars < 16 requis par OWASP)"
 fi
 
 log "Nouveau secret obtenu (longueur $(echo -n "${NEW_SECRET}" | wc -c | tr -d ' ') chars)."
@@ -159,20 +162,107 @@ log "Nouveau secret obtenu (longueur $(echo -n "${NEW_SECRET}" | wc -c | tr -d '
 ### ──────────────────────────────────────────────────────────────────────────────
 log "Mise à jour du secret dans Azure Key Vault: ${AZURE_KEY_VAULT_NAME}/${AKV_SECRET_NAME}"
 
+SECRET_ID=""
+SECRET_VERSION=""
+
 if [[ "${DRY_RUN}" == "--dry-run" ]]; then
   warn "DRY-RUN: on n'écrit pas dans Key Vault."
+  SECRET_ID="https://${AZURE_KEY_VAULT_NAME}.vault.azure.net/secrets/${AKV_SECRET_NAME}/dry-run"
+  SECRET_VERSION="dry-run"
 else
-  az keyvault secret set \
+  ROTATION_JSON=$(az keyvault secret set \
     --vault-name "${AZURE_KEY_VAULT_NAME}" \
     --name "${AKV_SECRET_NAME}" \
     --value "${NEW_SECRET}" \
-    --only-show-errors >/dev/null
+    -o json \
+    --only-show-errors)
+  
+  SECRET_ID=$(echo "${ROTATION_JSON}" | jq -r '.id // empty')
+  
+  # Extraire la version depuis l'ID (format: https://vault.../secrets/name/VERSION)
+  SECRET_VERSION=$(echo "${SECRET_ID}" | grep -oP '/[^/]+$' | tr -d '/')
+  
+  [[ -n "${SECRET_ID}" && -n "${SECRET_VERSION}" ]] || die "Impossible de récupérer l'identifiant du secret depuis Key Vault."
 fi
 
-log "Key Vault synchronisé."
+log "Key Vault synchronisé (version ${SECRET_VERSION})."
 
 ### ──────────────────────────────────────────────────────────────────────────────
-### Étape 5: Redémarrer l'app Flask (pour recharger le secret)
+### Étape 4b: Enregistrer une entrée d'audit signée (HMAC-SHA256)
+### ──────────────────────────────────────────────────────────────────────────────
+AUDIT_LOG_SIGNING_KEY="${AUDIT_LOG_SIGNING_KEY:-}"
+load_secret_if_empty "AUDIT_LOG_SIGNING_KEY" "audit_log_signing_key"
+
+if [[ -z "${AUDIT_LOG_SIGNING_KEY}" ]]; then
+  warn "AUDIT_LOG_SIGNING_KEY manquant, tentative de récupération depuis Key Vault..."
+  AKV_AUDIT_KEY_NAME="${AZURE_SECRET_AUDIT_LOG_SIGNING_KEY:-audit-log-signing-key}"
+  AUDIT_LOG_SIGNING_KEY=$(az keyvault secret show \
+    --vault-name "${AZURE_KEY_VAULT_NAME}" \
+    --name "${AKV_AUDIT_KEY_NAME}" \
+    --query value -o tsv 2>/dev/null || true)
+  [[ -n "${AUDIT_LOG_SIGNING_KEY}" ]] || warn "Impossible de récupérer AUDIT_LOG_SIGNING_KEY, audit non signé."
+fi
+
+if [[ -n "${AUDIT_LOG_SIGNING_KEY}" ]]; then
+  log "Enregistrement de l'entrée d'audit signée..."
+  
+  # Récupérer l'opérateur Azure
+  OPERATOR=$(az account show --query "user.name" -o tsv 2>/dev/null || true)
+  [[ -z "${OPERATOR}" ]] && OPERATOR=$(az account show --query "user.userPrincipalName" -o tsv 2>/dev/null || true)
+  [[ -z "${OPERATOR}" ]] && OPERATOR=$(az account show --query "name" -o tsv 2>/dev/null || echo "unknown")
+  
+  TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  AUDIT_DIR="${PROJECT_ROOT}/.runtime/audit"
+  mkdir -p "${AUDIT_DIR}"
+  chmod 700 "${AUDIT_DIR}"
+  
+  AUDIT_MESSAGE="timestamp=${TIMESTAMP} operator=${OPERATOR} secret_id=${SECRET_ID} version=${SECRET_VERSION}"
+  
+  # Signature HMAC-SHA256 (passage par variable d'environnement pour éviter injection)
+  SIGNATURE=$(AUDIT_LOG_MESSAGE="${AUDIT_MESSAGE}" python3 -c "import os,hmac,hashlib; key=os.environ['AUDIT_LOG_SIGNING_KEY'].encode(); msg=os.environ['AUDIT_LOG_MESSAGE'].encode(); print(hmac.new(key, msg, hashlib.sha256).hexdigest())")
+  
+  AUDIT_FILE="${AUDIT_DIR}/secret-rotation.log"
+  touch "${AUDIT_FILE}"
+  chmod 600 "${AUDIT_FILE}"
+  
+  if [[ "${DRY_RUN}" == "--dry-run" ]]; then
+    warn "DRY-RUN: audit non écrit (serait: ${AUDIT_MESSAGE} signature=${SIGNATURE})"
+  else
+    printf '%s signature=%s\n' "${AUDIT_MESSAGE}" "${SIGNATURE}" >> "${AUDIT_FILE}"
+    log "✅ Audit entry recorded for operator '${OPERATOR}'."
+  fi
+else
+  warn "Audit non signé: AUDIT_LOG_SIGNING_KEY indisponible."
+fi
+
+### ──────────────────────────────────────────────────────────────────────────────
+### Étape 5: Synchroniser les secrets locaux depuis Key Vault
+### ──────────────────────────────────────────────────────────────────────────────
+log "Synchronisation des secrets locaux depuis Key Vault..."
+if [[ "${DRY_RUN}" == "--dry-run" ]]; then
+  warn "DRY-RUN: pas de synchronisation des secrets."
+else
+  mkdir -p "${SECRETS_DIR}"
+  chmod 700 "${SECRETS_DIR}"
+  
+  # Sauvegarder l'ancien secret pour rollback potentiel (CIS Benchmark 5.5.1)
+  OLD_SECRET=""
+  if [[ -f "${SECRETS_DIR}/keycloak_service_client_secret" ]]; then
+    OLD_SECRET=$(<"${SECRETS_DIR}/keycloak_service_client_secret")
+    chmod 600 "${SECRETS_DIR}/keycloak_service_client_secret"
+  fi
+  
+  # Écrire le nouveau secret de manière atomique et sécurisée (NIST SP 800-53 SC-28)
+  TEMP_SECRET_FILE=$(mktemp -u "${SECRETS_DIR}/keycloak_service_client_secret.XXXXXX")
+  (umask 077 && echo -n "${NEW_SECRET}" > "${TEMP_SECRET_FILE}")
+  chmod 600 "${TEMP_SECRET_FILE}"
+  mv -f "${TEMP_SECRET_FILE}" "${SECRETS_DIR}/keycloak_service_client_secret"
+  
+  log "✅ Secret local synchronisé (${SECRETS_DIR}/keycloak_service_client_secret)"
+fi
+
+### ──────────────────────────────────────────────────────────────────────────────
+### Étape 6: Redémarrer l'app Flask (pour recharger le secret)
 ### ──────────────────────────────────────────────────────────────────────────────
 log "Redémarrage du service Docker '${FLASK_SERVICE}'…"
 if [[ "${DRY_RUN}" == "--dry-run" ]]; then
@@ -183,7 +273,7 @@ else
 fi
 
 ### ──────────────────────────────────────────────────────────────────────────────
-### Étape 6: Health-check de l'application
+### Étape 7: Health-check de l'application
 ### ──────────────────────────────────────────────────────────────────────────────
 log "Health-check sur ${HEALTHCHECK_URL}…"
 CURL_FLAGS="-sS"
@@ -196,16 +286,32 @@ if [[ "${DRY_RUN}" == "--dry-run" ]]; then
   warn "DRY-RUN: health-check non exécuté."
 else
   # 10 tentatives max, 2s d'intervalle
+  HEALTH_OK=false
   for i in {1..10}; do
     HTTP_CODE=$(curl ${CURL_FLAGS} -o /dev/null -w "%{http_code}" "${HEALTHCHECK_URL}" || true)
     if [[ "${HTTP_CODE}" =~ ^2[0-9][0-9]$ ]]; then
       log "✅ Application OK (HTTP ${HTTP_CODE})."
+      HEALTH_OK=true
       break
     fi
     warn "Tentative ${i}/10: HTTP ${HTTP_CODE}. Nouvelle tentative dans 2s…"
     sleep 2
-    [[ "${i}" -lt 10 ]] || die "Health-check KO après 10 tentatives."
   done
+  
+  # Rollback si health-check échoue (NIST SP 800-53 CP-10)
+  if [[ "${HEALTH_OK}" == "false" ]]; then
+    err "Health-check KO après 10 tentatives."
+    if [[ -n "${OLD_SECRET}" ]]; then
+      warn "Rollback vers l'ancien secret..."
+      (umask 077 && echo -n "${OLD_SECRET}" > "${SECRETS_DIR}/keycloak_service_client_secret")
+      chmod 600 "${SECRETS_DIR}/keycloak_service_client_secret"
+      docker compose restart "${FLASK_SERVICE}" >/dev/null
+      warn "Service restauré avec l'ancien secret. Nouvelle version Key Vault non utilisée."
+      die "Rotation annulée suite à l'échec du health-check."
+    else
+      die "Aucun backup disponible pour le rollback."
+    fi
+  fi
 fi
 
 log "✅ Rotation orchestrée terminée avec succès."

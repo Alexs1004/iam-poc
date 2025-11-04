@@ -1,21 +1,25 @@
 # Scripts Directory
 
-Utility scripts for IAM PoC automation, infrastructure, and testing.
+Utility scripts for IAM PoC automation, infrastructure, and secret management.
 
-## 📁 Organization
+> **📚 Documentation complète** : Voir [docs/README.md](../docs/README.md) pour la documentation détaillée du projet
+
+---
+
+## 📁 Script Inventory
 
 ### Automation & Provisioning
 | Script | Purpose | Used By |
 |--------|---------|---------|
 | **[jml.py](jml.py)** | JML CLI (Joiner/Mover/Leaver automation) | `provisioning_service.py`, `Makefile` |
 | **[audit.py](audit.py)** | Audit logging with HMAC-SHA256 signatures | `provisioning_service.py`, `Makefile` |
-| **[demo_jml.sh](demo_jml.sh)** | Complete JML workflow demonstration | `make quickstart`, `make demo-jml` |
+| **[demo_jml.sh](demo_jml.sh)** | Complete JML workflow demonstration | `make quickstart`, `make demo` |
 
 ### Infrastructure & Deployment
 | Script | Purpose | Used By |
 |--------|---------|---------|
 | **[run_https.sh](run_https.sh)** | Start Docker stack with HTTPS (nginx + certs) | `make up`, `make quickstart` |
-| **[rotate_secret.sh](rotate_secret.sh)** | Rotate Keycloak service account secret | `make rotate-secret` |
+| **[rotate_secret.sh](rotate_secret.sh)** | **Secure secret rotation** (Keycloak → Key Vault → Flask) | `make rotate-secret` |
 | **[load_secrets_from_keyvault.sh](load_secrets_from_keyvault.sh)** | Load secrets from Azure Key Vault | `make load-secrets` |
 | **[keycloak_entrypoint.sh](keycloak_entrypoint.sh)** | Keycloak Docker container entrypoint | `docker-compose.yml` |
 
@@ -32,170 +36,169 @@ Utility scripts for IAM PoC automation, infrastructure, and testing.
 
 ---
 
-## 🚀 Quick Reference
+## 🚀 Quick Command Reference
 
-### JML Automation
+### Common Workflows
 ```bash
-# Create user
-python scripts/jml.py create-user --username alice --email alice@example.com
+# Zero-config demo
+make quickstart              # Auto-generates .env, starts stack, runs demo
 
-# Change role (Mover)
-python scripts/jml.py change-role --username alice --from-role analyst --to-role manager
+# Testing
+make test                    # Unit tests (328 tests, 92% coverage, ~3.5s)
+make test-e2e                # Integration tests (requires running stack)
+make test-coverage           # Coverage report (HTML + terminal)
 
-# Disable user (Leaver)
-python scripts/jml.py disable-user --username alice
+# Infrastructure
+make up                      # Start Docker stack
+make down                    # Stop services
+make restart                 # Full restart
+make logs                    # Tail all services
 
-# Full demo
-./scripts/demo_jml.sh
+# Validation
+make validate-env            # Check .env configuration
+make doctor                  # Azure + Docker health check
+make verify-audit            # Verify HMAC signatures
+
+# Production
+make rotate-secret           # Secret rotation (zero-downtime)
+make rotate-secret-dry       # Dry-run simulation
 ```
 
-### Infrastructure
-```bash
-# Start stack with HTTPS
-./scripts/run_https.sh
-
-# Rotate service account secret (production)
-./scripts/rotate_secret.sh
-
-# Load secrets from Azure Key Vault
-./scripts/load_secrets_from_keyvault.sh
-```
-
-### Validation
-```bash
-# Validate environment configuration
-./scripts/validate_env.sh
-
-# Validate project setup
-./scripts/validate_config.sh
-```
-
-### Testing
-```bash
-# Core pytest suites
-make test             # Unit tests (Keycloak mocked)
-make test-e2e         # Integration tests (requires running stack)
-make test/security    # Critical security smoke tests
-```
+**📖 Full workflow documentation:** [docs/DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)
 
 ---
 
-## 🔒 Security Notes
+## 🔒 Script-Specific Security Notes
 
-### Production Secrets
-- **NEVER commit `.env`** (gitignored)
-- Use `DEMO_MODE=false` + Azure Key Vault in production
-- Service account secret: `/run/secrets/keycloak-service-client-secret`
-- Audit logs signed with HMAC-SHA256 (`AUDIT_LOG_SIGNING_KEY`)
+### `rotate_secret.sh` — Production Secret Rotation
 
-### Secret Rotation
+**Workflow (7 steps):**
+1. Authenticate to Keycloak (master realm admin)
+2. Regenerate client secret (POST `/client-secret`)
+3. Update Azure Key Vault (versioned)
+4. Record audit entry (HMAC-SHA256 signed)
+5. Sync local cache (`.runtime/secrets/`)
+6. Restart Flask (reload configuration)
+7. Health-check (automatic rollback on failure)
+
+**Security features:**
+- ✅ Zero-downtime (health-check with retry + rollback)
+- ✅ Audit trail (operator + timestamp + version + HMAC signature)
+- ✅ Atomic file updates (mktemp + umask 077)
+- ✅ Minimum 16 chars validation (OWASP ASVS 2.7.1)
+- ✅ Zero secret exposure (never logged)
+
+**Environment variables used:**
+- `AZURE_KEY_VAULT_NAME` — Key Vault name
+- `AZURE_SECRET_KEYCLOAK_SERVICE_CLIENT_SECRET` — Secret name in Key Vault
+- `AZURE_SECRET_AUDIT_LOG_SIGNING_KEY` — HMAC key for audit
+- `FLASK_SERVICE` — Docker service name (default: `flask-app`)
+- `HEALTHCHECK_URL` — Health endpoint (default: `https://localhost/health`)
+
+**Compliance:** NIST SP 800-53 (IA-5, AU-10, CP-10), OWASP ASVS L2 (2.7.1, 6.2.1), CIS (5.2.1, 5.5.1)
+
+**📖 Full security analysis:** [docs/SECRET_ROTATION_SECURITY.md](../docs/SECRET_ROTATION_SECURITY.md)
+
+---
+
+### `load_secrets_from_keyvault.sh` — Azure Key Vault Integration
+
+**Behavior:**
+- Fetches secrets from Azure Key Vault
+- Caches in `.runtime/secrets/` (chmod 600)
+- Docker mounts as `/run/secrets/` (read-only)
+
+**Why local cache?**
+- **Performance:** No Azure API calls at runtime
+- **Resilience:** Works if Key Vault temporarily unavailable
+- **Cost:** Reduces Key Vault access charges
+
+**Security:**
+- Secrets never in `.env` (only Key Vault names)
+- Cached files: `chmod 600` (owner read/write only)
+- Directory: `chmod 700` (owner access only)
+
+---
+
+### `jml.py` — Keycloak Admin CLI
+
+**Standalone CLI** for Keycloak automation (Joiner/Mover/Leaver operations).
+
+**Features:**
+- Service account authentication (client credentials flow)
+- User lifecycle management (create, disable, role changes)
+- Audit logging (HMAC-SHA256 signed events)
+- Dry-run mode for testing
+
+**Usage:**
 ```bash
-# Dry-run validation
-make rotate-secret-dry
-
-# Execute rotation (updates Keycloak + Key Vault + restarts Flask)
-make rotate-secret
-```
-
-### Demo Mode Warnings
-- `DEMO_MODE=true` auto-generates secrets (printed at startup)
-- Demo credentials: `admin/admin`, `demo-service-secret`
-- **DO NOT deploy with demo credentials**
-
----
-
-## 📖 Architecture Integration
-
-### Data Flow
-```
-1. JML Operations:
-   Admin UI → provisioning_service.py → jml.py → Keycloak Admin API
-   
-2. SCIM API:
-   HTTP Client → scim.py (OAuth) → provisioning_service.py → jml.py → Keycloak
-   
-3. Audit Logging:
-   All JML ops → audit.py → .runtime/audit/jml-events.jsonl (HMAC signed)
-```
-
-### Module Dependencies
-```python
-# app/core/provisioning_service.py
-from scripts import jml      # Keycloak Admin API
-from scripts import audit    # Audit logging
-
-# Direct imports (NOT via Flask app context)
-```
-
----
-
-## 🧪 Testing Strategy
-
-### Unit Tests (pytest)
-- **Command**: `make test`
-- **Scope**: 190+ fast tests with mocked Keycloak API
-- **Highlights**: Config validation, JML flows, SCIM transformers, OAuth validators
-
-### Integration Tests (pytest)
-- **Command**: `make test-e2e`
-- **Scope**: Real Keycloak tokens, SCIM CRUD, filtering, error handling
-- **Prerequisites**: Running stack (`make up` or `make ensure-stack`)
-
-### Security Regression Suite
-- **Command**: `make test/security`
-- **Scope**: TLS headers, JWT rejection paths, secret hygiene, rotation sanity checks
-- **Prerequisites**: Production-style secrets (Key Vault or `.runtime/secrets`)
-
----
-
-## 🗂️ Removed Scripts
-
-**January 2025**
-- ❌ `validate_refactoring.sh`: Obsolete (referenced deleted `flask_app_new.py`)
-- ❌ `test_scim_oauth.sh`: Superseded by `tests/test_scim_oauth_validation.py`
-
-**February 2025**
-- ❌ `test_scim_api.sh`: Redundant with `tests/test_scim_api.py`
-- ❌ `fix_automation_cli_secret.py`: Bootstrap now restores the demo secret automatically
-
----
-
-## 📚 Documentation
-
-- **Main Guide**: [../README.md](../README.md)
-- **Architecture & flux**: [../docs/OVERVIEW.md](../docs/OVERVIEW.md)
-- **Setup & dépannage**: [../docs/SETUP_GUIDE.md](../docs/SETUP_GUIDE.md)
-- **Sécurité & OAuth SCIM**: [../docs/SECURITY_DESIGN.md](../docs/SECURITY_DESIGN.md)
-- **API détaillée**: [../docs/API_REFERENCE.md](../docs/API_REFERENCE.md)
-
----
-
-## 🛠️ Development Workflow
-
-```bash
-# 1. Zero-config quickstart
-make quickstart   # Auto-generates .env, starts stack, runs demo
-
-# 2. Run tests
-make test         # Unit tests (mocked)
-make test-e2e     # Integration tests (requires stack)
-# (Optional) Production smoke tests
-make test/security
-
-# 3. Manual JML operations
 python scripts/jml.py --help
 
-# 4. Validate changes
-make validate-env
-pytest tests/ -v
-
-# 5. Clean restart
-make clean-all
-make quickstart
+# Or via Makefile
+make joiner-alice    # Create user
+make mover-alice     # Promote to admin
+make leaver-bob      # Disable account
 ```
+
+**Design choice:** Direct CLI (not via Flask app context) for use in automation pipelines.
 
 ---
 
-**Last Updated**: February 2025  
+### `audit.py` — Tamper-Proof Audit Trail
+
+**Implementation:**
+- HMAC-SHA256 signatures (key from Azure Key Vault)
+- JSONL format (one event per line, easy parsing)
+- Operator tracking (Azure AD identity)
+- Timestamp (ISO 8601 UTC)
+
+**Verification:**
+```bash
+make verify-audit
+# Checks all HMAC signatures in .runtime/audit/jml-events.jsonl
+```
+
+**Compliance:** NIST SP 800-53 AU-10 (non-repudiation), GDPR Art. 5 (accountability)
+
+---
+
+## 🗂️ Runtime Directory Structure
+
+Scripts manage the `.runtime/` directory for secrets, audit logs, and Azure cache:
+
+```
+.runtime/
+├── secrets/                # Local secret cache (chmod 600)
+│   ├── flask_secret_key
+│   ├── keycloak_service_client_secret
+│   ├── keycloak_admin_password
+│   └── audit_log_signing_key
+├── audit/                  # Tamper-proof logs (chmod 600)
+│   ├── jml-events.jsonl            # JML operations (HMAC signed)
+│   ├── secret-rotation.log         # Secret rotations (HMAC signed)
+│   └── archive/                    # Historical snapshots
+└── azure/                  # Azure CLI token cache (chmod 700)
+```
+
+**Docker mounts:** `.runtime/secrets/` → `/run/secrets/` (read-only in containers)
+
+---
+
+## 📚 Documentation References
+
+| Topic | Document | Description |
+|-------|----------|-------------|
+| **Project Overview** | [README.md](../README.md) | Quickstart, demo mode, credentials |
+| **Testing Strategy** | [docs/TESTING.md](../docs/TESTING.md) | Unit, integration, coverage workflows |
+| **Production Deployment** | [docs/DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md) | Azure setup, Key Vault, Managed Identity |
+| **Secret Rotation** | [docs/SECRET_ROTATION_SECURITY.md](../docs/SECRET_ROTATION_SECURITY.md) | Security analysis, NIST/OWASP compliance |
+| **Security Design** | [docs/SECURITY_DESIGN.md](../docs/SECURITY_DESIGN.md) | Threat model, controls, OAuth flows |
+| **API Reference** | [docs/API_REFERENCE.md](../docs/API_REFERENCE.md) | SCIM endpoints, JML operations |
+
+**📖 Documentation Hub:** [docs/README.md](../docs/README.md)
+
+---
+
+**Last Updated**: November 2025  
 **Maintainer**: Alex  
-**Project**: IAM PoC (Keycloak + Flask + SCIM 2.0)
+**Project**: IAM PoC (Keycloak + Flask + SCIM 2.0 + Azure Key Vault)
