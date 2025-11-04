@@ -10,16 +10,16 @@
 
 | Document | Objectif | Public |
 |----------|----------|--------|
-| **[🇨🇭 Swiss Hiring Pack](Hiring_Pack.md)** | Correspondance CV ↔ Repo, mots-clés ATS, validation rapide | Recruteurs RH, Hiring Managers |
-| **[� RBAC Demo Scenarios](RBAC_DEMO_SCENARIOS.md)** | Workflows Joiner/Mover/Leaver détaillés, matrice RBAC, tests manuels | Recruteurs RH, Tech Leads |
-| **[�📖 README Principal](../README.md)** | Positionnement Cloud Security Engineer (Swiss), démarrage 2 min | Tous (screening initial) |
+| **[Swiss Hiring Pack](Hiring_Pack.md)** | Correspondance CV ↔ Repo, mots-clés ATS, validation rapide | Recruteurs RH, Hiring Managers |
+| **[RBAC Demo Scenarios](RBAC_DEMO_SCENARIOS.md)** | Workflows Joiner/Mover/Leaver détaillés, matrice RBAC, tests manuels | Recruteurs RH, Tech Leads |
+| **[README Principal](../README.md)** | Positionnement Cloud Security Engineer (Swiss), démarrage 2 min | Tous (screening initial) |
 
 **Ce qu'un recruteur doit retenir** :
-- ✅ Azure Key Vault opérationnel (production-ready secrets management)
-- ✅ SCIM 2.0 RFC 7644 compliant (standard IAM inter-entreprises)
-- ✅ Conformité Swiss : nLPD, RGPD, FINMA (audit trail non-répudiable)
-- ✅ 328 tests automatisés, 92% coverage (qualité code vérifiable)
-- ✅ Roadmap Azure-native : Migration Entra ID planifiée
+- Azure Key Vault opérationnel (production-ready secrets management)
+- SCIM 2.0 RFC 7644 compliant (standard IAM inter-entreprises)
+- Conformité Swiss : nLPD, RGPD, FINMA (audit trail non-répudiable)
+- 328 tests automatisés, 92% coverage (qualité code vérifiable)
+- Roadmap Azure-native : Migration Entra ID planifiée
 
 ---
 
@@ -29,9 +29,9 @@
 
 | Document | Contenu | Standards |
 |----------|---------|-----------|
-| **[🛡️ Security Design](SECURITY_DESIGN.md)** | Contrôles implémentés, threat mitigation, secrets management | OWASP ASVS L2, nLPD, RGPD |
-| **[⚠️ Threat Model](THREAT_MODEL.md)** | Analyse STRIDE, MITRE ATT&CK, conformité FINMA | RFC 7644, NIST 800-63B |
-| **[📡 API Reference](API_REFERENCE.md)** | Endpoints SCIM, authentification OAuth, rate limiting | RFC 7644, RFC 6749 |
+| **[Security Design](SECURITY_DESIGN.md)** | Contrôles implémentés, threat mitigation, secrets management | OWASP ASVS L2, nLPD, RGPD |
+| **[Threat Model](THREAT_MODEL.md)** | Analyse STRIDE, MITRE ATT&CK, conformité FINMA | RFC 7644, NIST 800-63B |
+| **[API Reference](API_REFERENCE.md)** | Endpoints SCIM, authentification OAuth, rate limiting | RFC 7644, RFC 6749 |
 
 **Points clés sécurité** :
 - **AuthN/AuthZ** : OAuth 2.0 Bearer tokens, PKCE, MFA enforcement
@@ -48,9 +48,9 @@
 
 | Document | Contenu | Technologies |
 |----------|---------|--------------|
-| **[🚀 Deployment Guide](DEPLOYMENT_GUIDE.md)** | Azure App Service, Key Vault, Managed Identity, CI/CD | Azure, Docker, Nginx |
-| **[🧪 Testing Guide](TESTING.md)** | Stratégie de test, couverture, workflow CI/CD, troubleshooting | pytest, coverage, xdist |
-| **[🔬 Local SCIM Testing](LOCAL_SCIM_TESTING.md)** | Tests locaux, curl examples, troubleshooting | SCIM 2.0, OAuth 2.0 |
+| **[Deployment Guide](DEPLOYMENT_GUIDE.md)** | Azure App Service, Key Vault, Managed Identity, CI/CD | Azure, Docker, Nginx |
+| **[Testing Guide](TESTING.md)** | Stratégie de test, couverture, workflow CI/CD, troubleshooting | pytest, coverage, xdist |
+| **[Local SCIM Testing](LOCAL_SCIM_TESTING.md)** | Tests locaux, curl examples, troubleshooting | SCIM 2.0, OAuth 2.0 |
 
 **Commandes clés** :
 ```bash
