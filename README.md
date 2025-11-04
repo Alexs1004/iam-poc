@@ -13,7 +13,7 @@
 
 ---
 
-## 🇨🇭 Positionnement : Cloud Security Engineer (Suisse Romande)
+## Positionnement : Cloud Security Engineer (Suisse Romande)
 
 Ce projet démontre une **maîtrise opérationnelle des standards IAM modernes** dans un contexte **Azure-first** et **conforme aux exigences suisses** (nLPD, RGPD, FINMA). Il s'adresse aux recruteurs en sécurité cloud recherchant des profils capables de concevoir, sécuriser et auditer des environnements d'identité dans le cloud Microsoft Azure.
 
@@ -33,11 +33,11 @@ open https://localhost
 ```
 
 **Ce que vous verrez** :
-- ✅ Authentification OIDC avec MFA (Keycloak → migration Entra ID prévue)
-- ✅ API SCIM 2.0 RFC 7644-compliant (Joiner/Mover/Leaver automation)
-- ✅ Secrets chargés depuis Azure Key Vault (zero-config demo mode disponible)
-- ✅ Trail d'audit cryptographique avec signatures HMAC-SHA256 vérifiables
-- ✅ Page de vérification interactive : https://localhost/verification
+- Authentification OIDC avec MFA (Keycloak → migration Entra ID prévue)
+- API SCIM 2.0 RFC 7644-compliant (Joiner/Mover/Leaver automation)
+- Secrets chargés depuis Azure Key Vault (zero-config demo mode disponible)
+- Trail d'audit cryptographique avec signatures HMAC-SHA256 vérifiables
+- Page de vérification interactive : https://localhost/verification
 
 ### 👥 Utilisateurs de Démo & Matrice RBAC
 
@@ -69,14 +69,14 @@ open https://localhost/admin
 open https://localhost/admin/audit
 
 # 4. Vérifier intégrité signatures HMAC
-make verify-audit  # 22/22 signatures valides attendues
+make verify-audit
 ```
 
-**💡 Points Clés pour Recruteurs** :
-- ✅ **Séparation des privilèges** : 4 niveaux de rôles (principe du moindre privilège)
-- ✅ **Cycle de vie complet** : Joiner (alice), Mover (alice → operator), Leaver (bob disabled)
-- ✅ **Traçabilité** : Chaque opération JML signée cryptographiquement (`/admin/audit`)
-- ✅ **MFA obligatoire** : TOTP requis pour tous les comptes (standard NIST 800-63B)
+**💡 Points Clés** :
+- **Séparation des privilèges** : 4 niveaux de rôles (principe du moindre privilège)
+- **Cycle de vie complet** : Joiner (alice), Mover (alice → operator), Leaver (bob disabled)
+- **Traçabilité** : Chaque opération JML signée cryptographiquement (`/admin/audit`)
+- **MFA obligatoire** : TOTP requis pour tous les comptes (standard NIST 800-63B)
 
 ---
 
@@ -108,31 +108,31 @@ make verify-audit  # 22/22 signatures valides attendues
 ## 🎯 Ce Projet Démontre
 
 ### Sécurité Cloud Azure
-- ✅ **Azure Key Vault** comme source unique de vérité pour secrets (KEYCLOAK_SERVICE_CLIENT_SECRET, FLASK_SECRET_KEY, AUDIT_LOG_SIGNING_KEY)
-- ✅ **Rotation automatisée** des secrets avec validation d'intégrité (dry-run disponible)
-- ✅ **Architecture prête pour Managed Identity** (élimination des Service Principals)
-- ✅ **Security headers** : HSTS, CSP, X-Frame-Options, X-Content-Type-Options
-- ✅ **Rate limiting** : Protection DoS sur endpoints critiques (SCIM, admin, verification)
+- **Azure Key Vault** comme source unique de vérité pour secrets (KEYCLOAK_SERVICE_CLIENT_SECRET, FLASK_SECRET_KEY, AUDIT_LOG_SIGNING_KEY)
+- **Rotation automatisée** des secrets avec validation d'intégrité (dry-run disponible)
+- **Architecture prête pour Managed Identity** (élimination des Service Principals)
+- **Security headers** : HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+- **Rate limiting** : Protection DoS sur endpoints critiques (SCIM, admin, verification)
 
 ### Gestion d'Identités (IAM)
-- ✅ **SCIM 2.0 RFC 7644** : API standardisée de provisioning d'identités
-- ✅ **OIDC/OAuth 2.0** : Authentification fédérée avec PKCE (RFC 7636)
-- ✅ **Multi-Factor Authentication** : OTP obligatoire pour comptes admin
-- ✅ **RBAC granulaire** : realm-admin, iam-operator, iam-verifier (séparation des privilèges)
-- ✅ **Joiner/Mover/Leaver (JML)** : Automatisation du cycle de vie utilisateurs
+- **SCIM 2.0 RFC 7644** : API standardisée de provisioning d'identités
+- **OIDC/OAuth 2.0** : Authentification fédérée avec PKCE (RFC 7636)
+- **Multi-Factor Authentication** : OTP obligatoire pour comptes admin
+- **RBAC granulaire** : realm-admin, iam-operator, iam-verifier (séparation des privilèges)
+- **Joiner/Mover/Leaver (JML)** : Automatisation du cycle de vie utilisateurs
 
 ### Conformité & Audit
-- ✅ **Trail d'audit inaltérable** : Signatures HMAC-SHA256 pour chaque opération SCIM
-- ✅ **Non-répudiation** : Corrélation-id, timestamp, username, payload hashé
-- ✅ **Vérification d'intégrité** : Détection automatique des modifications (page dédiée)
-- ✅ **nLPD/RGPD** : Traçabilité des accès aux données personnelles
-- ✅ **FINMA** : Conservation des preuves cryptographiques
+- **Trail d'audit inaltérable** : Signatures HMAC-SHA256 pour chaque opération SCIM
+- **Non-répudiation** : Corrélation-id, timestamp, username, payload hashé
+- **Vérification d'intégrité** : Détection automatique des modifications (page dédiée)
+- **nLPD/RGPD** : Traçabilité des accès aux données personnelles
+- **FINMA** : Conservation des preuves cryptographiques
 
 ### DevSecOps
-- ✅ **Tests automatisés** : 300+ tests (90% coverage), CI/CD sécurisé
-- ✅ **Zero-config demo** : Secrets éphémères générés automatiquement (mode DEMO)
-- ✅ **Production-ready** : Séparation stricte demo/prod, secrets jamais en clair
-- ✅ **Infrastructure as Code** : Makefile 30+ commandes (quickstart, rotate-secret, verify-audit)
+- **Tests automatisés** : 300+ tests (90% coverage), CI/CD sécurisé
+- **Zero-config demo** : Secrets éphémères générés automatiquement (mode DEMO)
+- **Production-ready** : Séparation stricte demo/prod, secrets jamais en clair
+- **Infrastructure as Code** : Makefile 30+ commandes (quickstart, rotate-secret, verify-audit)
 
 ---
 
@@ -196,24 +196,24 @@ make ps                       # État des conteneurs
 Cette page exécute automatiquement une suite de tests de validation couvrant :
 
 ### Conformité SCIM RFC 7644
-- ✅ POST/GET/PATCH/DELETE sur `/scim/v2/Users`
-- ✅ Filtrage `userName eq` (garde contre injections)
-- ✅ PUT retourne 501 avec message explicite
-- ✅ Content-Type `application/scim+json` obligatoire (415 sinon)
+- POST/GET/PATCH/DELETE sur `/scim/v2/Users`
+- Filtrage `userName eq` (garde contre injections)
+- PUT retourne 501 avec message explicite
+- Content-Type `application/scim+json` obligatoire (415 sinon)
 
 ### Sécurité OAuth 2.0
-- ✅ 401 Unauthorized sans token ou token invalide
-- ✅ 403 Forbidden avec scope insuffisant
-- ✅ Validation JWT : signature, émetteur, audience, expiration
+- 401 Unauthorized sans token ou token invalide
+- 403 Forbidden avec scope insuffisant
+- Validation JWT : signature, émetteur, audience, expiration
 
 ### Intégrité Audit
-- ✅ Vérification signatures HMAC-SHA256 du trail d'audit
-- ✅ Détection des modifications (alerte si signature invalide)
-- ✅ Corrélation-id, timestamp, username, payload dans chaque événement
+- Vérification signatures HMAC-SHA256 du trail d'audit
+- Détection des modifications (alerte si signature invalide)
+- Corrélation-id, timestamp, username, payload dans chaque événement
 
 ### Protection Réseau
-- ✅ Security headers : HSTS, CSP, X-Frame-Options, X-Content-Type-Options
-- ✅ Rate limiting opérationnel (Nginx : 10-60 req/min selon endpoint)
+- Security headers : HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+- Rate limiting opérationnel (Nginx : 10-60 req/min selon endpoint)
 
 **Commande CLI alternative** : `make verify-audit`  
 **Documentation OpenAPI** : https://localhost/scim/docs
@@ -290,8 +290,8 @@ SKIP_E2E=true make test-all  # Suite complète sans intégration
 - [ ] Migrer SCIM vers **Entra ID Provisioning API**
 
 ### Phase 2 : Secrets & Identity 🔄 En cours
-- [x] **Azure Key Vault** pour secrets (✅ implémenté)
-- [x] **Secret rotation** automatisée (✅ implémenté)
+- [x] **Azure Key Vault** pour secrets (implémenté)
+- [x] **Secret rotation** automatisée (implémenté)
 - [ ] **Managed Identity** pour éliminer Service Principals
 - [ ] **Azure Key Vault RBAC** (remplacer access policies)
 
@@ -309,7 +309,7 @@ SKIP_E2E=true make test-all  # Suite complète sans intégration
 
 ---
 
-## 🇨🇭 Contexte Suisse Romande
+## Contexte Suisse Romande
 
 ### Conformité Réglementaire
 - **nLPD (nouvelle Loi sur la Protection des Données)** : Trail d'audit horodaté, traçabilité accès données personnelles
@@ -317,11 +317,11 @@ SKIP_E2E=true make test-all  # Suite complète sans intégration
 - **FINMA** : Non-répudiation via signatures cryptographiques (secteur financier)
 
 ### Compétences Valorisées
-- ✅ **Azure Entra ID** (ex-Azure AD) : Gestion identités cloud-native
-- ✅ **SCIM 2.0 Provisioning** : Automatisation JML
-- ✅ **Azure Key Vault** : Secrets management production-grade
-- ✅ **Compliance-by-design** : Architecture auditée, sécurisée par défaut
-- ✅ **DevSecOps** : CI/CD sécurisé, tests automatisés, rotation secrets
+- **Azure Entra ID** (ex-Azure AD) : Gestion identités cloud-native
+- **SCIM 2.0 Provisioning** : Automatisation JML
+- **Azure Key Vault** : Secrets management production-grade
+- **Compliance-by-design** : Architecture auditée, sécurisée par défaut
+- **DevSecOps** : CI/CD sécurisé, tests automatisés, rotation secrets
 
 ### Rôles Ciblés (Genève · Lausanne · Berne)
 - **Junior Cloud Security Engineer (Azure)** : Sécurisation environnements cloud
@@ -351,22 +351,22 @@ SKIP_E2E=true make test-all  # Suite complète sans intégration
 ## 🎓 Ce Que Ce Projet Démontre
 
 **Pour un recruteur Cloud Security** :
-- ✅ Capacité à concevoir un système IAM complet et auditable
-- ✅ Maîtrise des standards Azure (Key Vault, Entra ID roadmap, Managed Identity)
-- ✅ Compréhension des enjeux conformité (nLPD, RGPD, FINMA)
-- ✅ Approche DevSecOps (tests automatisés, rotation secrets, CI/CD sécurisé)
+- Capacité à concevoir un système IAM complet et auditable
+- Maîtrise des standards Azure (Key Vault, Entra ID roadmap, Managed Identity)
+- Compréhension des enjeux conformité (nLPD, RGPD, FINMA)
+- Approche DevSecOps (tests automatisés, rotation secrets, CI/CD sécurisé)
 
 **Pour un CISO/SOC** :
-- ✅ Architecture défendable (RBAC, MFA, audit cryptographique)
-- ✅ Traçabilité complète (correlation-id, timestamps, payloads hashés)
-- ✅ Détection d'altération (vérification signatures HMAC-SHA256)
-- ✅ Standards de l'industrie (OWASP ASVS L2, RFC 7644/7636, NIST 800-63B)
+- Architecture défendable (RBAC, MFA, audit cryptographique)
+- Traçabilité complète (correlation-id, timestamps, payloads hashés)
+- Détection d'altération (vérification signatures HMAC-SHA256)
+- Standards de l'industrie (OWASP ASVS L2, RFC 7644/7636, NIST 800-63B)
 
 **Pour un ingénieur cloud** :
-- ✅ Code production-ready (90% tests, zero-config demo, documentation complète)
-- ✅ Séparation stricte demo/prod, secrets jamais en clair
-- ✅ Makefile exhaustif (30+ commandes), health checks, monitoring
-- ✅ Architecture évolutive (roadmap Entra ID, App Service, Monitor)
+- Code production-ready (90% tests, zero-config demo, documentation complète)
+- Séparation stricte demo/prod, secrets jamais en clair
+- Makefile exhaustif (30+ commandes), health checks, monitoring
+- Architecture évolutive (roadmap Entra ID, App Service, Monitor)
 
 ---
 
@@ -383,9 +383,9 @@ Ces limitations sont **intentionnelles** pour garantir la sécurité et l'idempo
 
 ## 📞 Contact & Portfolio
 
-**Auteur** : Alex (Suisse Romande)  
+**Auteur** : Alexs1004
 **Rôles recherchés** : Cloud Security Engineer · IAM Engineer · DevSecOps (Azure)  
-**Localisation** : Genève · Lausanne · Berne  
+**Localisation** : Suisse Romande  
 
 **GitHub** : [github.com/Alexs1004/iam-poc](https://github.com/Alexs1004/iam-poc)  
 **Documentation complète** : [docs/README.md](docs/README.md)  
