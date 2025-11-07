@@ -6,6 +6,7 @@
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Tests 92%](https://img.shields.io/badge/Coverage-92%25-brightgreen?logo=codecov)
 ![Security OWASP](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
+![Security Scans](https://img.shields.io/badge/Security-Trivy%20%7C%20Gitleaks%20%7C%20SBOM-green?logo=github-actions)
 ![Swiss Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20RGPD%20%7C%20FINMA-red)
 ![License MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
@@ -130,9 +131,11 @@ make verify-audit
 
 ### DevSecOps
 - **Tests automatisés** : 300+ tests (90% coverage), CI/CD sécurisé
+- **Scans de sécurité** : Gitleaks (secrets), Trivy (CVE), Syft (SBOM), Grype (vulnérabilités)
+- **Pipeline CI/CD** : GitHub Actions avec 5 jobs de sécurité (secrets, vulns, SBOM, dependency-review)
 - **Zero-config demo** : Secrets éphémères générés automatiquement (mode DEMO)
 - **Production-ready** : Séparation stricte demo/prod, secrets jamais en clair
-- **Infrastructure as Code** : Makefile 30+ commandes (quickstart, rotate-secret, verify-audit)
+- **Infrastructure as Code** : Makefile 35+ commandes (quickstart, rotate-secret, verify-audit, scan-secrets)
 
 ---
 
@@ -146,11 +149,18 @@ make quickstart          # Zero-config : .env + stack + démo JML (2 min)
 make fresh-demo          # Reset complet : volumes + secrets + certificats
 
 # Tests & Qualité
-make test                # Tests unitaires (328 tests, 92% coverage)
-make test-e2e            # Tests d'intégration (nécessite stack démarrée)
-make test-coverage       # Tests complets avec rapport de couverture HTML
-make test-coverage-vscode # Ouvrir le rapport de couverture dans VS Code
-make verify-audit        # Vérification signatures HMAC du trail d'audit
+make test                    # Tests unitaires (328 tests, 92% coverage)
+make test-e2e                # Tests d'intégration (nécessite stack démarrée)
+make test-coverage           # Tests complets avec rapport de couverture HTML
+make test-coverage-vscode    # Ouvrir le rapport de couverture dans VS Code
+make verify-audit            # Vérification signatures HMAC du trail d'audit
+
+# Sécurité
+make security-check          # Lancer tous les scans de sécurité (secrets, CVE, SBOM)
+make scan-secrets            # Détecter secrets exposés avec Gitleaks
+make scan-vulns              # Scanner CVE avec Trivy (HIGH/CRITICAL)
+make sbom                    # Générer Software Bill of Materials (SPDX + CycloneDX)
+make scan-sbom               # Analyser vulnérabilités SBOM avec Grype
 
 # Production
 make rotate-secret       # Rotation secrets Azure Key Vault (avec validation)
@@ -161,7 +171,7 @@ make logs SERVICE=flask-app   # Logs applicatifs
 make ps                       # État des conteneurs
 ```
 
-📘 **Référence complète** : `make help-all` (30+ commandes disponibles)
+📘 **Référence complète** : `make help-all` (35+ commandes disponibles)
 
 ---
 
@@ -175,6 +185,7 @@ make ps                       # État des conteneurs
 - **[Conformité](docs/THREAT_MODEL.md)** — Threat model, non-répudiation, audit trail
 
 ### 🔐 Pour Ingénieurs Sécurité
+- **[Security Scanning](docs/SECURITY_SCANNING.md)** — Gitleaks, Trivy, Syft, Grype (local + CI/CD)
 - **[API Reference](docs/API_REFERENCE.md)** — Endpoints SCIM 2.0, exemples curl, codes d'erreur
 - **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** — Azure App Service, Key Vault setup, CI/CD
 - **[Rate Limiting](docs/RATE_LIMITING.md)** — Configuration Nginx, tests de charge
@@ -250,9 +261,19 @@ Cette page exécute automatiquement une suite de tests de validation couvrant :
 
 ### Standards de Sécurité
 - **OWASP ASVS Level 2** : Protection A01-A08 (injection, broken access, misconfiguration)
+- **NIST SP 800-190** : Container security (scans Trivy, SBOM avec Syft)
+- **EO 14028 (SBOM)** : Software Bill of Materials SPDX + CycloneDX
 - **RFC 7636 (PKCE)** : Protection contre interception code d'autorisation
 - **RFC 7644 (SCIM 2.0)** : Implémentation stricte schemas + error handling
 - **NIST 800-63B** : Politique mots de passe robuste, MFA comptes privilégiés
+
+**Pipeline de sécurité** :
+- **Gitleaks** : Détection secrets (0 faux positifs, allowlist configurée)
+- **Trivy** : Scan CVE HIGH/CRITICAL (dépendances Python)
+- **Syft** : Génération SBOM SPDX + CycloneDX
+- **Grype** : Analyse vulnérabilités SBOM (seuil CRITICAL)
+
+📘 **Guide complet** : [docs/SECURITY_SCANNING.md](docs/SECURITY_SCANNING.md)
 
 ---
 
@@ -275,8 +296,8 @@ SKIP_E2E=true make test-all  # Suite complète sans intégration
 ```
 
 **Couverture** : 328 tests passants, 92% de couverture sur code métier  
-**CI/CD** : GitHub Actions avec validation sécurité + rapport coverage  
-**Tests critiques** : JWT validation, RBAC, rate limiting, audit signatures
+**CI/CD** : GitHub Actions avec validation sécurité (5 jobs : Trivy, Gitleaks, SBOM, dependency-review, summary)  
+**Tests critiques** : JWT validation, RBAC, rate limiting, audit signatures, secret scanning
 
 **💡 Astuce** : `test-coverage` vérifie automatiquement que le stack Docker est démarré et génère un rapport HTML détaillé dans `htmlcov/`. Les tests d'intégration se désactivent proprement (skip) si l'infrastructure n'est pas disponible.
 
@@ -340,7 +361,8 @@ SKIP_E2E=true make test-all  # Suite complète sans intégration
 | **OIDC/OAuth 2.0** | PKCE, MFA, JWT validation | `app/api/auth.py`, `app/api/decorators.py` |
 | **RBAC** | 3 rôles (admin/operator/verifier) | `app/core/rbac.py` |
 | **Audit Trail** | HMAC-SHA256, non-répudiation | `scripts/audit.py`, `make verify-audit` |
-| **DevSecOps** | CI/CD, tests 90%, secrets management | `.github/workflows/`, `Makefile` |
+| **DevSecOps** | CI/CD (5 jobs sécurité), tests 92%, SBOM | `.github/workflows/security-scans.yml`, `Makefile` |
+| **Security Scanning** | Gitleaks, Trivy, Syft, Grype | `make security-check`, `docs/SECURITY_SCANNING.md` |
 | **Python 3.12** | Flask, pytest, type hints | Tous fichiers `.py` |
 | **Docker** | Compose multi-services, health checks | `docker-compose.yml` |
 | **Nginx** | TLS, rate limiting, security headers | `proxy/nginx.conf` |

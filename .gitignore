@@ -38,3 +38,4 @@ coverage.xml
 htmlcov/
 
 copilot_context.md
+.runtime/sbom/

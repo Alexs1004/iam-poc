@@ -1,0 +1,105 @@
+# Gitleaks Configuration
+# Détecte les secrets commités dans Git (API keys, tokens, passwords)
+# Références: https://github.com/gitleaks/gitleaks
+
+title = "IAM PoC - Gitleaks Configuration"
+
+# Ignorer les fichiers de test, documentation et démo
+[allowlist]
+paths = [
+    # Environnements virtuels et dépendances (pas notre code)
+    '''venv/''',
+    '''.venv/''',
+    '''node_modules/''',
+    '''.tox/''',
+    
+    # Rapports de scan (contiennent des secrets détectés)
+    '''gitleaks-report.*\.json$''',
+    '''.*\.sarif$''',
+    
+    # Fichiers de démo (secrets non-sensibles pour développement local)
+    '''\.env\.demo$''',
+    '''\.env\.example$''',
+    
+    # Tests unitaires et fixtures
+    '''tests/''',
+    
+    # Documentation et configuration
+    '''docs/''',
+    '''README\.md$''',
+    '''\.github/''',
+    
+    # Artifacts de build et coverage
+    '''htmlcov/''',
+    '''\.pytest_cache/''',
+    '''__pycache__/''',
+    '''\.coverage$''',
+    '''coverage\.xml$''',
+    
+    # Certificats localhost (auto-signés, usage local uniquement)
+    '''certs/localhost\.(crt|key)$''',
+]
+
+# Ignorer les patterns de secrets dans les tests et démo
+regexes = [
+    # Valeurs de placeholder explicites
+    '''(change-me|changeme|placeholder|example|demo|test|dummy)''',
+    
+    # Références de noms de secrets Key Vault (pas les secrets eux-mêmes)
+    '''AZURE_SECRET_[A-Z_]+=[\w-]+''',
+]
+
+# Ignorer les commits spécifiques (exemple: commit initial avec secrets de démo)
+commits = []
+
+# Patterns à toujours détecter (même dans allowlist)
+[[rules]]
+id = "generic-api-key"
+description = "Generic API Key"
+regex = '''(?i)(api[_-]?key|apikey)['":\s]*=\s*['"][0-9a-zA-Z]{32,}['"]'''
+tags = ["key", "api"]
+
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key"
+regex = '''(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'''
+tags = ["aws", "key"]
+
+[[rules]]
+id = "azure-storage-key"
+description = "Azure Storage Account Key"
+regex = '''(?i)DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[A-Za-z0-9+/]{88}=='''
+tags = ["azure", "storage"]
+
+[[rules]]
+id = "github-token"
+description = "GitHub Personal Access Token"
+regex = '''ghp_[0-9a-zA-Z]{36}'''
+tags = ["github", "token"]
+
+[[rules]]
+id = "private-key"
+description = "Private Key (PEM format)"
+regex = '''-----BEGIN (RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----'''
+tags = ["key", "private"]
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Token (high entropy)"
+regex = '''eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'''
+entropy = 4.5
+tags = ["jwt", "token"]
+[rules.allowlist]
+paths = [
+    '''^tests/.*$''',
+    '''^docs/.*\.md$''',
+]
+
+# Entropy configuration (détection de strings hautement aléatoires)
+[entropy]
+enabled = true
+# Groupes de caractères à analyser
+groups = [
+    { name = "hex", regex = "[0-9a-f]{16,}", entropy = 3.0 },
+    { name = "base64", regex = "[A-Za-z0-9+/]{32,}", entropy = 4.0 },
+]

@@ -19,6 +19,7 @@
 - SCIM 2.0 RFC 7644 compliant (standard IAM inter-entreprises)
 - Conformité Swiss : nLPD, RGPD, FINMA (audit trail non-répudiable)
 - 328 tests automatisés, 92% coverage (qualité code vérifiable)
+- Pipeline de sécurité : Gitleaks, Trivy, Syft, Grype (CI/CD + local)
 - Roadmap Azure-native : Migration Entra ID planifiée
 
 ---
@@ -30,6 +31,7 @@
 | Document | Contenu | Standards |
 |----------|---------|-----------|
 | **[Security Design](SECURITY_DESIGN.md)** | Contrôles implémentés, threat mitigation, secrets management | OWASP ASVS L2, nLPD, RGPD |
+| **[Security Scanning](SECURITY_SCANNING.md)** | Gitleaks, Trivy, Syft, Grype (local + CI/CD), troubleshooting | NIST SP 800-190, EO 14028 |
 | **[Threat Model](THREAT_MODEL.md)** | Analyse STRIDE, MITRE ATT&CK, conformité FINMA | RFC 7644, NIST 800-63B |
 | **[API Reference](API_REFERENCE.md)** | Endpoints SCIM, authentification OAuth, rate limiting | RFC 7644, RFC 6749 |
 
@@ -38,6 +40,7 @@
 - **Audit Trail** : HMAC-SHA256 signatures (non-repudiation), `make verify-audit`
 - **Secrets** : Azure Key Vault (prod), rotation automatisée (`make rotate-secret`)
 - **Transport** : TLS 1.3, HSTS, CSP, Secure/HttpOnly cookies
+- **Security Scanning** : Gitleaks (secrets), Trivy (CVE), Syft (SBOM), Grype (vulnérabilités)
 - **Compliance** : nLPD (traçabilité), RGPD (portabilité), FINMA (non-répudiation)
 
 ---
@@ -61,6 +64,9 @@ make test-coverage           # Tests avec rapport HTML de couverture
 make test-coverage-vscode    # Ouvrir rapport dans VS Code
 make verify-audit            # Vérification signatures HMAC
 make rotate-secret-dry       # Simulation rotation Key Vault
+make security-check          # Lancer tous les scans de sécurité
+make scan-secrets            # Détecter secrets exposés (Gitleaks)
+make scan-vulns              # Scanner CVE HIGH/CRITICAL (Trivy)
 ```
 
 **Workflow de couverture de code** :
@@ -76,6 +82,7 @@ make rotate-secret-dry       # Simulation rotation Key Vault
 
 | Document | Description |
 |----------|-------------|
+| [Security Scanning](SECURITY_SCANNING.md) | Gitleaks, Trivy, Syft, Grype — Guide complet local + CI/CD |
 | [API Reference](API_REFERENCE.md) | Endpoints SCIM 2.0, OAuth, OpenAPI spec |
 | [Security Design](SECURITY_DESIGN.md) | Contrôles sécurité, OWASP ASVS L2, threat mitigation |
 | [Threat Model](THREAT_MODEL.md) | Analyse STRIDE, MITRE ATT&CK, conformité Swiss |
