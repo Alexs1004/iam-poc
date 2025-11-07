@@ -18,7 +18,7 @@
 - Operational Azure Key Vault (production-ready secrets management)
 - SCIM 2.0 RFC 7644 compliant (inter-enterprise IAM standard)
 - Swiss compliance: nLPD, GDPR, FINMA (non-repudiable audit trail)
-- 328 automated tests, 92% coverage (verifiable code quality)
+- 346 automated tests, 91% coverage (verifiable code quality)
 - Security pipeline: Gitleaks, Trivy, Syft, Grype (CI/CD + local)
 - Azure-native roadmap: Entra ID migration planned
 
@@ -59,7 +59,7 @@
 ```bash
 make quickstart              # 2-minute demo start
 make doctor                  # Azure + Docker health check
-make test-all                # Full suite (328 tests, 92% coverage)
+make test-all                # Full suite (346 tests, 91% coverage)
 make test-coverage           # Tests with HTML coverage report
 make test-coverage-vscode    # Open report in VS Code
 make verify-audit            # HMAC signature verification
@@ -87,7 +87,7 @@ make scan-vulns              # Scan HIGH/CRITICAL CVE (Trivy)
 | [Security Design](SECURITY_DESIGN.md) | Contrôles sécurité, OWASP ASVS L2, threat mitigation |
 | [Threat Model](THREAT_MODEL.md) | Analyse STRIDE, MITRE ATT&CK, conformité Swiss |
 | [Deployment Guide](DEPLOYMENT_GUIDE.md) | Azure Key Vault, Managed Identity, App Service |
-| [Testing Guide](TESTING.md) | Stratégie de test, couverture 92%, workflow CI/CD |
+| [Testing Guide](TESTING.md) | Stratégie de test, couverture 91%, workflow CI/CD |
 | [Local SCIM Testing](LOCAL_SCIM_TESTING.md) | Tests curl, troubleshooting, exemples |
 | [RBAC Demo Scenarios](RBAC_DEMO_SCENARIOS.md) | Workflows JML complets, matrice utilisateurs, tests manuels |
 

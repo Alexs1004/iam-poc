@@ -4,7 +4,7 @@
 ![Azure Key Vault](https://img.shields.io/badge/Azure-Key%20Vault-0078D4?logo=microsoft-azure&logoColor=white)
 ![Entra ID Ready](https://img.shields.io/badge/Migration-Entra%20ID%20Ready-0078D4?logo=microsoft-azure)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests 92%](https://img.shields.io/badge/Coverage-92%25-brightgreen?logo=codecov)
+![Tests 91%](https://img.shields.io/badge/Coverage-91%25-brightgreen?logo=codecov)
 ![Security OWASP](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
 ![Security Scans](https://img.shields.io/badge/Security-Trivy%20%7C%20Gitleaks%20%7C%20SBOM-green?logo=github-actions)
 ![Swiss Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20RGPD%20%7C%20FINMA-red)
@@ -130,7 +130,7 @@ make verify-audit
 - **FINMA**: Cryptographic proof retention
 
 ### DevSecOps
-- **Automated tests**: 328 tests (92% coverage), secure CI/CD
+- **Automated tests**: 346 tests (91% coverage), secure CI/CD
 - **Security scans**: Gitleaks (secrets), Trivy (CVE), Syft (SBOM), Grype (vulnerabilities)
 - **CI/CD pipeline**: GitHub Actions with 5 security jobs (secrets, vulns, SBOM, dependency-review)
 - **Zero-config demo**: Ephemeral secrets generated automatically (DEMO mode)
@@ -149,7 +149,7 @@ make quickstart          # Zero-config: .env + stack + JML demo (2 min)
 make fresh-demo          # Complete reset: volumes + secrets + certificates
 
 # Tests & Quality
-make test                    # Unit tests (328 tests, 92% coverage)
+make test                    # Unit tests (346 tests, 91% coverage)
 make test-e2e                # Integration tests (requires running stack)
 make test-coverage           # Full tests with HTML coverage report
 make test-coverage-vscode    # Open coverage report in VS Code
@@ -180,24 +180,22 @@ make ps                       # Container status
 ### 🎯 For Recruiters (HR + Technical Screening)
 - **[Swiss Hiring Pack](docs/Hiring_Pack.md)** — Resume ↔ Repo mapping, recruiter keywords
 - **[RBAC Demo Scenarios](docs/RBAC_DEMO_SCENARIOS.md)** — Detailed Joiner/Mover/Leaver workflows, user matrix
-- **[Overview](docs/OVERVIEW.md)** — Architecture, technical decisions, Azure roadmap
-- **[Security](docs/SECURITY_DESIGN.md)** — OWASP ASVS L2, CSRF/XSS protection, JWT validation
-- **[Compliance](docs/THREAT_MODEL.md)** — Threat model, non-repudiation, audit trail
+- **[Security Design](docs/SECURITY_DESIGN.md)** — OWASP ASVS L2, CSRF/XSS protection, JWT validation
+- **[Threat Model](docs/THREAT_MODEL.md)** — STRIDE analysis, non-repudiation, audit trail
 
 ### 🔐 For Security Engineers
 - **[Security Scanning](docs/SECURITY_SCANNING.md)** — Gitleaks, Trivy, Syft, Grype (local + CI/CD)
 - **[API Reference](docs/API_REFERENCE.md)** — SCIM 2.0 endpoints, curl examples, error codes
 - **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** — Azure App Service, Key Vault setup, CI/CD
-- **[Rate Limiting](docs/RATE_LIMITING.md)** — Nginx configuration, load testing
-- **[Testing Strategy](docs/TESTING.md)** — 92% coverage, critical tests
+- **[Testing Strategy](docs/TESTING.md)** — 91% coverage, critical tests, pytest configuration
 
-### 🛠️ For DevOps
-- **[Setup Guide](docs/SETUP_GUIDE.md)** — Local installation, troubleshooting
+### 🛠️ For DevOps & Integration
 - **[Local SCIM Testing](docs/LOCAL_SCIM_TESTING.md)** — Manual testing with curl/Postman
+- **[Entra ID SCIM Setup](docs/ENTRA_SCIM_HOWTO.md)** — Microsoft Entra ID provisioning configuration
 - **[RBAC Demo Scenarios](docs/RBAC_DEMO_SCENARIOS.md)** — Manual JML workflow tests
-- **[Error Handling](docs/ERROR_HANDLING_SECURITY.md)** — SCIM RFC 7644 error handling
 
-**📂 Documentation hub**: [docs/README.md](docs/README.md)
+**📂 Documentation hub**: [docs/README.md](docs/README.md)  
+**💡 Quick troubleshooting**: See `make help-all` and [TESTING.md](docs/TESTING.md#troubleshooting)
 
 
 ## ✅ PoC Validation (Interactive Page)
@@ -257,7 +255,7 @@ This page automatically executes a validation test suite covering:
 | `/admin/*` | 30 req/min | +8 | Admin interface |
 
 **Test**: `./scripts/test_rate_limiting.sh` (demonstrates 429 responses)  
-**Documentation**: [docs/RATE_LIMITING.md](docs/RATE_LIMITING.md)
+**Configuration**: See `proxy/nginx.conf` for rate limiting rules
 
 ### Security Standards
 - **OWASP ASVS Level 2**: A01-A08 protection (injection, broken access, misconfiguration)
@@ -325,7 +323,7 @@ docker compose exec flask-app python3 scripts/configure_smtp.py
 
 ```bash
 # Tests
-make test                    # Unit tests (pytest -n auto, ~92% coverage)
+make test                    # Unit tests (pytest -n auto, ~91% coverage)
 make test-e2e                # Integration tests (requires stack)
 make test-coverage           # All tests with HTML coverage report
 
@@ -339,7 +337,7 @@ make test-coverage-serve     # Serve via HTTP on localhost:8888
 SKIP_E2E=true make test-all  # Full suite without integration
 ```
 
-**Coverage**: 328 passing tests, 92% coverage on business code  
+**Coverage**: 346 passing tests, 91% coverage on business code  
 **CI/CD**: GitHub Actions with security validation (5 jobs: Trivy, Gitleaks, SBOM, dependency-review, summary)  
 **Critical tests**: JWT validation, RBAC, rate limiting, audit signatures, secret scanning
 
@@ -405,7 +403,7 @@ SKIP_E2E=true make test-all  # Full suite without integration
 | **OIDC/OAuth 2.0** | PKCE, MFA, JWT validation | `app/api/auth.py`, `app/api/decorators.py` |
 | **RBAC** | 3 roles (admin/operator/verifier) | `app/core/rbac.py` |
 | **Audit Trail** | HMAC-SHA256, non-repudiation | `scripts/audit.py`, `make verify-audit` |
-| **DevSecOps** | CI/CD (5 security jobs), 92% tests, SBOM | `.github/workflows/security-scans.yml`, `Makefile` |
+| **DevSecOps** | CI/CD (5 security jobs), 91% tests, SBOM | `.github/workflows/security-scans.yml`, `Makefile` |
 | **Security Scanning** | Gitleaks, Trivy, Syft, Grype | `make security-check`, `docs/SECURITY_SCANNING.md` |
 | **Python 3.12** | Flask, pytest, type hints | All `.py` files |
 | **Docker** | Multi-service Compose, health checks | `docker-compose.yml` |

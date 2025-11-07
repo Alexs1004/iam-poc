@@ -82,7 +82,7 @@ python3 scripts/check_smtp.py
 make quickstart              # Auto-generates .env, starts stack, runs demo
 
 # Testing
-make test                    # Unit tests (328 tests, 92% coverage, ~3.5s)
+make test                    # Unit tests (346 tests, 91% coverage, ~3.5s)
 make test-e2e                # Integration tests (requires running stack)
 make test-coverage           # Coverage report (HTML + terminal)
 

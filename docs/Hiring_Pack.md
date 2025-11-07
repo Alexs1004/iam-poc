@@ -54,10 +54,10 @@ This document establishes direct correspondence between **skills listed on CV** 
 | **RBAC** | ⭐⭐⭐ | 3 granular roles (admin/operator/verifier) | `app/core/rbac.py`<br>`tests/test_core_rbac.py` | ✅ RBAC tests |
 | **Audit Trail** | ⭐⭐⭐⭐ | HMAC-SHA256, non-repudiation, integrity verification | `scripts/audit.py`<br>`make verify-audit`<br>`.runtime/audit/jml-events.jsonl` | ✅ 22/22 valid signatures |
 | **Secret Rotation** | ⭐⭐⭐ | Full orchestration, pre-deployment validation | `scripts/rotate_secret.sh`<br>`make rotate-secret-dry` | ✅ Dry-run OK |
-| **DevSecOps** | ⭐⭐⭐ | CI/CD, 92% tests, secrets management | `.github/workflows/`<br>`Makefile` (30+ commands)<br>`pytest.ini` | ✅ 328 tests |
+| **DevSecOps** | ⭐⭐⭐ | CI/CD, 91% tests, secrets management | `.github/workflows/`<br>`Makefile` (30+ commands)<br>`pytest.ini` | ✅ 346 tests |
 | **Python 3.12** | ⭐⭐⭐⭐ | Flask, pytest, type hints, async | All `.py` files<br>`requirements.txt` | ✅ Type-safe |
 | **Docker** | ⭐⭐⭐ | Multi-service Compose, health checks, volumes | `docker-compose.yml`<br>`Dockerfile.flask` | ✅ 3 healthy services |
-| **Nginx** | ⭐⭐⭐ | TLS 1.3, rate limiting, security headers | `proxy/nginx.conf`<br>`docs/RATE_LIMITING.md` | ✅ Rate limit tests |
+| **Nginx** | ⭐⭐⭐ | TLS 1.3, rate limiting, security headers | `proxy/nginx.conf`<br>`scripts/test_rate_limiting.sh` | ✅ Rate limit tests |
 | **Compliance** | ⭐⭐⭐ | nLPD/GDPR/FINMA by design | `docs/THREAT_MODEL.md`<br>`docs/SECURITY_DESIGN.md` | ✅ Audited architecture |
 
 **Legend**:  
@@ -79,7 +79,7 @@ open https://localhost/verification  # Automatic tests
 
 ### Option 2: CLI
 ```bash
-make test          # Unit tests (328 tests, 92% coverage)
+make test          # Unit tests (346 tests, 91% coverage)
 make verify-audit  # HMAC signature verification
 make doctor        # Azure + Docker health check
 ```
@@ -97,8 +97,8 @@ Key files to examine (15 min):
 
 | Indicator | Value | Target | Status |
 |------------|--------|-------|--------|
-| **Tests** | 328 | >200 | ✅ Exceeded |
-| **Coverage** | 92% | >80% | ✅ Exceeded |
+| **Tests** | 346 | >200 | ✅ Exceeded |
+| **Coverage** | 91% | >80% | ✅ Exceeded |
 | **Azure Integration** | Key Vault + Entra ID Roadmap | Cloud-native | ✅ Operational |
 | **Security Standards** | OWASP ASVS L2 | L1 minimum | ✅ Exceeded |
 | **Documentation** | 10 docs/ files | 5 minimum | ✅ Complete |
@@ -162,7 +162,7 @@ Key files to examine (15 min):
 **A**: **Yes for security**, no for scalability:
 - ✅ Azure Key Vault secrets management (production-grade)
 - ✅ Non-repudiable cryptographic audit
-- ✅ 92% tests, CI/CD, automated rotation
+- ✅ 91% tests, CI/CD, automated rotation
 - ⚠️ SQLite → Azure SQL Database required for HA
 - ⚠️ Local sessions → Azure Cache for Redis for distribution
 
@@ -191,7 +191,7 @@ Key files to examine (15 min):
 |----------|----------|---------|
 | **[README.md](../README.md)** | All | General presentation, quickstart, roadmap |
 | **[Hiring_Pack.md](Hiring_Pack.md)** | Recruiters | This document (Resume ↔ Repo mapping) |
-| **[OVERVIEW.md](OVERVIEW.md)** | Tech Leads | Detailed architecture, technical decisions |
+| **[RBAC_DEMO_SCENARIOS.md](RBAC_DEMO_SCENARIOS.md)** | Tech Leads | Detailed JML workflows, user matrix, scenarios |
 | **[SECURITY_DESIGN.md](SECURITY_DESIGN.md)** | CISO/SOC | Threat model, OWASP ASVS L2, protection |
 | **[API_REFERENCE.md](API_REFERENCE.md)** | Engineers | SCIM endpoints, curl examples, error codes |
 | **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** | DevOps | Azure App Service, CI/CD, monitoring |

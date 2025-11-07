@@ -6,8 +6,8 @@
 
 ## 📊 Current Metrics
 
-- **Total tests**: 328 tests (300+ unit, 27 integration)
-- **Coverage**: 92% on business code (`app/`)
+- **Total tests**: 346 tests (300+ unit, 27 integration)
+- **Coverage**: 91% on business code (`app/`)
 - **Execution time**: ~3.5s (parallelized with pytest-xdist)
 - **Test stack**: pytest + pytest-cov + pytest-xdist + pytest-mock
 
@@ -53,7 +53,7 @@ make test-e2e
 
 ---
 
-### **Coverage Tests** (328 complete tests)
+### **Coverage Tests** (346 complete tests)
 **Objective**: Generate detailed HTML report of code coverage
 
 **Command**:
@@ -117,7 +117,7 @@ make test/security
 
 **Mandatory checks**:
 - ✅ All unit tests pass (300+)
-- ✅ Coverage >= 92% maintained
+- ✅ Coverage >= 91% maintained
 - ✅ No critical (security) test failures
 - ✅ No regressions detected
 
