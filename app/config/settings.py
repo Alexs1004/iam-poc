@@ -87,6 +87,10 @@ class AppConfig:
     # Audit
     audit_log_signing_key: str = ""
     
+    # SCIM Static Token (optional, for Entra ID provisioning demo/dev)
+    scim_static_token: str = ""
+    scim_static_token_source: str = ""  # "keyvault" or empty (env var)
+    
     # Verification page
     verify_page_enabled: bool = field(default=False)
     
@@ -226,6 +230,27 @@ def load_settings() -> AppConfig:
         os.environ["AUDIT_LOG_SIGNING_KEY"] = demo_key
         print(f"[demo-mode] Using demo AUDIT_LOG_SIGNING_KEY: {demo_key[:20]}...")
     
+    # SCIM Static Token (optional, for Entra ID provisioning)
+    scim_static_token_source = os.environ.get("SCIM_STATIC_TOKEN_SOURCE", "").strip().lower()
+    scim_static_token = ""
+    
+    if scim_static_token_source == "keyvault":
+        # Load from Azure Key Vault (via /run/secrets if pre-loaded)
+        scim_static_token = _load_secret_from_file("scim_static_token", "SCIM_STATIC_TOKEN")
+        if scim_static_token:
+            print("[settings] ✓ Loaded SCIM static token from Key Vault")
+        elif not demo_mode:
+            print("[settings] ⚠️ SCIM_STATIC_TOKEN_SOURCE=keyvault but secret not found in /run/secrets")
+    else:
+        # Load from environment variable (fallback or demo mode)
+        scim_static_token = os.environ.get("SCIM_STATIC_TOKEN", "")
+        if scim_static_token:
+            print(f"[settings] ✓ Loaded SCIM static token from environment (length: {len(scim_static_token)})")
+    
+    # Store in environment for runtime access
+    if scim_static_token:
+        os.environ["SCIM_STATIC_TOKEN"] = scim_static_token
+    
     # User temporary passwords (optional)
     for user in ["alice", "bob", "carol", "joe"]:
         secret_name = f"{user}_temp_password"
@@ -327,6 +352,10 @@ def load_settings() -> AppConfig:
     # Audit
     audit_log_signing_key = os.environ.get("AUDIT_LOG_SIGNING_KEY", "")
     
+    # SCIM Static Token
+    scim_static_token = os.environ.get("SCIM_STATIC_TOKEN", "")
+    scim_static_token_source = os.environ.get("SCIM_STATIC_TOKEN_SOURCE", "")
+    
     # Verification page (enabled by default in demo mode, disabled in production)
     verify_page_enabled = os.environ.get("VERIFY_PAGE_ENABLED", str(demo_mode)).lower() == "true"
     
@@ -372,6 +401,8 @@ def load_settings() -> AppConfig:
         iam_operator_role=iam_operator_role,
         assignable_roles=assignable_roles,
         audit_log_signing_key=audit_log_signing_key,
+        scim_static_token=scim_static_token,
+        scim_static_token_source=scim_static_token_source,
         verify_page_enabled=verify_page_enabled,
         demo_passwords=demo_passwords,
     )

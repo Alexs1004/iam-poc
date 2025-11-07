@@ -8,14 +8,18 @@ Architecture:
 
 Security:
     - OAuth 2.0 Bearer Token authentication (RFC 6750) via @require_oauth_token decorator
-    - Read operations require 'scim:read' scope
-    - Write operations require 'scim:write' scope
+    - Optional: Static Bearer Token for Entra ID provisioning (SCIM-only, DEMO_MODE or KeyVault gated)
+    - Read operations require 'scim:read' scope (OAuth mode)
+    - Write operations require 'scim:write' scope (OAuth mode)
     - Discovery endpoints (ServiceProviderConfig, Schemas) are public
 """
 
 from __future__ import annotations
 import os
-from flask import Blueprint, request, jsonify, Response
+import hmac
+import hashlib
+import logging
+from flask import Blueprint, request, jsonify, Response, current_app, g
 from werkzeug.exceptions import BadRequest
 from app.core import provisioning_service
 from app.core.provisioning_service import ScimError
@@ -27,6 +31,88 @@ bp = Blueprint('scim', __name__, url_prefix='/scim/v2')
 
 # Configuration
 JSON_MAX_SIZE_BYTES = 65536  # 64 KB
+
+logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Authentication Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _is_static_token_enabled() -> bool:
+    """Check if SCIM static token authentication is enabled.
+    
+    Enabled when:
+    - DEMO_MODE=true OR
+    - SCIM_STATIC_TOKEN_SOURCE=keyvault (with AZURE_USE_KEYVAULT=true)
+    
+    Returns:
+        bool: True if static token auth is active
+    """
+    cfg = current_app.config.get("APP_CONFIG")
+    if not cfg:
+        return False
+    
+    # Enable in demo mode
+    if cfg.demo_mode:
+        return True
+    
+    # Enable if explicitly configured with KeyVault
+    if cfg.scim_static_token_source == "keyvault" and cfg.azure_use_keyvault:
+        return True
+    
+    return False
+
+
+def _validate_static_token(provided_token: str) -> bool:
+    """Validate SCIM static token with constant-time comparison.
+    
+    Args:
+        provided_token: Token from Authorization header
+    
+    Returns:
+        bool: True if token matches configured secret
+    
+    Security:
+        - Uses hmac.compare_digest for timing-attack resistance
+        - Never logs the actual token value
+    """
+    cfg = current_app.config.get("APP_CONFIG")
+    if not cfg or not cfg.scim_static_token:
+        return False
+    
+    expected_token = cfg.scim_static_token
+    
+    # Constant-time comparison (timing-attack safe)
+    return hmac.compare_digest(provided_token, expected_token)
+
+
+def _log_auth_attempt(auth_method: str, token: str, success: bool):
+    """Log authentication attempt without leaking secrets.
+    
+    Args:
+        auth_method: "static" or "oauth"
+        token: Bearer token (will be hashed for logging)
+        success: Whether authentication succeeded
+    
+    Security:
+        - Only logs SHA256 hash (truncated to 12 chars)
+        - Includes correlation_id, client_ip, path
+    """
+    # Hash token for safe logging (SHA256 truncated)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()[:12]
+    
+    # Extract request metadata
+    correlation_id = request.headers.get("X-Correlation-Id", "none")
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    path = request.path
+    
+    status = "✅ SUCCESS" if success else "❌ FAILED"
+    logger.info(
+        f"{status} SCIM auth | method={auth_method} | "
+        f"token_hash={token_hash} | path={path} | "
+        f"correlation_id={correlation_id} | client_ip={client_ip}"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -83,11 +169,21 @@ def handle_request_too_large(error):
 
 @bp.before_request
 def validate_request():
-    """Validate OAuth, request size, and content type."""
+    """Validate OAuth/static token, request size, and content type.
+    
+    Authentication precedence:
+    1. If Authorization: Bearer <token> present:
+       a. If static token mode enabled AND token matches static secret -> AUTH OK (static)
+       b. Else -> Validate as OAuth2 JWT token
+    2. If no Authorization header and endpoint is discovery (public) -> ALLOW
+    3. Else -> 401 Unauthorized
+    
+    Scope restrictions:
+    - Static token: ONLY accepted on /scim/v2/* endpoints
+    - Static token: REJECTED on /admin, /scim/docs, or any non-SCIM path
+    """
     # Skip validation in test mode IF explicitly requested (for unit tests that mock provisioning)
     # OAuth validation tests will NOT set this variable
-    from flask import current_app
-    import os
     if current_app.config.get('TESTING') and os.getenv('SKIP_OAUTH_FOR_TESTS') == 'true':
         return None
     
@@ -100,7 +196,7 @@ def validate_request():
     if request.path in discovery_endpoints:
         return None  # Allow public access
     
-    # 1. Validate OAuth Bearer Token (RFC 6750)
+    # 1. Check for Authorization header
     auth_header = request.headers.get("Authorization", "")
     if not auth_header:
         return scim_error_response(401, "Authorization header missing. Provide 'Authorization: Bearer <token>'.", "unauthorized")
@@ -112,15 +208,52 @@ def validate_request():
     if not token:
         return scim_error_response(401, "Bearer token is empty.", "unauthorized")
     
+    # 2. Try static token authentication first (if enabled and on SCIM endpoint)
+    static_token_enabled = _is_static_token_enabled()
+    
+    if static_token_enabled and request.path.startswith("/scim/v2/"):
+        if _validate_static_token(token):
+            # ✅ Static token authentication SUCCESS
+            _log_auth_attempt("static", token, success=True)
+            
+            # Store auth metadata in request context
+            g.auth_method = "static"
+            g.oauth_claims = None
+            g.oauth_client_id = "entra-provisioning"
+            
+            # Continue to payload validation (skip OAuth checks)
+            # Jump to step 3 (payload size check)
+            if request.content_length and request.content_length > JSON_MAX_SIZE_BYTES:
+                return scim_error_response(413, "Request payload too large", "invalidValue")
+            
+            if request.method in ("POST", "PUT", "PATCH"):
+                content_type = request.content_type or ""
+                if not content_type.startswith("application/scim+json"):
+                    return scim_error_response(
+                        415,
+                        "Content-Type must be application/scim+json",
+                        "invalidSyntax"
+                    )
+            
+            return None  # Authentication successful, continue to route handler
+        else:
+            # Token doesn't match static secret -> Fall through to OAuth validation
+            # (Don't log failure here, let OAuth validator handle it)
+            pass
+    
+    # 3. OAuth 2.0 JWT Token validation
     try:
         oauth_claims = validate_jwt_token(token)
         
+        # ✅ OAuth authentication SUCCESS
+        _log_auth_attempt("oauth", token, success=True)
+        
         # Store claims in request context for route handlers
-        from flask import g
+        g.auth_method = "oauth"
         g.oauth_claims = oauth_claims
         g.oauth_client_id = oauth_claims.get("client_id") or oauth_claims.get("sub")
         
-        # 2. Validate scope based on HTTP method
+        # 4. Validate scope based on HTTP method
         token_scopes = oauth_claims.get("scope", "").split()
         
         # TEMPORARY: Allow service accounts (client_credentials) without explicit SCIM scopes
@@ -146,15 +279,17 @@ def validate_request():
                     )
         
     except TokenValidationError as e:
+        _log_auth_attempt("oauth", token, success=False)
         return scim_error_response(401, str(e), "unauthorized")
     except Exception as e:
+        _log_auth_attempt("oauth", token, success=False)
         return scim_error_response(401, f"Token validation failed: {e}", "unauthorized")
     
-    # 3. Check payload size
+    # 5. Check payload size
     if request.content_length and request.content_length > JSON_MAX_SIZE_BYTES:
         return scim_error_response(413, "Request payload too large", "invalidValue")
     
-    # 4. Validate Content-Type for payload-bearing methods
+    # 6. Validate Content-Type for payload-bearing methods
     if request.method in ("POST", "PUT", "PATCH"):
         content_type = request.content_type or ""
         if not content_type.startswith("application/scim+json"):
@@ -167,10 +302,16 @@ def validate_request():
 
 @bp.after_request
 def add_correlation_id(response):
-    """Add correlation ID to response headers for tracing."""
+    """Add correlation ID and auth method to response headers for tracing."""
     correlation_id = request.headers.get("X-Correlation-Id")
     if correlation_id:
         response.headers["X-Correlation-Id"] = correlation_id
+    
+    # Add auth method header for transparency
+    auth_method = getattr(g, 'auth_method', None)
+    if auth_method:
+        response.headers["X-Auth-Method"] = auth_method
+    
     return response
 
 
