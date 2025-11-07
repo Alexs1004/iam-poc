@@ -1,8 +1,8 @@
 Flask==3.0.2
 Flask-Session==0.5.0
-Authlib==1.6.5  # Updated to fix CVE-2025-59420 (HIGH) and CVE-2025-61920 (HIGH)
+Authlib==1.6.5
 python-dotenv==1.0.1
-requests==2.32.4  # Updated to fix GHSA-9hjg-9r4m-mvj7 (MEDIUM)
+requests==2.32.4
 PyJWT[crypto]==2.8.0  # JWT validation with RSA signature via JWKS
 PyYAML==6.0.2
 
@@ -16,4 +16,4 @@ azure-keyvault-certificates==4.8.0
 pytest==8.3.3
 pytest-mock==3.14.0
 pytest-xdist==3.6.1
-cryptography==46.0.3  # Updated to fix GHSA-h4gh-qq45-vh27 (MEDIUM)
+cryptography==46.0.3
