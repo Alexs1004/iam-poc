@@ -275,10 +275,13 @@ def load_settings() -> AppConfig:
     # Trusted proxies
     trusted_proxy_ips = os.environ.get("TRUSTED_PROXY_IPS")
     if not trusted_proxy_ips:
-        if demo_mode:
+        # Default to localhost in demo mode or test environment
+        is_testing = os.environ.get("PYTEST_CURRENT_TEST") is not None
+        if demo_mode or is_testing:
             trusted_proxy_ips = "127.0.0.1/32,::1/128"
             os.environ["TRUSTED_PROXY_IPS"] = trusted_proxy_ips
-            print("[demo-mode] Defaulted TRUSTED_PROXY_IPS to localhost ranges")
+            if demo_mode:
+                print("[demo-mode] Defaulted TRUSTED_PROXY_IPS to localhost ranges")
         else:
             raise RuntimeError("TRUSTED_PROXY_IPS is required when DEMO_MODE is false.")
     

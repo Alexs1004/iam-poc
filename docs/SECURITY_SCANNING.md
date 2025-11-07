@@ -30,7 +30,7 @@ make scan-sbom         # Scan SBOM vulnerabilities (Grype)
 
 ### Detailed Commands
 
-#### 🔍 **Scan for Secrets** (Gitleaks)
+#### **Scan for Secrets** (Gitleaks)
 ```bash
 make scan-secrets
 ```
@@ -41,7 +41,7 @@ make scan-secrets
 
 **Example output:**
 ```
-[scan-secrets] 🔍 Scanning for secrets with Gitleaks...
+[scan-secrets] Scanning for secrets with Gitleaks...
 8:28AM INF scanned ~4.36 MB in 192ms
 8:28AM INF no leaks found
 [scan-secrets] ✅ No secrets found
@@ -49,7 +49,7 @@ make scan-secrets
 
 ---
 
-#### 🛡️ **Scan for Vulnerabilities** (Trivy)
+#### **Scan for Vulnerabilities** (Trivy)
 ```bash
 make scan-vulns          # Requirements.txt only (fast)
 make scan-vulns-all      # Entire project (slower)
@@ -61,7 +61,7 @@ make scan-vulns-all      # Entire project (slower)
 
 **Example output:**
 ```
-[scan-vulns] 🛡️  Scanning for vulnerabilities with Trivy...
+[scan-vulns]  Scanning for vulnerabilities with Trivy...
 ┌──────────────────┬──────┬─────────────────┐
 │      Target      │ Type │ Vulnerabilities │
 ├──────────────────┼──────┼─────────────────┤
@@ -72,7 +72,7 @@ make scan-vulns-all      # Entire project (slower)
 
 ---
 
-#### 📦 **Generate SBOM** (Syft)
+#### **Generate SBOM** (Syft)
 ```bash
 make sbom
 ```
@@ -83,7 +83,7 @@ make sbom
 
 **Example output:**
 ```
-[sbom] 📦 Generating SBOM with Syft...
+[sbom] Generating SBOM with Syft...
 [sbom] ✅ SBOM generated:
     • .runtime/sbom/sbom-spdx.json (SPDX format)
     • .runtime/sbom/sbom-cyclonedx.json (CycloneDX format)
@@ -91,7 +91,7 @@ make sbom
 
 ---
 
-#### 🔍 **Scan SBOM** (Grype)
+#### **Scan SBOM** (Grype)
 ```bash
 make scan-sbom
 ```
@@ -102,7 +102,7 @@ make scan-sbom
 
 **Example output:**
 ```
-[scan-sbom] 🔍 Scanning SBOM with Grype...
+[scan-sbom] Scanning SBOM with Grype...
 NAME          INSTALLED  FIXED IN  TYPE    VULNERABILITY        SEVERITY
 authlib       1.6.5      -         python  -                    -
 cryptography  43.0.1     -         python  -                    -
@@ -210,7 +210,7 @@ make scan-sbom
 
 ---
 
-## �� Viewing Results
+## Viewing Results
 
 ### **Local**
 ```bash
@@ -284,7 +284,3 @@ sudo chown -R $USER:$USER .runtime/sbom
 # Skip Grype for quick checks
 make scan-secrets scan-vulns sbom
 ```
-
----
-
-**Last updated**: November 7, 2025

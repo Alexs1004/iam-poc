@@ -53,12 +53,15 @@ def _is_static_token_enabled() -> bool:
     if not cfg:
         return False
     
-    # Enable in demo mode
-    if cfg.demo_mode:
+    # Enable in demo mode (safe attribute access for tests)
+    if getattr(cfg, "demo_mode", False):
         return True
     
     # Enable if explicitly configured with KeyVault
-    if cfg.scim_static_token_source == "keyvault" and cfg.azure_use_keyvault:
+    if (
+        getattr(cfg, "scim_static_token_source", "") == "keyvault"
+        and getattr(cfg, "azure_use_keyvault", False)
+    ):
         return True
     
     return False
@@ -78,10 +81,12 @@ def _validate_static_token(provided_token: str) -> bool:
         - Never logs the actual token value
     """
     cfg = current_app.config.get("APP_CONFIG")
-    if not cfg or not cfg.scim_static_token:
+    if not cfg:
         return False
     
-    expected_token = cfg.scim_static_token
+    expected_token = getattr(cfg, "scim_static_token", None)
+    if not expected_token:
+        return False
     
     # Constant-time comparison (timing-attack safe)
     return hmac.compare_digest(provided_token, expected_token)
