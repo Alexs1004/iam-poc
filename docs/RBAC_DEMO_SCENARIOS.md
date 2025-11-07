@@ -1,217 +1,215 @@
 # 🔐 RBAC Demo Scenarios — Joiner/Mover/Leaver Workflows
 
-> **Objectif** : Démontrer la maîtrise RBAC et des workflows IAM (JML) pour recruteurs Cloud Security  
-> **Audience** : Recruteurs RH, Tech Leads, CISO, Hiring Managers
+> **Objective**: Demonstrate RBAC mastery and IAM (JML) workflows for Cloud Security recruiters  
+> **Audience**: HR Recruiters, Tech Leads, CISO, Hiring Managers
 
 ---
 
-## 📊 Vue d'ensemble
+## 📊 Overview
 
-Ce document détaille les **4 utilisateurs de démo** provisionnés par `make demo` et les **scénarios JML** (Joiner/Mover/Leaver) automatisés. Il illustre :
-- La **séparation des privilèges** (principe du moindre privilège)
-- L'**audit trail cryptographique** (non-répudiation FINMA)
-- Les **workflows IAM réels** utilisés en entreprise
+This document details the **4 demo users** provisioned by `make demo` and the automated **JML scenarios** (Joiner/Mover/Leaver). It illustrates:
+- **Privilege separation** (least privilege principle)
+- **Cryptographic audit trail** (FINMA non-repudiation)
+- **Real IAM workflows** used in enterprises
 
 ---
 
-## 👥 Matrice des Utilisateurs
+## 👥 User Matrix
 
 ### alice — Analyst → IAM Operator (Mover Scenario)
 
-**Scénario** : Promotion d'analyste vers opérateur IAM (mouvement vertical)
+**Scenario**: Promotion from analyst to IAM operator (vertical movement)
 
-| Attribut | Valeur Initiale | Valeur Finale |
+| Attribute | Initial Value | Final Value |
 |----------|-----------------|---------------|
 | **Username** | `alice` | `alice` |
-| **Rôle** | `analyst` | **`iam-operator`** ⬆️ |
-| **Statut** | ✅ Actif | ✅ Actif |
-| **MFA** | ✅ TOTP requis | ✅ TOTP requis |
-| **Mot de passe** | `Temp123!` (temporaire) | `Temp123!` (temporaire) |
-| **Accès Admin UI** | ❌ 403 Forbidden | ✅ Admin complet |
-| **Opérations JML** | ❌ Aucune | ✅ Joiner/Mover/Leaver |
+| **Role** | `analyst` | **`iam-operator`** ⬆️ |
+| **Status** | ✅ Active | ✅ Active |
+| **MFA** | ✅ TOTP required | ✅ TOTP required |
+| **Password** | `Temp123!` (temporary) | `Temp123!` (temporary) |
+| **Admin UI Access** | ❌ 403 Forbidden | ✅ Full admin |
+| **JML Operations** | ❌ None | ✅ Joiner/Mover/Leaver |
 
-**Workflow JML** :
-1. **Joiner** : Création initiale avec rôle `analyst`
-2. **Mover** : Promotion `analyst` → `iam-operator`
-3. **Audit** : 2 événements signés HMAC dans `/admin/audit`
+**JML Workflow**:
+1. **Joiner**: Initial creation with `analyst` role
+2. **Mover**: Promotion `analyst` → `iam-operator`
+3. **Audit**: 2 HMAC-signed events in `/admin/audit`
 
-**Test Manuel** :
+**Manual Test**:
 ```bash
-# 1. Se connecter avec alice (avant promotion)
+# 1. Login with alice (before promotion)
 open https://localhost
 # Username: alice | Password: Temp123!
 
-# 2. Tenter d'accéder au dashboard admin (doit échouer)
+# 2. Try to access admin dashboard (should fail)
 open https://localhost/admin
-# → Attendu: Page 403 Forbidden (analyst n'a pas accès)
+# → Expected: 403 Forbidden page (analyst has no access)
 
-# 3. Après promotion (par joe), se reconnecter
-# → alice peut maintenant accéder à /admin avec opérations JML
+# 3. After promotion (by joe), reconnect
+# → alice can now access /admin with JML operations
 
-# 4. Consulter l'audit trail de sa promotion
+# 4. Consult audit trail of her promotion
 open https://localhost/admin/audit
-# → Chercher événements "joiner" (alice) + "mover" (alice)
+# → Search for "joiner" (alice) + "mover" (alice) events
 ```
 
-**Points Clés** :
-- ✅ Promotion sans re-création de compte (migration de rôle)
-- ✅ Sessions existantes invalidées après mover
-- ✅ Audit trail complet (création + modification)
-- ✅ **Contrôle d'accès strict** : analyst bloqué avant promotion (403), autorisé après
+**Key Points**:
+- ✅ Promotion without account re-creation (role migration)
+- ✅ Existing sessions invalidated after mover
+- ✅ Complete audit trail (creation + modification)
+- ✅ **Strict access control**: analyst blocked before promotion (403), authorized after
 
 ---
 
 ### bob — Analyst → Disabled (Leaver Scenario)
 
-**Scénario** : Départ d'un collaborateur (soft-delete conforme RGPD)
+**Scenario**: Employee departure (GDPR-compliant soft-delete)
 
-| Attribut | Valeur Initiale | Valeur Finale |
+| Attribute | Initial Value | Final Value |
 |----------|-----------------|---------------|
 | **Username** | `bob` | `bob` |
-| **Rôle** | `analyst` | `analyst` (conservé) |
-| **Statut** | ✅ Actif | ❌ **Désactivé** |
-| **MFA** | ✅ TOTP requis | ✅ TOTP conservé |
-| **Mot de passe** | `Temp123!` | `Temp123!` (conservé) |
-| **Accès Admin UI** | ❌ 403 Forbidden | ❌ Connexion impossible |
-| **Opérations JML** | ❌ Aucune | ❌ Aucune |
+| **Role** | `analyst` | `analyst` (preserved) |
+| **Status** | ✅ Active | ❌ **Disabled** |
+| **MFA** | ✅ TOTP required | ✅ TOTP preserved |
+| **Password** | `Temp123!` | `Temp123!` (preserved) |
+| **Admin UI Access** | ❌ 403 Forbidden | ❌ Login impossible |
+| **JML Operations** | ❌ None | ❌ None |
 
-**Workflow JML** :
-1. **Joiner** : Création initiale avec rôle `analyst`
-2. **Leaver** : Désactivation (enabled=false)
-3. **Audit** : 2 événements signés HMAC dans `/admin/audit`
+**JML Workflow**:
+1. **Joiner**: Initial creation with `analyst` role
+2. **Leaver**: Disablement (enabled=false)
+3. **Audit**: 2 HMAC-signed events in `/admin/audit`
 
-**Test Manuel** :
+**Manual Test**:
 ```bash
-# 1. Tenter de se connecter avec bob
+# 1. Try to login with bob
 open https://localhost
 # Username: bob | Password: Temp123!
-# → Attendu: "Invalid username or password" (compte désactivé)
+# → Expected: "Invalid username or password" (account disabled)
 
-# 2. Vérifier statut dans l'admin UI (avec alice/joe)
+# 2. Verify status in admin UI (with alice/joe)
 open https://localhost/admin
-# → bob apparaît comme "Disabled" (badge rouge)
+# → bob appears as "Disabled" (red badge)
 
-# 3. Consulter l'audit trail de sa désactivation
+# 3. Consult audit trail of his disablement
 open https://localhost/admin/audit
-# → Chercher événement "leaver" (bob)
+# → Search for "leaver" event (bob)
 ```
 
-**Points Clés** :
-- ✅ Soft-delete (données conservées, compte inactif) ← **RGPD compliance**
-- ✅ Sessions Keycloak révoquées automatiquement
-- ✅ Réactivation possible via `/admin` (réversible)
-- ✅ **Contrôle d'accès** : analyst n'avait déjà pas accès /admin (403)
+**Key Points**:
+- ✅ Soft-delete (data preserved, account inactive) ← **GDPR compliance**
+- ✅ Keycloak sessions automatically revoked
+- ✅ Reactivation possible via `/admin` (reversible)
+- ✅ **Access control**: analyst already had no /admin access (403)
 
 ---
 
 ### carol — Manager (Stable Scenario)
 
-**Scénario** : Utilisateur stable avec accès lecture (pas d'opérations JML)
+**Scenario**: Stable user with read access (no JML operations)
 
-| Attribut | Valeur |
+| Attribute | Value |
 |----------|--------|
 | **Username** | `carol` |
-| **Rôle** | `manager` |
-| **Statut** | ✅ Actif |
-| **MFA** | ✅ TOTP requis |
-| **Mot de passe** | `Temp123!` (temporaire) |
-| **Accès Admin UI** | ✅ Lecture seule |
-| **Opérations JML** | ❌ Aucune |
+| **Role** | `manager` |
+| **Status** | ✅ Active |
+| **MFA** | ✅ TOTP required |
+| **Password** | `Temp123!` (temporary) |
+| **Admin UI Access** | ✅ Read-only |
+| **JML Operations** | ❌ None |
 
-**Workflow JML** :
-1. **Joiner** : Création avec rôle `manager`
-2. **Stable** : Aucune modification
+**JML Workflow**:
+1. **Joiner**: Creation with `manager` role
+2. **Stable**: No modifications
 
-**Test Manuel** :
+**Manual Test**:
 ```bash
-# 1. Se connecter avec carol
+# 1. Login with carol
 open https://localhost
 # Username: carol | Password: Temp123!
 
-# 2. Accéder au dashboard admin (lecture seule)
+# 2. Access admin dashboard (read-only)
 open https://localhost/admin
-# → Pas de boutons "Joiner", "Mover", "Leaver" (read-only)
+# → No "Joiner", "Mover", "Leaver" buttons (read-only)
 
-# 3. Accéder à l'audit trail (lecture autorisée)
+# 3. Access audit trail (read authorized)
 open https://localhost/admin/audit
-# → Peut consulter l'historique, pas le modifier
+# → Can consult history, not modify it
 ```
 
-**Points Clés** :
-- ✅ Séparation lecture/écriture (principe du moindre privilège)
-- ✅ Accès audit trail (conformité/surveillance)
-- ✅ Pas d'escalade de privilèges possible via UI
-- ✅ **Contrôle d'accès** : manager peut lire dashboard, analyst bloqué (403)
+**Key Points**:
+- ✅ Read/write separation (least privilege principle)
+- ✅ Audit trail access (compliance/monitoring)
+- ✅ No privilege escalation possible via UI
+- ✅ **Access control**: manager can read dashboard, analyst blocked (403)
 
 ---
 
 ### joe — IAM Operator + Realm Admin (Full Access)
 
-**Scénario** : Administrateur IAM complet (double rôle)
+**Scenario**: Complete IAM administrator (dual role)
 
-| Attribut | Valeur |
+| Attribute | Value |
 |----------|--------|
 | **Username** | `joe` |
-| **Rôle** | `iam-operator` + `realm-admin` |
-| **Statut** | ✅ Actif |
-| **MFA** | ✅ TOTP requis |
-| **Mot de passe** | `Temp123!` (temporaire) |
-| **Accès Admin UI** | ✅ Admin complet |
-| **Accès Keycloak Admin** | ✅ Console Keycloak complète |
-| **Opérations JML** | ✅ Joiner/Mover/Leaver |
+| **Role** | `iam-operator` + `realm-admin` |
+| **Status** | ✅ Active |
+| **MFA** | ✅ TOTP required |
+| **Password** | `Temp123!` (temporary) |
+| **Admin UI Access** | ✅ Full admin |
+| **Keycloak Admin Access** | ✅ Full Keycloak console |
+| **JML Operations** | ✅ Joiner/Mover/Leaver |
 
-**Workflow JML** :
-1. **Joiner** : Création avec rôle `iam-operator`
-2. **Grant** : Attribution rôle `realm-admin` (double-hatting)
-3. **Stable** : Compte administrateur permanent
+**JML Workflow**:
+1. **Joiner**: Creation with `iam-operator` role
+2. **Grant**: Assignment of `realm-admin` role (dual-role)
+3. **Stable**: Permanent administrator account
 
-**Test Manuel** :
+**Manual Test**:
 ```bash
-# 1. Se connecter avec joe
+# 1. Login with joe
 open https://localhost
 # Username: joe | Password: Temp123!
 
-# 2. Accéder au dashboard admin (opérations complètes)
+# 2. Access admin dashboard (complete operations)
 open https://localhost/admin
-# → Tous les boutons JML disponibles
+# → All JML buttons available
 
-# 3. Accéder à Keycloak Admin Console
+# 3. Access Keycloak Admin Console
 open http://localhost:8080/admin/demo/console
-# → joe peut gérer realm, clients, roles, users
+# → joe can manage realm, clients, roles, users
 
-# 4. Effectuer un Joiner (créer un nouveau user)
-# → Remplir formulaire dans /admin, assigner rôle "analyst"
-# → Vérifier dans /admin/audit (événement "joiner" signé)
+# 4. Perform Joiner (create new user)
+# → Fill form in /admin, assign "analyst" role
+# → Verify in /admin/audit (signed "joiner" event)
 ```
 
-**Points Clés** :
-- ✅ Double rôle (IAM operator + Realm admin) = contrôle total
-- ✅ Accès console Keycloak (administration infra IdP)
-- ✅ Responsable des opérations JML (traçabilité operator)
+**Key Points**:
+- ✅ Dual role (IAM operator + Realm admin) = full control
+- ✅ Keycloak console access (IdP infrastructure administration)
+- ✅ Responsible for JML operations (operator traceability)
 
 ---
 
-## 🔄 Workflows JML Détaillés
+## 🔄 Detailed JML Workflows
 
-### 1. Joiner (Création Utilisateur)
+### 1. Joiner (User Creation)
 
-**Cas d'usage** : Nouvel employé rejoignant l'entreprise
+**Use case**: New employee joining the company
 
-**Étapes** :
-1. Opérateur se connecte (`joe` ou `alice` après promotion)
-2. Accède à `/admin` → Formulaire "Joiner"
-3. Remplit :
+**Steps**:
+1. Operator logs in (`joe` or `alice` after promotion)
+2. Accesses `/admin` → "Joiner" form
+3. Fills:
    - Username (ex: `dave`)
-   - First Name / Last Name
-   - Email (ex: `dave@example.com`)
-   - Rôle initial (ex: `analyst`)
-   - Mot de passe temporaire (généré automatiquement si vide)
-   - Options : ☑️ MFA required, ☑️ Update password on first login
-4. Clique "Create User"
+   - Email, First name, Last name
+   - Initial role (analyst/manager/iam-operator)
+   - Options: ☑️ MFA required, ☑️ Update password on first login
+4. Clicks "Create User"
 
-**Backend (SCIM + Keycloak)** :
+**Backend (SCIM + Keycloak)**:
 ```python
-# 1. API SCIM POST /Users
+# 1. SCIM API POST /Users
 POST https://localhost/scim/v2/Users
 Authorization: Bearer <token>
 Content-Type: application/scim+json
@@ -219,8 +217,8 @@ Content-Type: application/scim+json
 {
   "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
   "userName": "dave",
-  "emails": [{"value": "dave@example.com", "primary": true}],
   "name": {"givenName": "Dave", "familyName": "Smith"},
+  "emails": [{"value": "dave@example.com", "primary": true}],
   "active": true
 }
 
@@ -232,44 +230,44 @@ PUT /admin/realms/demo/users/{id}/groups/{iam-poc-managed-group-id}
 {
   "event": "joiner",
   "username": "dave",
-  "operator": "joe",
-  "timestamp": "2025-11-04T10:30:00Z",
+  "role": "analyst",
   "correlation_id": "uuid",
+  "timestamp": "2025-11-07T10:30:00Z",
   "signature": "hmac-sha256(...)"
 }
 ```
 
-**Vérification** :
+**Verification**:
 ```bash
 # 1. Audit trail
 open https://localhost/admin/audit
-# → Chercher événement "joiner" avec username="dave"
+# → Search for "joiner" event with username="dave"
 
-# 2. Intégrité signature
+# 2. Signature integrity
 make verify-audit
-# → Attendu: Signature valide pour événement "dave"
+# → Expected: Valid signature for "dave" event
 
-# 3. Connexion nouveau user
+# 3. New user login
 open https://localhost
-# Username: dave | Password: <temporaire-fourni> | MFA: Setup TOTP
+# Username: dave | Password: <temporary-provided> | MFA: Setup TOTP
 ```
 
 ---
 
-### 2. Mover (Changement de Rôle)
+### 2. Mover (Role Change)
 
-**Cas d'usage** : Promotion, mobilité interne, réorganisation
+**Use case**: Promotion, internal mobility, reorganization
 
-**Étapes** :
-1. Opérateur se connecte (`joe` ou `alice` après promotion)
-2. Accède à `/admin` → Formulaire "Mover"
-3. Sélectionne :
-   - Utilisateur (ex: `alice`)
-   - Rôle actuel (ex: `analyst`)
-   - Nouveau rôle (ex: `iam-operator`)
-4. Clique "Change Role"
+**Steps**:
+1. Operator logs in (`joe` or `alice` after promotion)
+2. Accesses `/admin` → "Mover" form
+3. Selects:
+   - User (ex: `alice`)
+   - Current role (ex: `analyst`)
+   - New role (ex: `iam-operator`)
+4. Clicks "Change Role"
 
-**Backend (Keycloak)** :
+**Backend (Keycloak)**:
 ```python
 # 1. Keycloak API: Remove old role
 DELETE /admin/realms/demo/users/{alice-id}/role-mappings/realm
@@ -286,44 +284,44 @@ DELETE /admin/realms/demo/users/{alice-id}/sessions
 {
   "event": "mover",
   "username": "alice",
-  "operator": "joe",
-  "details": {"from_role": "analyst", "to_role": "iam-operator"},
-  "timestamp": "2025-11-04T10:35:00Z",
+  "from_role": "analyst",
+  "to_role": "iam-operator",
   "correlation_id": "uuid",
+  "timestamp": "2025-11-07T11:00:00Z",
   "signature": "hmac-sha256(...)"
 }
 ```
 
-**Vérification** :
+**Verification**:
 ```bash
 # 1. Audit trail
 open https://localhost/admin/audit
-# → Chercher événement "mover" avec from_role="analyst", to_role="iam-operator"
+# → Search for "mover" event with from_role="analyst", to_role="iam-operator"
 
-# 2. Reconnexion utilisateur (nouvelle session avec nouveau rôle)
+# 2. User reconnection (new session with new role)
 open https://localhost
 # Username: alice | Password: Temp123!
-# → Vérifier que /admin montre maintenant les boutons JML
+# → Verify that /admin now shows JML buttons
 
-# 3. Intégrité signature
+# 3. Signature integrity
 make verify-audit
 ```
 
 ---
 
-### 3. Leaver (Désactivation Utilisateur)
+### 3. Leaver (User Disablement)
 
-**Cas d'usage** : Départ employé, suspension disciplinaire, congé longue durée
+**Use case**: Employee departure, disciplinary suspension, long-term leave
 
-**Étapes** :
-1. Opérateur se connecte (`joe` ou `alice` après promotion)
-2. Accède à `/admin` → Formulaire "Leaver"
-3. Sélectionne utilisateur (ex: `bob`)
-4. Clique "Disable User"
+**Steps**:
+1. Operator logs in (`joe` or `alice` after promotion)
+2. Accesses `/admin` → "Leaver" form
+3. Selects user (ex: `bob`)
+4. Clicks "Disable User"
 
-**Backend (SCIM + Keycloak)** :
+**Backend (SCIM + Keycloak)**:
 ```python
-# 1. API SCIM PATCH /Users/{id}
+# 1. SCIM API PATCH /Users/{id}
 PATCH https://localhost/scim/v2/Users/{bob-id}
 Authorization: Bearer <token>
 Content-Type: application/scim+json
@@ -350,53 +348,52 @@ DELETE /admin/realms/demo/users/{bob-id}/sessions
 {
   "event": "leaver",
   "username": "bob",
-  "operator": "joe",
-  "timestamp": "2025-11-04T10:40:00Z",
   "correlation_id": "uuid",
+  "timestamp": "2025-11-07T12:00:00Z",
   "signature": "hmac-sha256(...)"
 }
 ```
 
-**Vérification** :
+**Verification**:
 ```bash
 # 1. Audit trail
 open https://localhost/admin/audit
-# → Chercher événement "leaver" avec username="bob"
+# → Search for "leaver" event with username="bob"
 
-# 2. Tentative connexion (doit échouer)
+# 2. Login attempt (should fail)
 open https://localhost
 # Username: bob | Password: Temp123!
-# → Attendu: "Invalid username or password"
+# → Expected: "Invalid username or password"
 
-# 3. Réactivation possible (soft-delete)
-# → Depuis /admin (avec joe), bouton "Reactivate" sur bob
-# → Après réactivation, bob peut se reconnecter
+# 3. Reactivation possible (soft-delete)
+# → From /admin (with joe), "Reactivate" button on bob
+# → After reactivation, bob can login again
 ```
 
 ---
 
-## 🛡️ Sécurité & Conformité
+## 🛡️ Security & Compliance
 
-### Protection Anti-Abus
+### Anti-Abuse Protection
 
-| Scénario | Protection | Implémentation |
+| Scenario | Protection | Implementation |
 |----------|-----------|----------------|
-| **Auto-modification** | Utilisateur ne peut pas modifier son propre compte | `if username.lower() == current_username().lower(): abort(403)` |
-| **Escalade de privilèges** | Manager ne peut pas s'auto-promouvoir realm-admin | Vérification rôle opérateur dans `@require_jml_operator` |
-| **Désactivation admin** | Opérateur ne peut pas désactiver son propre compte | Check explicite avant leaver operation |
-| **Modification realm-admin** | Seul realm-admin peut modifier autres realm-admin | `requires_operator_for_roles()` check |
+| **Self-modification** | User cannot modify their own account | `if username.lower() == current_username().lower(): abort(403)` |
+| **Privilege escalation** | Manager cannot self-promote to realm-admin | Operator role verification in `@require_jml_operator` |
+| **Admin deactivation** | Operator cannot disable their own account | Explicit check before leaver operation |
+| **Realm-admin modification** | Only realm-admin can modify other realm-admins | `requires_operator_for_roles()` check |
 
-### Audit Trail Cryptographique
+### Cryptographic Audit Trail
 
-**Signature HMAC-SHA256** :
+**HMAC-SHA256 Signature**:
 ```python
 import hmac
 import hashlib
 
-# 1. Payload canonique
+# 1. Canonical payload
 canonical = f"{event}:{username}:{timestamp}:{correlation_id}"
 
-# 2. Clé de signature (Azure Key Vault en prod)
+# 2. Signing key (Azure Key Vault in prod)
 signing_key = os.getenv("AUDIT_LOG_SIGNING_KEY")  # 64+ bytes
 
 # 3. Signature
@@ -406,7 +403,7 @@ signature = hmac.new(
     hashlib.sha256
 ).hexdigest()
 
-# 4. Événement signé
+# 4. Signed event
 {
   "event": "joiner",
   "username": "dave",
@@ -415,7 +412,7 @@ signature = hmac.new(
 }
 ```
 
-**Vérification** :
+**Verification**:
 ```bash
 make verify-audit
 # Output:
@@ -425,22 +422,22 @@ make verify-audit
 # ✓ All 22 signatures valid
 ```
 
-### Conformité Swiss
+### Swiss Compliance
 
-| Exigence | Implémentation | Preuve |
+| Requirement | Implementation | Proof |
 |----------|----------------|--------|
-| **nLPD (Traçabilité)** | Audit trail horodaté pour toutes opérations | `/admin/audit` (timestamps ISO 8601) |
-| **RGPD (Droit à l'oubli)** | Soft-delete réversible (enabled=false) | `PATCH /scim/v2/Users/{id}` avec active=false |
-| **FINMA (Non-répudiation)** | Signatures HMAC-SHA256 non falsifiables | `make verify-audit` (22/22 valid) |
+| **nLPD (Traceability)** | Timestamped audit trail for all operations | `/admin/audit` (ISO 8601 timestamps) |
+| **GDPR (Right to be forgotten)** | Reversible soft-delete (enabled=false) | `PATCH /scim/v2/Users/{id}` with active=false |
+| **FINMA (Non-repudiation)** | Non-falsifiable HMAC-SHA256 signatures | `make verify-audit` (22/22 valid) |
 
 ---
 
-## 🧪 Tests Automatisés
+## 🧪 Automated Tests
 
-### Tests Unitaires RBAC
+### RBAC Unit Tests
 
 ```bash
-# 1. Tests d'autorisation
+# 1. Authorization tests
 pytest tests/unit/test_core_rbac.py -v
 
 # Coverage:
@@ -450,10 +447,10 @@ pytest tests/unit/test_core_rbac.py -v
 # ✓ test_collect_roles_from_access_token
 ```
 
-### Tests d'Intégration JML
+### JML Integration Tests
 
 ```bash
-# 1. Tests workflows complets
+# 1. Complete workflow tests
 pytest tests/integration/test_admin_ui_helpers.py -v
 
 # Coverage:
@@ -463,10 +460,10 @@ pytest tests/integration/test_admin_ui_helpers.py -v
 # ✓ test_ui_set_user_active (reactivate)
 ```
 
-### Tests Audit Trail
+### Audit Trail Tests
 
 ```bash
-# 1. Tests signatures cryptographiques
+# 1. Cryptographic signature tests
 pytest tests/unit/test_audit.py -v
 
 # Coverage:
@@ -477,36 +474,37 @@ pytest tests/unit/test_audit.py -v
 
 ---
 
-## 🔗 Références
+## 🔗 References
 
-- **[README.md](../README.md)** — Positionnement Swiss, démarrage rapide
-- **[Hiring Pack](Hiring_Pack.md)** — Correspondance CV ↔ Repo pour recruteurs
-- **[Security Design](SECURITY_DESIGN.md)** — OWASP ASVS L2, nLPD/RGPD/FINMA
-- **[API Reference](API_REFERENCE.md)** — Endpoints SCIM 2.0, OAuth scopes
+- **[README.md](../README.md)** — Swiss positioning, quick start
+- **[Hiring Pack](Hiring_Pack.md)** — CV ↔ Repo mapping for recruiters
+- **[Security Design](SECURITY_DESIGN.md)** — OWASP ASVS L2, nLPD/GDPR/FINMA
+- **[API Reference](API_REFERENCE.md)** — SCIM 2.0 endpoints, OAuth scopes
 - **[Threat Model](THREAT_MODEL.md)** — STRIDE analysis, FINMA compliance
 
 ---
 
-## 💡 Pour Recruteurs : Ce Que Cela Démontre
+## 💡 For Recruiters: What This Demonstrates
 
-### Compétences Techniques
-- ✅ **RBAC avancé** : 4 niveaux de rôles, séparation privilèges
-- ✅ **Workflows IAM** : Joiner/Mover/Leaver automation complète
-- ✅ **Audit cryptographique** : HMAC-SHA256, non-répudiation
-- ✅ **SCIM 2.0** : API standardisée (RFC 7644)
-- ✅ **OIDC/MFA** : Authentification moderne (PKCE, TOTP)
+### Technical Skills
+- ✅ **Advanced RBAC** : 4 role levels, privilege separation
+- ✅ **IAM Workflows** : Complete Joiner/Mover/Leaver automation
+- ✅ **Cryptographic Audit** : HMAC-SHA256, non-repudiation
+- ✅ **SCIM 2.0** : Standardized API (RFC 7644)
+- ✅ **OIDC/MFA** : Modern authentication (PKCE, TOTP)
 
-### Sécurité & Conformité
-- ✅ **Swiss compliance** : nLPD, RGPD, FINMA by design
-- ✅ **Principe du moindre privilège** : Read-only vs. write access
-- ✅ **Protection anti-abus** : Auto-modification bloquée
-- ✅ **Traçabilité** : Chaque action signée + horodatée
-- ✅ **Tests 90% coverage** : Qualité vérifiable
+### Security & Compliance
+- ✅ **Swiss Compliance** : nLPD, GDPR, FINMA by design
+- ✅ **Least Privilege Principle** : Read-only vs. write access separation
+- ✅ **Anti-Abuse Protection** : Self-modification blocked
+- ✅ **Auditability** : Every action signed + timestamped
+- ✅ **90% Test Coverage** : Verifiable quality
 
-### Positionnement Marché Suisse
-- 🇨🇭 **Finance** : FINMA compliance (non-répudiation, audit trail)
-- 🇨🇭 **Healthcare** : nLPD strict (traçabilité, soft-delete)
-- 🇨🇭 **Tech/SaaS** : IAM moderne (SCIM, OIDC, automation)
-- 🇨🇭 **Conseil** : Migration Keycloak → Azure Entra ID (roadmap Azure-native)
+### Swiss Market Positioning
+- 🇨🇭 **Finance** : FINMA compliance (non-repudiation, audit trail)
+- 🇨🇭 **Healthcare** : Strict nLPD (traceability, soft-delete)
+- 🇨🇭 **Tech/SaaS** : Modern IAM (SCIM, OIDC, automation)
+- 🇨🇭 **Consulting** : Keycloak → Azure Entra ID migration path (Azure-native roadmap)
 
-**En résumé** : Ce projet démontre une **maîtrise opérationnelle complète des standards IAM** dans un contexte **Azure-first** et **conforme aux exigences suisses**. Idéal pour postes **Junior Cloud Security Engineer (Azure)**, **IAM Engineer**, **DevSecOps Cloud** en Suisse Romande (Genève, Lausanne, Berne).
+**Summary** : This project demonstrates **complete operational mastery of IAM standards** in an **Azure-first context** compliant with **Swiss requirements**. Ideal for **Junior Cloud Security Engineer (Azure)**, **IAM Engineer**, **DevSecOps Cloud** roles in Romandy.
+

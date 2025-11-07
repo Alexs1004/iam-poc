@@ -1,80 +1,80 @@
 # 📚 Documentation Hub — Mini IAM Lab
 
-> **Navigation intelligente** : Documentation organisée par profil (Recruteurs · Sécurité · DevOps)
+> **Smart navigation**: Documentation organized by profile (Recruiters · Security · DevOps)
 
 ---
 
-## 🎯 Pour Recruteurs & Screening RH
+## 🎯 For Recruiters & HR Screening
 
-**Temps de lecture : 5-10 minutes**
+**Reading time: 5-10 minutes**
 
-| Document | Objectif | Public |
+| Document | Objective | Audience |
 |----------|----------|--------|
-| **[Swiss Hiring Pack](Hiring_Pack.md)** | Correspondance CV ↔ Repo, mots-clés ATS, validation rapide | Recruteurs RH, Hiring Managers |
-| **[RBAC Demo Scenarios](RBAC_DEMO_SCENARIOS.md)** | Workflows Joiner/Mover/Leaver détaillés, matrice RBAC, tests manuels | Recruteurs RH, Tech Leads |
-| **[README Principal](../README.md)** | Positionnement Cloud Security Engineer (Swiss), démarrage 2 min | Tous (screening initial) |
+| **[Swiss Hiring Pack](Hiring_Pack.md)** | Resume ↔ Repo mapping, ATS keywords, quick validation | HR Recruiters, Hiring Managers |
+| **[RBAC Demo Scenarios](RBAC_DEMO_SCENARIOS.md)** | Detailed Joiner/Mover/Leaver workflows, RBAC matrix, manual tests | HR Recruiters, Tech Leads |
+| **[Main README](../README.md)** | Cloud Security Engineer positioning (Swiss), 2-min start | All (initial screening) |
 
-**Ce qu'un recruteur doit retenir** :
-- Azure Key Vault opérationnel (production-ready secrets management)
-- SCIM 2.0 RFC 7644 compliant (standard IAM inter-entreprises)
-- Conformité Swiss : nLPD, RGPD, FINMA (audit trail non-répudiable)
-- 328 tests automatisés, 92% coverage (qualité code vérifiable)
-- Pipeline de sécurité : Gitleaks, Trivy, Syft, Grype (CI/CD + local)
-- Roadmap Azure-native : Migration Entra ID planifiée
+**What recruiters should remember**:
+- Operational Azure Key Vault (production-ready secrets management)
+- SCIM 2.0 RFC 7644 compliant (inter-enterprise IAM standard)
+- Swiss compliance: nLPD, GDPR, FINMA (non-repudiable audit trail)
+- 328 automated tests, 92% coverage (verifiable code quality)
+- Security pipeline: Gitleaks, Trivy, Syft, Grype (CI/CD + local)
+- Azure-native roadmap: Entra ID migration planned
 
 ---
 
-## 🔐 Pour Ingénieurs Sécurité & CISO
+## 🔐 For Security Engineers & CISO
 
-**Temps de lecture : 30-60 minutes**
+**Reading time: 30-60 minutes**
 
-| Document | Contenu | Standards |
+| Document | Content | Standards |
 |----------|---------|-----------|
-| **[Security Design](SECURITY_DESIGN.md)** | Contrôles implémentés, threat mitigation, secrets management | OWASP ASVS L2, nLPD, RGPD |
+| **[Security Design](SECURITY_DESIGN.md)** | Implemented controls, threat mitigation, secrets management | OWASP ASVS L2, nLPD, GDPR |
 | **[Security Scanning](SECURITY_SCANNING.md)** | Gitleaks, Trivy, Syft, Grype (local + CI/CD), troubleshooting | NIST SP 800-190, EO 14028 |
-| **[Threat Model](THREAT_MODEL.md)** | Analyse STRIDE, MITRE ATT&CK, conformité FINMA | RFC 7644, NIST 800-63B |
-| **[API Reference](API_REFERENCE.md)** | Endpoints SCIM, authentification OAuth, rate limiting | RFC 7644, RFC 6749 |
+| **[Threat Model](THREAT_MODEL.md)** | STRIDE analysis, MITRE ATT&CK, FINMA compliance | RFC 7644, NIST 800-63B |
+| **[API Reference](API_REFERENCE.md)** | SCIM endpoints, OAuth authentication, rate limiting | RFC 7644, RFC 6749 |
 
-**Points clés sécurité** :
-- **AuthN/AuthZ** : OAuth 2.0 Bearer tokens, PKCE, MFA enforcement
-- **Audit Trail** : HMAC-SHA256 signatures (non-repudiation), `make verify-audit`
-- **Secrets** : Azure Key Vault (prod), rotation automatisée (`make rotate-secret`)
-- **Transport** : TLS 1.3, HSTS, CSP, Secure/HttpOnly cookies
-- **Security Scanning** : Gitleaks (secrets), Trivy (CVE), Syft (SBOM), Grype (vulnérabilités)
-- **Compliance** : nLPD (traçabilité), RGPD (portabilité), FINMA (non-répudiation)
+**Key security points**:
+- **AuthN/AuthZ**: OAuth 2.0 Bearer tokens, PKCE, MFA enforcement
+- **Audit Trail**: HMAC-SHA256 signatures (non-repudiation), `make verify-audit`
+- **Secrets**: Azure Key Vault (prod), automated rotation (`make rotate-secret`)
+- **Transport**: TLS 1.3, HSTS, CSP, Secure/HttpOnly cookies
+- **Security Scanning**: Gitleaks (secrets), Trivy (CVE), Syft (SBOM), Grype (vulnerabilities)
+- **Compliance**: nLPD (traceability), GDPR (portability), FINMA (non-repudiation)
 
 ---
 
-## 🛠️ Pour DevOps & Ingénieurs Cloud
+## 🛠️ For DevOps & Cloud Engineers
 
-**Temps de lecture : 45-90 minutes**
+**Reading time: 45-90 minutes**
 
-| Document | Contenu | Technologies |
+| Document | Content | Technologies |
 |----------|---------|--------------|
 | **[Deployment Guide](DEPLOYMENT_GUIDE.md)** | Azure App Service, Key Vault, Managed Identity, CI/CD | Azure, Docker, Nginx |
-| **[Testing Guide](TESTING.md)** | Stratégie de test, couverture, workflow CI/CD, troubleshooting | pytest, coverage, xdist |
-| **[Local SCIM Testing](LOCAL_SCIM_TESTING.md)** | Tests locaux, curl examples, troubleshooting | SCIM 2.0, OAuth 2.0 |
+| **[Testing Guide](TESTING.md)** | Test strategy, coverage, CI/CD workflow, troubleshooting | pytest, coverage, xdist |
+| **[Local SCIM Testing](LOCAL_SCIM_TESTING.md)** | Local tests, curl examples, troubleshooting | SCIM 2.0, OAuth 2.0 |
 
-**Commandes clés** :
+**Key commands**:
 ```bash
-make quickstart              # Démarrage démo 2 minutes
-make doctor                  # Health check Azure + Docker
-make test-all                # Suite complète (328 tests, 92% coverage)
-make test-coverage           # Tests avec rapport HTML de couverture
-make test-coverage-vscode    # Ouvrir rapport dans VS Code
-make verify-audit            # Vérification signatures HMAC
-make rotate-secret-dry       # Simulation rotation Key Vault
-make security-check          # Lancer tous les scans de sécurité
-make scan-secrets            # Détecter secrets exposés (Gitleaks)
-make scan-vulns              # Scanner CVE HIGH/CRITICAL (Trivy)
+make quickstart              # 2-minute demo start
+make doctor                  # Azure + Docker health check
+make test-all                # Full suite (328 tests, 92% coverage)
+make test-coverage           # Tests with HTML coverage report
+make test-coverage-vscode    # Open report in VS Code
+make verify-audit            # HMAC signature verification
+make rotate-secret-dry       # Key Vault rotation simulation
+make security-check          # Run all security scans
+make scan-secrets            # Detect exposed secrets (Gitleaks)
+make scan-vulns              # Scan HIGH/CRITICAL CVE (Trivy)
 ```
 
-**Workflow de couverture de code** :
-- `make test-coverage` : Lance tous les tests et génère `htmlcov/index.html`
-- `make test-coverage-report` : Affiche les options de visualisation
-- `make test-coverage-vscode` : Ouvre le rapport dans VS Code (recommandé)
-- `make test-coverage-open` : Tente d'ouvrir dans le navigateur système
-- `make test-coverage-serve` : Démarre un serveur HTTP sur `localhost:8888`
+**Code coverage workflow**:
+- `make test-coverage`: Runs all tests and generates `htmlcov/index.html`
+- `make test-coverage-report`: Shows viewing options
+- `make test-coverage-vscode`: Opens report in VS Code (recommended)
+- `make test-coverage-open`: Attempts to open in system browser
+- `make test-coverage-serve`: Starts HTTP server on `localhost:8888`
 
 ---
 

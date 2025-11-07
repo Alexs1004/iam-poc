@@ -10,21 +10,21 @@
 ![Swiss Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20RGPD%20%7C%20FINMA-red)
 ![License MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 
-> **🎯 Démo en 2 minutes · Production-ready mindset · Swiss compliance focus**
+> **🎯 2-minute demo · Production-ready mindset · Swiss compliance focus**
 
 ---
 
-## Positionnement : Cloud Security Engineer (Suisse Romande)
+## Positioning: Cloud Security Engineer (Romandy)
 
-Ce projet démontre une **maîtrise opérationnelle des standards IAM modernes** dans un contexte **Azure-first** et **conforme aux exigences suisses** (nLPD, RGPD, FINMA). Il s'adresse aux recruteurs en sécurité cloud recherchant des profils capables de concevoir, sécuriser et auditer des environnements d'identité dans le cloud Microsoft Azure.
+This project demonstrates **operational mastery of modern IAM standards** in an **Azure-first** context, **compliant with Swiss regulations** (nLPD, GDPR, FINMA). It targets cloud security recruiters seeking profiles capable of designing, securing, and auditing identity environments in Microsoft Azure Cloud.
 
-**Mots-clés recruteurs** : Azure Entra ID (ex-Azure AD) · SCIM 2.0 Provisioning · OIDC/OAuth 2.0 · MFA Policy · RBAC · Azure Key Vault · Managed Identity · Secret Rotation · Non-Repudiation · DevSecOps · Cryptographic Audit · Compliance (nLPD/RGPD/FINMA)
+**Recruiter keywords**: Azure Entra ID (ex-Azure AD) · SCIM 2.0 Provisioning · OIDC/OAuth 2.0 · MFA Policy · RBAC · Azure Key Vault · Managed Identity · Secret Rotation · Non-Repudiation · DevSecOps · Cryptographic Audit · Compliance (nLPD/GDPR/FINMA)
 
-**Rôles cibles** : Junior Cloud Security Engineer (Azure) · IAM Engineer · DevSecOps Cloud · Identity & Access Management Specialist
+**Target roles**: Junior Cloud Security Engineer (Azure) · IAM Engineer · DevSecOps Cloud · Identity & Access Management Specialist
 
 ---
 
-## ⚡ Démarrage Rapide (2 minutes)
+## ⚡ Quick Start (2 minutes)
 
 ```bash
 git clone https://github.com/Alexs1004/iam-poc.git
@@ -33,51 +33,51 @@ make quickstart
 open https://localhost
 ```
 
-**Ce que vous verrez** :
-- Authentification OIDC avec MFA (Keycloak → migration Entra ID prévue)
-- API SCIM 2.0 RFC 7644-compliant (Joiner/Mover/Leaver automation)
-- Secrets chargés depuis Azure Key Vault (zero-config demo mode disponible)
-- Trail d'audit cryptographique avec signatures HMAC-SHA256 vérifiables
-- Page de vérification interactive : https://localhost/verification
+**What you'll see**:
+- OIDC authentication with MFA (Keycloak → Entra ID migration planned)
+- RFC 7644-compliant SCIM 2.0 API (Joiner/Mover/Leaver automation)
+- Secrets loaded from Azure Key Vault (zero-config demo mode available)
+- Cryptographic audit trail with verifiable HMAC-SHA256 signatures
+- Interactive verification page: https://localhost/verification
 
-### 👥 Utilisateurs de Démo & Matrice RBAC
+### 👥 Demo Users & RBAC Matrix
 
-Le `make demo` provisionne **4 utilisateurs** avec différents niveaux d'accès (démonstration complète JML) :
+`make demo` provisions **4 users** with different access levels (full JML demonstration):
 
-| Utilisateur | Rôle Initial | Rôle Final | Mot de passe | Accès Admin UI | Opérations JML | Scénario |
-|-------------|--------------|------------|--------------|----------------|----------------|----------|
-| **alice** | `analyst` | **`iam-operator`** ⬆️ | `Temp123!` | ❌ → ✅ Admin complet | ❌ → ✅ Joiner/Mover/Leaver | **Mover** : Promotion analyst → operator |
-| **bob** | `analyst` | ~~`disabled`~~ ❌ | `Temp123!` | ❌ 403 Forbidden | ❌ Aucune | **Leaver** : Compte désactivé |
-| **carol** | `manager` | `manager` | `Temp123!` | ✅ Lecture seule | ❌ Aucune | **Stable** : Manager (lecture) |
-| **joe** | `iam-operator` | `iam-operator`<br>+ `realm-admin` | `Temp123!` | ✅ Admin complet | ✅ Joiner/Mover/Leaver | **Stable** : Opérateur IAM complet |
+| User | Initial Role | Final Role | Password | Admin UI Access | JML Operations | Scenario |
+|------|--------------|------------|----------|-----------------|----------------|----------|
+| **alice** | `analyst` | **`iam-operator`** ⬆️ | `Temp123!` | ❌ → ✅ Full admin | ❌ → ✅ Joiner/Mover/Leaver | **Mover**: Promotion analyst → operator |
+| **bob** | `analyst` | ~~`disabled`~~ ❌ | `Temp123!` | ❌ 403 Forbidden | ❌ None | **Leaver**: Account disabled |
+| **carol** | `manager` | `manager` | `Temp123!` | ✅ Read-only | ❌ None | **Stable**: Manager (read access) |
+| **joe** | `iam-operator` | `iam-operator`<br>+ `realm-admin` | `Temp123!` | ✅ Full admin | ✅ Joiner/Mover/Leaver | **Stable**: Full IAM operator |
 
-**Hiérarchie des Rôles (RBAC)** :
-- **`realm-admin`** : Contrôle total (Keycloak realm management)
-- **`iam-operator`** : Opérations JML (créer/modifier/désactiver utilisateurs) + lecture dashboard
-- **`manager`** : Lecture dashboard admin, pas d'opérations
-- **`analyst`** : Aucun accès admin UI (403 Forbidden)
+**Role Hierarchy (RBAC)**:
+- **`realm-admin`**: Full control (Keycloak realm management)
+- **`iam-operator`**: JML operations (create/modify/disable users) + dashboard read
+- **`manager`**: Admin dashboard read-only, no operations
+- **`analyst`**: No admin UI access (403 Forbidden)
 
-**Test Rapide** :
+**Quick Test**:
 ```bash
-# 1. Se connecter avec joe (iam-operator + realm-admin)
+# 1. Login with joe (iam-operator + realm-admin)
 open https://localhost
-# Username: joe | Password: Temp123! | MFA: Configure TOTP à la première connexion
+# Username: joe | Password: Temp123! | MFA: Configure TOTP on first login
 
-# 2. Accéder au dashboard admin
+# 2. Access admin dashboard
 open https://localhost/admin
 
-# 3. Vérifier l'audit trail des opérations JML
+# 3. Check JML operations audit trail
 open https://localhost/admin/audit
 
-# 4. Vérifier intégrité signatures HMAC
+# 4. Verify HMAC signature integrity
 make verify-audit
 ```
 
-**💡 Points Clés** :
-- **Séparation des privilèges** : 4 niveaux de rôles (principe du moindre privilège)
-- **Cycle de vie complet** : Joiner (alice), Mover (alice → operator), Leaver (bob disabled)
-- **Traçabilité** : Chaque opération JML signée cryptographiquement (`/admin/audit`)
-- **MFA obligatoire** : TOTP requis pour tous les comptes (standard NIST 800-63B)
+**💡 Key Points**:
+- **Privilege separation**: 4 role levels (least privilege principle)
+- **Complete lifecycle**: Joiner (alice), Mover (alice → operator), Leaver (bob disabled)
+- **Traceability**: Every JML operation cryptographically signed (`/admin/audit`)
+- **Mandatory MFA**: TOTP required for all accounts (NIST 800-63B standard)
 
 ---
 
@@ -97,175 +97,175 @@ make verify-audit
                                    └──────────────────┘    └─────────────────┘
 ```
 
-**Stack Technique** :
-- **Identity Provider** : Keycloak 24 (OIDC + MFA) → **Migration Entra ID prévue**
-- **API Backend** : Flask (Python 3.12) + SCIM 2.0 RFC 7644
-- **Secrets Management** : Azure Key Vault SDK (azure-keyvault-secrets)
-- **Reverse Proxy** : Nginx (TLS 1.3, rate limiting, security headers)
-- **Audit** : HMAC-SHA256 signatures pour non-répudiation
+**Technical Stack**:
+- **Identity Provider**: Keycloak 24 (OIDC + MFA) → **Entra ID migration planned**
+- **API Backend**: Flask (Python 3.12) + SCIM 2.0 RFC 7644
+- **Secrets Management**: Azure Key Vault SDK (azure-keyvault-secrets)
+- **Reverse Proxy**: Nginx (TLS 1.3, rate limiting, security headers)
+- **Audit**: HMAC-SHA256 signatures for non-repudiation
 
 ---
 
-## 🎯 Ce Projet Démontre
+## 🎯 What This Project Demonstrates
 
-### Sécurité Cloud Azure
-- **Azure Key Vault** comme source unique de vérité pour secrets (KEYCLOAK_SERVICE_CLIENT_SECRET, FLASK_SECRET_KEY, AUDIT_LOG_SIGNING_KEY)
-- **Rotation automatisée** des secrets avec validation d'intégrité (dry-run disponible)
-- **Architecture prête pour Managed Identity** (élimination des Service Principals)
-- **Security headers** : HSTS, CSP, X-Frame-Options, X-Content-Type-Options
-- **Rate limiting** : Protection DoS sur endpoints critiques (SCIM, admin, verification)
+### Azure Cloud Security
+- **Azure Key Vault** as single source of truth for secrets (KEYCLOAK_SERVICE_CLIENT_SECRET, FLASK_SECRET_KEY, AUDIT_LOG_SIGNING_KEY)
+- **Automated secret rotation** with integrity validation (dry-run available)
+- **Managed Identity-ready architecture** (eliminates Service Principals)
+- **Security headers**: HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+- **Rate limiting**: DoS protection on critical endpoints (SCIM, admin, verification)
 
-### Gestion d'Identités (IAM)
-- **SCIM 2.0 RFC 7644** : API standardisée de provisioning d'identités
-- **OIDC/OAuth 2.0** : Authentification fédérée avec PKCE (RFC 7636)
-- **Multi-Factor Authentication** : OTP obligatoire pour comptes admin
-- **RBAC granulaire** : realm-admin, iam-operator, iam-verifier (séparation des privilèges)
-- **Joiner/Mover/Leaver (JML)** : Automatisation du cycle de vie utilisateurs
+### Identity & Access Management (IAM)
+- **SCIM 2.0 RFC 7644**: Standardized identity provisioning API
+- **OIDC/OAuth 2.0**: Federated authentication with PKCE (RFC 7636)
+- **Multi-Factor Authentication**: Mandatory TOTP for admin accounts
+- **Granular RBAC**: realm-admin, iam-operator, iam-verifier (privilege separation)
+- **Joiner/Mover/Leaver (JML)**: User lifecycle automation
 
-### Conformité & Audit
-- **Trail d'audit inaltérable** : Signatures HMAC-SHA256 pour chaque opération SCIM
-- **Non-répudiation** : Corrélation-id, timestamp, username, payload hashé
-- **Vérification d'intégrité** : Détection automatique des modifications (page dédiée)
-- **nLPD/RGPD** : Traçabilité des accès aux données personnelles
-- **FINMA** : Conservation des preuves cryptographiques
+### Compliance & Audit
+- **Immutable audit trail**: HMAC-SHA256 signatures for every SCIM operation
+- **Non-repudiation**: Correlation-id, timestamp, username, hashed payload
+- **Integrity verification**: Automatic tampering detection (dedicated page)
+- **nLPD/GDPR**: Personal data access traceability
+- **FINMA**: Cryptographic proof retention
 
 ### DevSecOps
-- **Tests automatisés** : 300+ tests (90% coverage), CI/CD sécurisé
-- **Scans de sécurité** : Gitleaks (secrets), Trivy (CVE), Syft (SBOM), Grype (vulnérabilités)
-- **Pipeline CI/CD** : GitHub Actions avec 5 jobs de sécurité (secrets, vulns, SBOM, dependency-review)
-- **Zero-config demo** : Secrets éphémères générés automatiquement (mode DEMO)
-- **Production-ready** : Séparation stricte demo/prod, secrets jamais en clair
-- **Infrastructure as Code** : Makefile 35+ commandes (quickstart, rotate-secret, verify-audit, scan-secrets)
+- **Automated tests**: 328 tests (92% coverage), secure CI/CD
+- **Security scans**: Gitleaks (secrets), Trivy (CVE), Syft (SBOM), Grype (vulnerabilities)
+- **CI/CD pipeline**: GitHub Actions with 5 security jobs (secrets, vulns, SBOM, dependency-review)
+- **Zero-config demo**: Ephemeral secrets generated automatically (DEMO mode)
+- **Production-ready**: Strict demo/prod separation, secrets never in cleartext
+- **Infrastructure as Code**: Makefile with 35+ commands (quickstart, rotate-secret, verify-audit, scan-secrets)
 
 ---
 
 ---
 
-## 🔧 Commandes Essentielles
+## 🔧 Essential Commands
 
 ```bash
-# Démarrage
-make quickstart          # Zero-config : .env + stack + démo JML (2 min)
-make fresh-demo          # Reset complet : volumes + secrets + certificats
+# Startup
+make quickstart          # Zero-config: .env + stack + JML demo (2 min)
+make fresh-demo          # Complete reset: volumes + secrets + certificates
 
-# Tests & Qualité
-make test                    # Tests unitaires (328 tests, 92% coverage)
-make test-e2e                # Tests d'intégration (nécessite stack démarrée)
-make test-coverage           # Tests complets avec rapport de couverture HTML
-make test-coverage-vscode    # Ouvrir le rapport de couverture dans VS Code
-make verify-audit            # Vérification signatures HMAC du trail d'audit
+# Tests & Quality
+make test                    # Unit tests (328 tests, 92% coverage)
+make test-e2e                # Integration tests (requires running stack)
+make test-coverage           # Full tests with HTML coverage report
+make test-coverage-vscode    # Open coverage report in VS Code
+make verify-audit            # Verify HMAC signatures in audit trail
 
-# Sécurité
-make security-check          # Lancer tous les scans de sécurité (secrets, CVE, SBOM)
-make scan-secrets            # Détecter secrets exposés avec Gitleaks
-make scan-vulns              # Scanner CVE avec Trivy (HIGH/CRITICAL)
-make sbom                    # Générer Software Bill of Materials (SPDX + CycloneDX)
-make scan-sbom               # Analyser vulnérabilités SBOM avec Grype
+# Security
+make security-check          # Run all security scans (secrets, CVE, SBOM)
+make scan-secrets            # Detect exposed secrets with Gitleaks
+make scan-vulns              # Scan CVE with Trivy (HIGH/CRITICAL)
+make sbom                    # Generate Software Bill of Materials (SPDX + CycloneDX)
+make scan-sbom               # Analyze SBOM vulnerabilities with Grype
 
 # Production
-make rotate-secret       # Rotation secrets Azure Key Vault (avec validation)
-make doctor              # Health check : Azure CLI, Key Vault, Docker
+make rotate-secret       # Azure Key Vault secret rotation (with validation)
+make doctor              # Health check: Azure CLI, Key Vault, Docker
 
 # Monitoring
-make logs SERVICE=flask-app   # Logs applicatifs
-make ps                       # État des conteneurs
+make logs SERVICE=flask-app   # Application logs
+make ps                       # Container status
 ```
 
-📘 **Référence complète** : `make help-all` (35+ commandes disponibles)
+📘 **Full reference**: `make help-all` (35+ commands available)
 
 ---
 
 ## 📋 Documentation Technique
 
-### 🎯 Pour Recruteurs (Screening RH + Technique)
-- **[🇨🇭 Swiss Hiring Pack](docs/Hiring_Pack.md)** — Correspondance CV ↔ Repo, mots-clés recruteurs
-- **[👥 RBAC Demo Scenarios](docs/RBAC_DEMO_SCENARIOS.md)** — Workflows Joiner/Mover/Leaver détaillés, matrice utilisateurs
-- **[Vue d'ensemble](docs/OVERVIEW.md)** — Architecture, décisions techniques, Azure roadmap
-- **[Sécurité](docs/SECURITY_DESIGN.md)** — OWASP ASVS L2, protection CSRF/XSS, validation JWT
-- **[Conformité](docs/THREAT_MODEL.md)** — Threat model, non-répudiation, audit trail
+### 🎯 For Recruiters (HR + Technical Screening)
+- **[Swiss Hiring Pack](docs/Hiring_Pack.md)** — Resume ↔ Repo mapping, recruiter keywords
+- **[RBAC Demo Scenarios](docs/RBAC_DEMO_SCENARIOS.md)** — Detailed Joiner/Mover/Leaver workflows, user matrix
+- **[Overview](docs/OVERVIEW.md)** — Architecture, technical decisions, Azure roadmap
+- **[Security](docs/SECURITY_DESIGN.md)** — OWASP ASVS L2, CSRF/XSS protection, JWT validation
+- **[Compliance](docs/THREAT_MODEL.md)** — Threat model, non-repudiation, audit trail
 
-### 🔐 Pour Ingénieurs Sécurité
+### 🔐 For Security Engineers
 - **[Security Scanning](docs/SECURITY_SCANNING.md)** — Gitleaks, Trivy, Syft, Grype (local + CI/CD)
-- **[API Reference](docs/API_REFERENCE.md)** — Endpoints SCIM 2.0, exemples curl, codes d'erreur
+- **[API Reference](docs/API_REFERENCE.md)** — SCIM 2.0 endpoints, curl examples, error codes
 - **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** — Azure App Service, Key Vault setup, CI/CD
-- **[Rate Limiting](docs/RATE_LIMITING.md)** — Configuration Nginx, tests de charge
-- **[Testing Strategy](docs/TESTING.md)** — Couverture 90%, tests critiques
+- **[Rate Limiting](docs/RATE_LIMITING.md)** — Nginx configuration, load testing
+- **[Testing Strategy](docs/TESTING.md)** — 92% coverage, critical tests
 
-### 🛠️ Pour DevOps
-- **[Setup Guide](docs/SETUP_GUIDE.md)** — Installation locale, troubleshooting
-- **[Local SCIM Testing](docs/LOCAL_SCIM_TESTING.md)** — Tests manuels avec curl/Postman
-- **[RBAC Demo Scenarios](docs/RBAC_DEMO_SCENARIOS.md)** — Tests manuels workflows JML
-- **[Error Handling](docs/ERROR_HANDLING_SECURITY.md)** — Gestion des erreurs SCIM RFC 7644
+### 🛠️ For DevOps
+- **[Setup Guide](docs/SETUP_GUIDE.md)** — Local installation, troubleshooting
+- **[Local SCIM Testing](docs/LOCAL_SCIM_TESTING.md)** — Manual testing with curl/Postman
+- **[RBAC Demo Scenarios](docs/RBAC_DEMO_SCENARIOS.md)** — Manual JML workflow tests
+- **[Error Handling](docs/ERROR_HANDLING_SECURITY.md)** — SCIM RFC 7644 error handling
 
-**📂 Hub documentation** : [docs/README.md](docs/README.md)
+**📂 Documentation hub**: [docs/README.md](docs/README.md)
 
 
-## ✅ Validation du PoC (Page Interactive)
+## ✅ PoC Validation (Interactive Page)
 
-**URL** : https://localhost/verification
+**URL**: https://localhost/verification
 
-Cette page exécute automatiquement une suite de tests de validation couvrant :
+This page automatically executes a validation test suite covering:
 
-### Conformité SCIM RFC 7644
-- POST/GET/PATCH/DELETE sur `/scim/v2/Users`
-- Filtrage `userName eq` (garde contre injections)
-- PUT retourne 501 avec message explicite
-- Content-Type `application/scim+json` obligatoire (415 sinon)
+### SCIM RFC 7644 Compliance
+- POST/GET/PATCH/DELETE on `/scim/v2/Users`
+- `userName eq` filtering (guards against injections)
+- PUT returns 501 with explicit message
+- `application/scim+json` Content-Type mandatory (415 otherwise)
 
-### Sécurité OAuth 2.0
-- 401 Unauthorized sans token ou token invalide
-- 403 Forbidden avec scope insuffisant
-- Validation JWT : signature, émetteur, audience, expiration
+### OAuth 2.0 Security
+- 401 Unauthorized without token or invalid token
+- 403 Forbidden with insufficient scope
+- JWT validation: signature, issuer, audience, expiration
 
-### Intégrité Audit
-- Vérification signatures HMAC-SHA256 du trail d'audit
-- Détection des modifications (alerte si signature invalide)
-- Corrélation-id, timestamp, username, payload dans chaque événement
+### Audit Integrity
+- HMAC-SHA256 signature verification of audit trail
+- Tampering detection (alert if signature invalid)
+- Correlation-id, timestamp, username, payload in each event
 
-### Protection Réseau
-- Security headers : HSTS, CSP, X-Frame-Options, X-Content-Type-Options
-- Rate limiting opérationnel (Nginx : 10-60 req/min selon endpoint)
+### Network Protection
+- Security headers: HSTS, CSP, X-Frame-Options, X-Content-Type-Options
+- Operational rate limiting (Nginx: 10-60 req/min per endpoint)
 
-**Commande CLI alternative** : `make verify-audit`  
-**Documentation OpenAPI** : https://localhost/scim/docs
+**CLI alternative**: `make verify-audit`  
+**OpenAPI documentation**: https://localhost/scim/docs
 
 ---
 
-## 📊 Matrice de Support SCIM 2.0
+## 📊 SCIM 2.0 Support Matrix
 
-| Méthode | Endpoint | Statut | Commentaire |
-|---------|----------|--------|-------------|
-| **GET** | `/scim/v2/Users` | ✅ OK | Liste avec pagination |
-| **POST** | `/scim/v2/Users` | ✅ OK | Création utilisateur + audit |
-| **GET** | `/scim/v2/Users/{id}` | ✅ OK | Récupération par ID |
-| **PATCH** | `/scim/v2/Users/{id}` | ✅ OK | Modification `active` uniquement (idempotent) |
+| Method | Endpoint | Status | Comment |
+|--------|----------|--------|---------|
+| **GET** | `/scim/v2/Users` | ✅ OK | List with pagination |
+| **POST** | `/scim/v2/Users` | ✅ OK | User creation + audit |
+| **GET** | `/scim/v2/Users/{id}` | ✅ OK | Retrieval by ID |
+| **PATCH** | `/scim/v2/Users/{id}` | ✅ OK | `active` attribute only (idempotent) |
 | **DELETE** | `/scim/v2/Users/{id}` | ✅ OK | Soft-delete (disable, idempotent) |
-| **PUT** | `/scim/v2/Users/{id}` | ⚠️ 501 | Non supporté (use PATCH/DELETE) |
+| **PUT** | `/scim/v2/Users/{id}` | ⚠️ 501 | Not supported (use PATCH/DELETE) |
 
-**Limitation intentionnelle** : PUT retourne `501 Not Implemented` avec message explicite :  
+**Intentional limitation**: PUT returns `501 Not Implemented` with explicit message:  
 `"Full replace is not supported. Use PATCH (active) or DELETE."`
 
 ---
 
-## 🛡️ Sécurité & Rate Limiting
+## 🛡️ Security & Rate Limiting
 
-### Protection DoS (Nginx)
-| Endpoint | Limite | Burst | Objectif |
-|----------|--------|-------|----------|
-| `/verification` | 10 req/min | +5 | Endpoint de test |
-| `/scim/v2/*` | 60 req/min | +10 | API provisioning |
-| `/admin/*` | 30 req/min | +8 | Interface admin |
+### DoS Protection (Nginx)
+| Endpoint | Limit | Burst | Purpose |
+|----------|-------|-------|---------|
+| `/verification` | 10 req/min | +5 | Testing endpoint |
+| `/scim/v2/*` | 60 req/min | +10 | Provisioning API |
+| `/admin/*` | 30 req/min | +8 | Admin interface |
 
-**Test** : `./scripts/test_rate_limiting.sh` (démontre réponses 429)  
-**Documentation** : [docs/RATE_LIMITING.md](docs/RATE_LIMITING.md)
+**Test**: `./scripts/test_rate_limiting.sh` (demonstrates 429 responses)  
+**Documentation**: [docs/RATE_LIMITING.md](docs/RATE_LIMITING.md)
 
-### Standards de Sécurité
-- **OWASP ASVS Level 2** : Protection A01-A08 (injection, broken access, misconfiguration)
-- **NIST SP 800-190** : Container security (scans Trivy, SBOM avec Syft)
-- **EO 14028 (SBOM)** : Software Bill of Materials SPDX + CycloneDX
-- **RFC 7636 (PKCE)** : Protection contre interception code d'autorisation
-- **RFC 7644 (SCIM 2.0)** : Implémentation stricte schemas + error handling
-- **NIST 800-63B** : Politique mots de passe robuste, MFA comptes privilégiés
+### Security Standards
+- **OWASP ASVS Level 2**: A01-A08 protection (injection, broken access, misconfiguration)
+- **NIST SP 800-190**: Container security (Trivy scans, SBOM with Syft)
+- **EO 14028 (SBOM)**: Software Bill of Materials SPDX + CycloneDX
+- **RFC 7636 (PKCE)**: Authorization code interception protection
+- **RFC 7644 (SCIM 2.0)**: Strict schema + error handling implementation
+- **NIST 800-63B**: Strong password policy, MFA for privileged accounts
 
 ### Password Management (Keycloak Native)
 **Production Flow** : Passwords are **NEVER** returned in API responses or displayed in UI.
@@ -311,163 +311,163 @@ docker compose exec flask-app python3 scripts/configure_smtp.py
 
 📘 **Full Documentation**: [docs/SECURITY_DESIGN.md#password-management-architecture](docs/SECURITY_DESIGN.md)
 
-**Pipeline de sécurité** :
-- **Gitleaks** : Détection secrets (0 faux positifs, allowlist configurée)
-- **Trivy** : Scan CVE HIGH/CRITICAL (dépendances Python)
-- **Syft** : Génération SBOM SPDX + CycloneDX
-- **Grype** : Analyse vulnérabilités SBOM (seuil CRITICAL)
+**Security pipeline**:
+- **Gitleaks**: Secret detection (0 false positives, configured allowlist)
+- **Trivy**: HIGH/CRITICAL CVE scan (Python dependencies)
+- **Syft**: SBOM generation (SPDX + CycloneDX)
+- **Grype**: SBOM vulnerability analysis (CRITICAL threshold)
 
-📘 **Guide complet** : [docs/SECURITY_SCANNING.md](docs/SECURITY_SCANNING.md)
+📘 **Complete guide**: [docs/SECURITY_SCANNING.md](docs/SECURITY_SCANNING.md)
 
 ---
 
-## 🧪 Tests & Qualité
+## 🧪 Tests & Quality
 
 ```bash
 # Tests
-make test                    # Tests unitaires (pytest -n auto, ~92% coverage)
-make test-e2e                # Tests d'intégration (nécessite stack)
-make test-coverage           # Tous les tests avec rapport de couverture HTML
+make test                    # Unit tests (pytest -n auto, ~92% coverage)
+make test-e2e                # Integration tests (requires stack)
+make test-coverage           # All tests with HTML coverage report
 
-# Visualiser la couverture (plusieurs options)
-make test-coverage-report    # Afficher les options d'affichage
-make test-coverage-vscode    # Ouvrir dans VS Code (recommandé)
-make test-coverage-open      # Ouvrir dans navigateur système (si disponible)
-make test-coverage-serve     # Servir via HTTP sur localhost:8888
+# Visualize coverage (multiple options)
+make test-coverage-report    # Display viewing options
+make test-coverage-vscode    # Open in VS Code (recommended)
+make test-coverage-open      # Open in system browser (if available)
+make test-coverage-serve     # Serve via HTTP on localhost:8888
 
-# Suite complète
-SKIP_E2E=true make test-all  # Suite complète sans intégration
+# Full suite
+SKIP_E2E=true make test-all  # Full suite without integration
 ```
 
-**Couverture** : 328 tests passants, 92% de couverture sur code métier  
-**CI/CD** : GitHub Actions avec validation sécurité (5 jobs : Trivy, Gitleaks, SBOM, dependency-review, summary)  
-**Tests critiques** : JWT validation, RBAC, rate limiting, audit signatures, secret scanning
+**Coverage**: 328 passing tests, 92% coverage on business code  
+**CI/CD**: GitHub Actions with security validation (5 jobs: Trivy, Gitleaks, SBOM, dependency-review, summary)  
+**Critical tests**: JWT validation, RBAC, rate limiting, audit signatures, secret scanning
 
-**💡 Astuce** : `test-coverage` vérifie automatiquement que le stack Docker est démarré et génère un rapport HTML détaillé dans `htmlcov/`. Les tests d'intégration se désactivent proprement (skip) si l'infrastructure n'est pas disponible.
+**💡 Tip**: `test-coverage` automatically checks that Docker stack is started and generates detailed HTML report in `htmlcov/`. Integration tests gracefully disable (skip) if infrastructure is unavailable.
 
 ---
 
 ## 🚀 Roadmap Azure-Native
 
-### Phase 1 : Migration Entra ID ✅ Préparée
-- [ ] Remplacer Keycloak par **Azure AD B2C** (OIDC cloud-native)
-- [ ] Implémenter **Conditional Access Policies** (MFA, device compliance)
-- [ ] Migrer SCIM vers **Entra ID Provisioning API**
+### Phase 1: Entra ID Migration ✅ Prepared
+- [ ] Replace Keycloak with **Azure AD B2C** (cloud-native OIDC)
+- [ ] Implement **Conditional Access Policies** (MFA, device compliance)
+- [ ] Migrate SCIM to **Entra ID Provisioning API**
 
-### Phase 2 : Secrets & Identity 🔄 En cours
-- [x] **Azure Key Vault** pour secrets (implémenté)
-- [x] **Secret rotation** automatisée (implémenté)
-- [ ] **Managed Identity** pour éliminer Service Principals
-- [ ] **Azure Key Vault RBAC** (remplacer access policies)
+### Phase 2: Secrets & Identity 🔄 In Progress
+- [x] **Azure Key Vault** for secrets (implemented)
+- [x] Automated **secret rotation** (implemented)
+- [ ] **Managed Identity** to eliminate Service Principals
+- [ ] **Azure Key Vault RBAC** (replace access policies)
 
-### Phase 3 : Monitoring & Compliance 📋 Planifiée
-- [ ] **Azure Monitor** : Centraliser logs dans Log Analytics
-- [ ] **Application Insights** : APM temps réel + alertes
-- [ ] **Azure Policy** : Enforcer TLS 1.2+, MFA obligatoire
-- [ ] **Microsoft Defender for Cloud** : Posture management
+### Phase 3: Monitoring & Compliance 📋 Planned
+- [ ] **Azure Monitor**: Centralize logs in Log Analytics
+- [ ] **Application Insights**: Real-time APM + alerts
+- [ ] **Azure Policy**: Enforce TLS 1.2+, mandatory MFA
+- [ ] **Microsoft Defender for Cloud**: Posture management
 
-### Phase 4 : Production Readiness 🎯 Vision
-- [ ] **Azure App Service** : Déploiement PaaS sans gestion infra
-- [ ] **Azure SQL Database** : Remplacer SQLite (HA + backups)
-- [ ] **Azure Cache for Redis** : Sessions distribuées
-- [ ] **Azure Front Door** : CDN + WAF global
-
----
-
-## Contexte Suisse Romande
-
-### Conformité Réglementaire
-- **nLPD (nouvelle Loi sur la Protection des Données)** : Trail d'audit horodaté, traçabilité accès données personnelles
-- **RGPD** : Conservation des consentements, droit à l'oubli, portabilité
-- **FINMA** : Non-répudiation via signatures cryptographiques (secteur financier)
-
-### Compétences Valorisées
-- **Azure Entra ID** (ex-Azure AD) : Gestion identités cloud-native
-- **SCIM 2.0 Provisioning** : Automatisation JML
-- **Azure Key Vault** : Secrets management production-grade
-- **Compliance-by-design** : Architecture auditée, sécurisée par défaut
-- **DevSecOps** : CI/CD sécurisé, tests automatisés, rotation secrets
-
-### Rôles Ciblés (Genève · Lausanne · Berne)
-- **Junior Cloud Security Engineer (Azure)** : Sécurisation environnements cloud
-- **IAM Engineer** : Provisioning Entra ID, SCIM, SSO
-- **DevSecOps Cloud** : Pipelines sécurisés, secrets management, monitoring
-- **Identity & Access Management Specialist** : RBAC, MFA policies, audit trails
+### Phase 4: Production Readiness 🎯 Vision
+- [ ] **Azure App Service**: PaaS deployment without infrastructure management
+- [ ] **Azure SQL Database**: Replace SQLite (HA + backups)
+- [ ] **Azure Cache for Redis**: Distributed sessions
+- [ ] **Azure Front Door**: Global CDN + WAF
 
 ---
 
-## 📈 Correspondance CV ↔ Repository
+## Romandy Context
 
-| Compétence CV | Preuve dans le Repo | Fichier/Commande |
-|---------------|---------------------|------------------|
-| **Azure Key Vault** | Intégration complète, rotation secrets | `make rotate-secret`, `scripts/load_secrets_from_keyvault.sh` |
-| **SCIM 2.0** | API RFC 7644, tests conformité | `app/api/scim.py`, `tests/test_api_scim.py` |
+### Regulatory Compliance
+- **nLPD (new Swiss Data Protection Act)**: Timestamped audit trail, personal data access traceability
+- **GDPR**: Consent management, right to be forgotten, data portability
+- **FINMA**: Non-repudiation via cryptographic signatures (financial sector)
+
+### Valued Skills
+- **Azure Entra ID** (ex-Azure AD): Cloud-native identity management
+- **SCIM 2.0 Provisioning**: JML automation
+- **Azure Key Vault**: Production-grade secrets management
+- **Compliance-by-design**: Audited architecture, secure by default
+- **DevSecOps**: Secure CI/CD, automated testing, secret rotation
+
+### Target Roles (Romandy)
+- **Junior Cloud Security Engineer (Azure)**: Cloud environment security
+- **IAM Engineer**: Entra ID provisioning, SCIM, SSO
+- **DevSecOps Cloud**: Secure pipelines, secrets management, monitoring
+- **Identity & Access Management Specialist**: RBAC, MFA policies, audit trails
+
+---
+
+## 📈 Resume ↔ Repository Mapping
+
+| Resume Skill | Repository Evidence | File/Command |
+|--------------|---------------------|--------------|
+| **Azure Key Vault** | Full integration, secret rotation | `make rotate-secret`, `scripts/load_secrets_from_keyvault.sh` |
+| **SCIM 2.0** | RFC 7644 API, compliance tests | `app/api/scim.py`, `tests/test_api_scim.py` |
 | **OIDC/OAuth 2.0** | PKCE, MFA, JWT validation | `app/api/auth.py`, `app/api/decorators.py` |
-| **RBAC** | 3 rôles (admin/operator/verifier) | `app/core/rbac.py` |
-| **Audit Trail** | HMAC-SHA256, non-répudiation | `scripts/audit.py`, `make verify-audit` |
-| **DevSecOps** | CI/CD (5 jobs sécurité), tests 92%, SBOM | `.github/workflows/security-scans.yml`, `Makefile` |
+| **RBAC** | 3 roles (admin/operator/verifier) | `app/core/rbac.py` |
+| **Audit Trail** | HMAC-SHA256, non-repudiation | `scripts/audit.py`, `make verify-audit` |
+| **DevSecOps** | CI/CD (5 security jobs), 92% tests, SBOM | `.github/workflows/security-scans.yml`, `Makefile` |
 | **Security Scanning** | Gitleaks, Trivy, Syft, Grype | `make security-check`, `docs/SECURITY_SCANNING.md` |
-| **Python 3.12** | Flask, pytest, type hints | Tous fichiers `.py` |
-| **Docker** | Compose multi-services, health checks | `docker-compose.yml` |
+| **Python 3.12** | Flask, pytest, type hints | All `.py` files |
+| **Docker** | Multi-service Compose, health checks | `docker-compose.yml` |
 | **Nginx** | TLS, rate limiting, security headers | `proxy/nginx.conf` |
-| **Conformité** | nLPD/RGPD/FINMA design | `docs/THREAT_MODEL.md`, `docs/SECURITY_DESIGN.md` |
+| **Compliance** | nLPD/GDPR/FINMA design | `docs/THREAT_MODEL.md`, `docs/SECURITY_DESIGN.md` |
 
 ---
 
-## 🎓 Ce Que Ce Projet Démontre
+## 🎓 What This Project Demonstrates
 
-**Pour un recruteur Cloud Security** :
-- Capacité à concevoir un système IAM complet et auditable
-- Maîtrise des standards Azure (Key Vault, Entra ID roadmap, Managed Identity)
-- Compréhension des enjeux conformité (nLPD, RGPD, FINMA)
-- Approche DevSecOps (tests automatisés, rotation secrets, CI/CD sécurisé)
+**For Cloud Security Recruiters**:
+- Ability to design complete and auditable IAM system
+- Mastery of Azure standards (Key Vault, Entra ID roadmap, Managed Identity)
+- Understanding of compliance issues (nLPD, GDPR, FINMA)
+- DevSecOps approach (automated testing, secret rotation, secure CI/CD)
 
-**Pour un CISO/SOC** :
-- Architecture défendable (RBAC, MFA, audit cryptographique)
-- Traçabilité complète (correlation-id, timestamps, payloads hashés)
-- Détection d'altération (vérification signatures HMAC-SHA256)
-- Standards de l'industrie (OWASP ASVS L2, RFC 7644/7636, NIST 800-63B)
+**For CISO/SOC**:
+- Defensible architecture (RBAC, MFA, cryptographic audit)
+- Complete traceability (correlation-id, timestamps, hashed payloads)
+- Tampering detection (HMAC-SHA256 signature verification)
+- Industry standards (OWASP ASVS L2, RFC 7644/7636, NIST 800-63B)
 
-**Pour un ingénieur cloud** :
-- Code production-ready (90% tests, zero-config demo, documentation complète)
-- Séparation stricte demo/prod, secrets jamais en clair
-- Makefile exhaustif (30+ commandes), health checks, monitoring
-- Architecture évolutive (roadmap Entra ID, App Service, Monitor)
+**For Cloud Engineers**:
+- Production-ready code (90% tests, zero-config demo, complete documentation)
+- Strict demo/prod separation, secrets never in cleartext
+- Comprehensive Makefile (30+ commands), health checks, monitoring
+- Scalable architecture (Entra ID roadmap, App Service, Monitor)
 
 ---
 
-## 📜 Limitations Actuelles
+## 📜 Current Limitations
 
-- **Filtrage SCIM** : Seul `userName eq "value"` supporté (extensible)
-- **PATCH** : Limité à l'attribut `active` (idempotence garantie)
-- **PUT** : Volontairement 501 (use PATCH/DELETE, conformité RFC)
-- **Content-Type** : `application/scim+json` obligatoire (RFC 7644)
+- **SCIM Filtering**: Only `userName eq "value"` supported (extensible)
+- **PATCH**: Limited to `active` attribute (idempotence guaranteed)
+- **PUT**: Intentionally 501 (use PATCH/DELETE, RFC compliance)
+- **Content-Type**: `application/scim+json` mandatory (RFC 7644)
 
-Ces limitations sont **intentionnelles** pour garantir la sécurité et l'idempotence des opérations.
+These limitations are **intentional** to guarantee security and operation idempotence.
 
 ---
 
 ## 📞 Contact & Portfolio
 
-**Auteur** : Alexs1004
-**Rôles recherchés** : Cloud Security Engineer · IAM Engineer · DevSecOps (Azure)  
-**Localisation** : Suisse Romande  
+**Author**: Alexs1004
+**Seeking roles**: Cloud Security Engineer · IAM Engineer · DevSecOps (Azure)  
+**Location**: Romandy  
 
-**GitHub** : [github.com/Alexs1004/iam-poc](https://github.com/Alexs1004/iam-poc)  
-**Documentation complète** : [docs/README.md](docs/README.md)  
-**Hiring Pack** : [docs/Hiring_Pack.md](docs/Hiring_Pack.md)
-
----
-
-## 📄 Licence
-
-MIT License — Voir [LICENSE](LICENSE) pour détails.
+**GitHub**: [github.com/Alexs1004/iam-poc](https://github.com/Alexs1004/iam-poc)  
+**Full documentation**: [docs/README.md](docs/README.md)  
+**Hiring Pack**: [docs/Hiring_Pack.md](docs/Hiring_Pack.md)
 
 ---
 
-## 🙏 Remerciements
+## 📄 License
 
-- **Azure Key Vault** pour le secrets management production-grade
-- **Keycloak** pour l'implémentation OIDC/MFA (en attendant migration Entra ID)
+MIT License — See [LICENSE](LICENSE) for details.
+
+---
+
+## 🙏 Acknowledgments
+
+- **Azure Key Vault** for production-grade secrets management
+- **Keycloak** for OIDC/MFA implementation (pending Entra ID migration)
 - **SCIM RFC 7644** pour le standard de provisioning d'identités
 - **OWASP** pour les guidelines de sécurité applicative

@@ -1,7 +1,7 @@
 # Security Design — Mini IAM Lab
 
-> **Positionnement Swiss Compliance** : Architecture conforme nLPD, RGPD, FINMA  
-> **Standards** : OWASP ASVS L2, RFC 7644 (SCIM 2.0), RFC 6749 (OAuth 2.0), NIST 800-63B
+> **Swiss Compliance Positioning**: nLPD, GDPR, FINMA compliant architecture  
+> **Standards**: OWASP ASVS L2, RFC 7644 (SCIM 2.0), RFC 6749 (OAuth 2.0), NIST 800-63B
 
 Authoritative view of the security controls implemented in this SCIM PoC. Derived from `app/api/*`, `app/core/*`, `app/flask_app.py`, `proxy/nginx.conf`, and tests under `tests/test_api_*`.
 
@@ -9,20 +9,20 @@ Authoritative view of the security controls implemented in this SCIM PoC. Derive
 
 ## 🇨🇭 Swiss Compliance Context
 
-### nLPD (nouvelle Loi sur la Protection des Données)
-- **Traçabilité** : Audit trail HMAC-SHA256 avec timestamps ISO 8601
-- **Conservation** : Logs avec permissions restrictives (400), rotation planifiée
-- **Transparence** : API SCIM pour portabilité des données
+### nLPD (new Swiss Data Protection Act)
+- **Traceability**: HMAC-SHA256 audit trail with ISO 8601 timestamps
+- **Retention**: Logs with restrictive permissions (400), planned rotation
+- **Transparency**: SCIM API for data portability
 
-### RGPD (Règlement Général sur la Protection des Données)
-- **Droit à l'oubli** : Soft-delete via `PATCH .../Users/{id}` (`active=false`)
-- **Portabilité** : Export JSON via `GET /scim/v2/Users` (standard RFC 7644)
-- **Consentement** : Audit log trace toutes modifications (`jml-events.jsonl`)
+### GDPR (General Data Protection Regulation)
+- **Right to erasure**: Soft-delete via `PATCH .../Users/{id}` (`active=false`)
+- **Portability**: JSON export via `GET /scim/v2/Users` (RFC 7644 standard)
+- **Consent**: Audit log traces all modifications (`jml-events.jsonl`)
 
-### FINMA (Autorité fédérale de surveillance des marchés financiers)
-- **Non-répudiation** : Signatures HMAC-SHA256 sur chaque événement JML
-- **Intégrité** : Détection altération via `make verify-audit`
-- **Auditabilité** : Corrélation-ID, timestamps, actor tracking
+### FINMA (Swiss Financial Market Supervisory Authority)
+- **Non-repudiation**: HMAC-SHA256 signatures on each JML event
+- **Integrity**: Tampering detection via `make verify-audit`
+- **Auditability**: Correlation-ID, timestamps, actor tracking
 
 ---
 

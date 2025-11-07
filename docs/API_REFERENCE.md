@@ -1,7 +1,7 @@
 # API Reference — SCIM 2.0
 
-> **Standards** : RFC 7644 (SCIM 2.0), RFC 6749 (OAuth 2.0), RFC 7519 (JWT)  
-> **Swiss Compliance** : nLPD (data portability), RGPD (right to erasure), FINMA (audit trail)
+> **Standards**: RFC 7644 (SCIM 2.0), RFC 6749 (OAuth 2.0), RFC 7519 (JWT)  
+> **Swiss Compliance**: nLPD (data portability), GDPR (right to erasure), FINMA (audit trail)
 
 Authoritative description of the `/scim/v2` surface exposed by `app/api/scim.py`. All requests are served over HTTPS and return JSON bodies using the SCIM error schema (`schemas`, `status`, `detail`, optional `scimType`).
 

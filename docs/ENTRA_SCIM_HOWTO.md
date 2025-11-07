@@ -1,236 +1,236 @@
-# Microsoft Entra ID SCIM Provisioning - Guide d'intégration
+# Microsoft Entra ID SCIM Provisioning - Integration Guide
 
-## 📋 Vue d'ensemble
+## 📋 Overview
 
-Ce guide décrit l'intégration de **Microsoft Entra ID (workforce identities)** avec cette application via **SCIM 2.0** pour le provisioning automatisé des utilisateurs.
+This guide describes the integration of **Microsoft Entra ID (workforce identities)** with this application via **SCIM 2.0** for automated user provisioning.
 
-**Flux d'authentification :** Bearer token statique (mode démonstration/développement) ou OAuth2 (production).
-
----
-
-## 🎯 Objectifs
-
-- ✅ Créer une **Enterprise Application non-galerie** dans Entra ID
-- ✅ Configurer le **provisioning automatique SCIM**
-- ✅ Tester la connexion avec **Test connection** (GET `/scim/v2/ServiceProviderConfig`)
-- ✅ Définir les **mappings d'attributs** (userPrincipalName, objectId, mail, accountEnabled)
-- ✅ Valider la création/désactivation avec **Provision on demand**
-- ✅ Consulter les logs d'audit HMAC côté application
+**Authentication flow:** Static Bearer token (demo/development mode) or OAuth2 (production).
 
 ---
 
-## 🔧 Configuration Entra ID
+## 🎯 Objectives
 
-### 1. Créer l'Enterprise Application
-
-1. Connectez-vous au [portail Azure](https://portal.azure.com)
-2. Naviguez vers **Microsoft Entra ID** → **Enterprise Applications**
-3. Cliquez sur **+ New application**
-4. Sélectionnez **+ Create your own application**
-5. Nommez l'application (ex : `IAM PoC SCIM`) et choisissez **Integrate any other application you don't find in the gallery (Non-gallery)**
-6. Cliquez sur **Create**
-
-**Capture d'écran :**  
-![Création Enterprise App](images/entra_provisioning_create_app.png)  
-*Placeholder : Capture de la page de création d'application*
+- ✅ Create a **non-gallery Enterprise Application** in Entra ID
+- ✅ Configure **automatic SCIM provisioning**
+- ✅ Test connection with **Test connection** (GET `/scim/v2/ServiceProviderConfig`)
+- ✅ Define **attribute mappings** (userPrincipalName, objectId, mail, accountEnabled)
+- ✅ Validate creation/deactivation with **Provision on demand**
+- ✅ Review application-side HMAC audit logs
 
 ---
 
-### 2. Configurer le Provisioning
+## 🔧 Entra ID Configuration
 
-1. Dans l'application créée, allez dans **Provisioning** (menu latéral)
-2. Cliquez sur **Get started**
-3. Sélectionnez **Provisioning Mode : Automatic**
-4. Remplissez les champs **Admin Credentials** :
+### 1. Create Enterprise Application
 
-   | Champ | Valeur |
+1. Login to [Azure portal](https://portal.azure.com)
+2. Navigate to **Microsoft Entra ID** → **Enterprise Applications**
+3. Click **+ New application**
+4. Select **+ Create your own application**
+5. Name the application (ex: `IAM PoC SCIM`) and choose **Integrate any other application you don't find in the gallery (Non-gallery)**
+6. Click **Create**
+
+**Screenshot:**  
+![Enterprise App Creation](images/entra_provisioning_create_app.png)  
+*Placeholder: Application creation page capture*
+
+---
+
+### 2. Configure Provisioning
+
+1. In the created application, go to **Provisioning** (side menu)
+2. Click **Get started**
+3. Select **Provisioning Mode: Automatic**
+4. Fill in **Admin Credentials** fields:
+
+   | Field | Value |
    |-------|--------|
-   | **Tenant URL** | `https://<votre-domaine>/scim/v2` |
-   | **Secret Token** | Voir section [Authentification](#authentification) ci-dessous |
+   | **Tenant URL** | `https://<your-domain>/scim/v2` |
+   | **Secret Token** | See [Authentication](#authentication) section below |
 
-5. Cliquez sur **Test Connection** → Doit retourner **200 OK**
-   - Entra ID appelle `GET /scim/v2/ServiceProviderConfig`
-   - Vérifie que l'endpoint répond avec le schéma SCIM
+5. Click **Test Connection** → Must return **200 OK**
+   - Entra ID calls `GET /scim/v2/ServiceProviderConfig`
+   - Verifies endpoint responds with SCIM schema
 
-6. Si succès → **Save**
+6. If successful → **Save**
 
-**Capture d'écran :**  
-![Configuration provisioning](images/entra_provisioning_config.png)  
-*Placeholder : Formulaire Tenant URL + Secret Token*
+**Screenshot:**  
+![Provisioning configuration](images/entra_provisioning_config.png)  
+*Placeholder: Tenant URL + Secret Token form*
 
-**Capture d'écran :**  
-![Test connection réussi](images/entra_provisioning_test_connection.png)  
-*Placeholder : Message de succès "You are connected..."*
+**Screenshot:**  
+![Test connection successful](images/entra_provisioning_test_connection.png)  
+*Placeholder: Success message "You are connected..."*
 
 ---
 
-### 3. Définir les Attribute Mappings
+### 3. Define Attribute Mappings
 
-1. Dans **Provisioning** → **Mappings** → **Provision Azure Active Directory Users**
-2. Configurez les mappings suivants :
+1. In **Provisioning** → **Mappings** → **Provision Azure Active Directory Users**
+2. Configure the following mappings:
 
-   | Attribut Entra ID | Attribut SCIM | Obligatoire | Notes |
+   | Entra ID Attribute | SCIM Attribute | Required | Notes |
    |-------------------|---------------|-------------|-------|
-   | `userPrincipalName` | `userName` | ✅ | Identifiant unique (ex : `alice@contoso.com`) |
-   | `objectId` | `externalId` | ✅ | GUID Entra ID pour corrélation |
-   | `mail` | `emails[type eq "work"].value` | ✅ | Email professionnel |
-   | `displayName` | `displayName` | ✅ | Nom complet de l'utilisateur |
-   | `Switch([IsSoftDeleted], , "False", "True", "True", "False")` | `active` | ⚠️ | Désactivation soft (voir note) |
+   | `userPrincipalName` | `userName` | ✅ | Unique identifier (ex: `alice@contoso.com`) |
+   | `objectId` | `externalId` | ✅ | Entra ID GUID for correlation |
+   | `mail` | `emails[type eq "work"].value` | ✅ | Professional email |
+   | `displayName` | `displayName` | ✅ | User full name |
+   | `Switch([IsSoftDeleted], , "False", "True", "True", "False")` | `active` | ⚠️ | Soft deactivation (see note) |
 
-   **Note sur `active` :**  
-   - Le mapping `accountEnabled → active` peut nécessiter un ajustement selon votre configuration Entra ID.
-   - Utilisez l'expression `Switch([IsSoftDeleted], , "False", "True", "True", "False")` pour mapper la désactivation.
-   - Alternative : mapper directement `accountEnabled` si exposé dans votre tenant.
+   **Note on `active`:**  
+   - The `accountEnabled → active` mapping may require adjustment based on your Entra ID configuration.
+   - Use the expression `Switch([IsSoftDeleted], , "False", "True", "True", "False")` to map deactivation.
+   - Alternative: directly map `accountEnabled` if exposed in your tenant.
 
-3. **Désactivez** les mappings non supportés (groupes, rôles complexes) si présents.
-4. **Save** les changements.
+3. **Disable** unsupported mappings (groups, complex roles) if present.
+4. **Save** changes.
 
-**Capture d'écran :**  
+**Screenshot:**  
 ![Attribute mappings](images/entra_provisioning_mappings.png)  
-*Placeholder : Table des mappings userPrincipalName → userName, etc.*
+*Placeholder: Mappings table userPrincipalName → userName, etc.*
 
 ---
 
-### 4. Tester avec "Provision on demand"
+### 4. Test with "Provision on demand"
 
-Avant d'activer le provisioning complet, testez avec un utilisateur spécifique :
+Before enabling full provisioning, test with a specific user:
 
-1. Dans **Provisioning** → **Provision on demand**
-2. Sélectionnez un utilisateur de test (ex : `alice@contoso.com`)
-3. Cliquez sur **Provision**
-4. Vérifiez les étapes :
-   - ✅ **Import** : Entra ID lit l'utilisateur
-   - ✅ **Match** : Vérifie si l'utilisateur existe (via `userName`)
-   - ✅ **Action** : Décide de créer (POST) ou mettre à jour (PATCH)
-   - ✅ **Create** : Appelle `POST /scim/v2/Users`
+1. In **Provisioning** → **Provision on demand**
+2. Select a test user (ex: `alice@contoso.com`)
+3. Click **Provision**
+4. Verify steps:
+   - ✅ **Import**: Entra ID reads the user
+   - ✅ **Match**: Checks if user exists (via `userName`)
+   - ✅ **Action**: Decides to create (POST) or update (PATCH)
+   - ✅ **Create**: Calls `POST /scim/v2/Users`
 
-5. **Résultat attendu :** `201 Created` avec l'utilisateur SCIM retourné
+5. **Expected result:** `201 Created` with returned SCIM user
 
-**Capture d'écran :**  
+**Screenshot:**  
 ![Provision on demand](images/entra_provisioning_on_demand.png)  
-*Placeholder : Résultat des 4 étapes avec succès*
+*Placeholder: Result of 4 steps with success*
 
 ---
 
-### 5. Activer le Provisioning
+### 5. Enable Provisioning
 
-1. Dans **Provisioning** → **Settings**
-2. Changez **Provisioning Status** de `Off` à `On`
+1. In **Provisioning** → **Settings**
+2. Change **Provisioning Status** from `Off` to `On`
 3. **Save**
-4. Entra ID lance un cycle de synchronisation initial (peut prendre 20-40 min)
+4. Entra ID launches initial sync cycle (may take 20-40 min)
 
-**Capture d'écran :**  
-![Provisioning activé](images/entra_provisioning_enabled.png)  
-*Placeholder : Toggle "Provisioning Status: On"*
-
----
-
-### 6. Tester la désactivation
-
-1. Dans Entra ID, **désactivez un utilisateur** :
-   - Allez dans **Users** → Sélectionnez l'utilisateur → **Block sign-in**
-2. Attendez le prochain cycle de sync (ou forcez avec **Restart provisioning**)
-3. Vérifiez que `PATCH /scim/v2/Users/{id}` est appelé avec `{ "active": false }`
-4. Consultez les **logs d'audit** dans l'application (endpoint `/admin/audit`)
-
-**Capture d'écran :**  
-![Désactivation visible](images/entra_provisioning_deactivate.png)  
-*Placeholder : Logs d'audit HMAC montrant user.deactivated*
+**Screenshot:**  
+![Provisioning enabled](images/entra_provisioning_enabled.png)  
+*Placeholder: Toggle "Provisioning Status: On"*
 
 ---
 
-## 🔐 Authentification
+### 6. Test Deactivation
 
-### Mode Token Statique (Démonstration/Développement)
+1. In Entra ID, **disable a user**:
+   - Go to **Users** → Select user → **Block sign-in**
+2. Wait for next sync cycle (or force with **Restart provisioning**)
+3. Verify that `PATCH /scim/v2/Users/{id}` is called with `{ "active": false }`
+4. Check **audit logs** in application (endpoint `/admin/audit`)
 
-**Activation :**
-- `DEMO_MODE=true` **OU** `SCIM_STATIC_TOKEN_SOURCE=keyvault`
-- Endpoint : `/scim/v2/*` uniquement
+**Screenshot:**  
+![Visible deactivation](images/entra_provisioning_deactivate.png)  
+*Placeholder: HMAC audit logs showing user.deactivated*
 
-**Configuration du secret :**
+---
 
-| Priorité | Source | Variable |
+## 🔐 Authentication
+
+### Static Token Mode (Demo/Development)
+
+**Activation:**
+- `DEMO_MODE=true` **OR** `SCIM_STATIC_TOKEN_SOURCE=keyvault`
+- Endpoint: `/scim/v2/*` only
+
+**Secret configuration:**
+
+| Priority | Source | Variable |
 |----------|--------|----------|
-| 1 | Azure Key Vault | Secret `scim-static-token` (si `AZURE_USE_KEYVAULT=true`) |
-| 2 | Environnement | `SCIM_STATIC_TOKEN` |
+| 1 | Azure Key Vault | Secret `scim-static-token` (if `AZURE_USE_KEYVAULT=true`) |
+| 2 | Environment | `SCIM_STATIC_TOKEN` |
 
-**Exemple `.env` (développement) :**
+**Example `.env` (development):**
 ```bash
 DEMO_MODE=true
 AZURE_USE_KEYVAULT=false
 SCIM_STATIC_TOKEN=demo-scim-token-change-me
-SCIM_STATIC_TOKEN_SOURCE=  # Vide = utiliser SCIM_STATIC_TOKEN
+SCIM_STATIC_TOKEN_SOURCE=  # Empty = use SCIM_STATIC_TOKEN
 ```
 
-**Exemple Azure Key Vault (production) :**
+**Example Azure Key Vault (production):**
 ```bash
 DEMO_MODE=false
 AZURE_USE_KEYVAULT=true
 AZURE_KEY_VAULT_NAME=my-keyvault
 SCIM_STATIC_TOKEN_SOURCE=keyvault
-# Le secret 'scim-static-token' sera chargé depuis Key Vault
+# Secret 'scim-static-token' will be loaded from Key Vault
 ```
 
-**⚠️ Sécurité :**
-- **NE JAMAIS** utiliser de token statique en production sans Key Vault.
-- Le token statique est rejeté sur les endpoints non-SCIM (`/admin`, `/scim/docs`).
-- Comparaison en **constant-time** (`hmac.compare_digest`) pour éviter les timing attacks.
+**⚠️ Security:**
+- **NEVER** use static token in production without Key Vault.
+- Static token is rejected on non-SCIM endpoints (`/admin`, `/scim/docs`).
+- **Constant-time** comparison (`hmac.compare_digest`) to avoid timing attacks.
 
-**Header dans Entra ID :**
+**Header in Entra ID:**
 ```
 Authorization: Bearer demo-scim-token-change-me
 ```
 
-### Mode OAuth2 (Production recommandé)
+### OAuth2 Mode (Recommended Production)
 
-Pour une sécurité renforcée, utilisez OAuth2 client credentials :
+For enhanced security, use OAuth2 client credentials:
 
-1. Configurez un client dédié dans Keycloak avec scopes `scim:read` et `scim:write`
-2. Entra ID obtient un token via `POST /realms/demo/protocol/openid-connect/token`
-3. Le token est validé à chaque requête (signature RSA-SHA256, expiration, issuer)
+1. Configure a dedicated client in Keycloak with scopes `scim:read` and `scim:write`
+2. Entra ID obtains token via `POST /realms/demo/protocol/openid-connect/token`
+3. Token is validated on each request (RSA-SHA256 signature, expiration, issuer)
 
-**Voir :** [SECURITY_DESIGN.md](SECURITY_DESIGN.md) pour les détails OAuth2
+**See:** [SECURITY_DESIGN.md](SECURITY_DESIGN.md) for OAuth2 details
 
 ---
 
-## 📡 Endpoints SCIM
+## 📡 SCIM Endpoints
 
-| Méthode | Endpoint | Description | Auth requise |
+| Method | Endpoint | Description | Auth required |
 |---------|----------|-------------|--------------|
-| `GET` | `/scim/v2/ServiceProviderConfig` | Découverte des capacités SCIM | ❌ Public |
-| `GET` | `/scim/v2/ResourceTypes` | Types de ressources supportés | ❌ Public |
-| `GET` | `/scim/v2/Schemas` | Schémas SCIM disponibles | ❌ Public |
-| `GET` | `/scim/v2/Users` | Liste des utilisateurs (avec filtrage) | ✅ Bearer |
-| `GET` | `/scim/v2/Users/{id}` | Détail d'un utilisateur | ✅ Bearer |
-| `POST` | `/scim/v2/Users` | Créer un utilisateur | ✅ Bearer |
-| `PATCH` | `/scim/v2/Users/{id}` | Mise à jour partielle | ✅ Bearer |
-| `DELETE` | `/scim/v2/Users/{id}` | Supprimer un utilisateur | ✅ Bearer |
+| `GET` | `/scim/v2/ServiceProviderConfig` | SCIM capabilities discovery | ❌ Public |
+| `GET` | `/scim/v2/ResourceTypes` | Supported resource types | ❌ Public |
+| `GET` | `/scim/v2/Schemas` | Available SCIM schemas | ❌ Public |
+| `GET` | `/scim/v2/Users` | User list (with filtering) | ✅ Bearer |
+| `GET` | `/scim/v2/Users/{id}` | User details | ✅ Bearer |
+| `POST` | `/scim/v2/Users` | Create user | ✅ Bearer |
+| `PATCH` | `/scim/v2/Users/{id}` | Partial update | ✅ Bearer |
+| `DELETE` | `/scim/v2/Users/{id}` | Delete user | ✅ Bearer |
 
 ---
 
-## 🚫 Limites actuelles
+## 🚫 Current Limitations
 
-| Opération | Statut | Notes |
+| Operation | Status | Notes |
 |-----------|--------|-------|
-| `PUT /scim/v2/Users/{id}` | ❌ **501 Not Implemented** | Utiliser `PATCH` à la place |
-| Provisioning de groupes | ❌ Non supporté | Mappings uniquement utilisateurs |
-| Filtres complexes | ⚠️ Partiel | Supporté : `userName eq "alice@contoso.com"`<br>Non supporté : filtres AND/OR imbriqués |
-| Bulk operations | ❌ Non supporté | `ServiceProviderConfig.bulk.supported = false` |
-| Change password | ❌ Non supporté | Les mots de passe doivent être définis dans Keycloak |
+| `PUT /scim/v2/Users/{id}` | ❌ **501 Not Implemented** | Use `PATCH` instead |
+| Group provisioning | ❌ Not supported | User mappings only |
+| Complex filters | ⚠️ Partial | Supported: `userName eq "alice@contoso.com"`<br>Not supported: nested AND/OR filters |
+| Bulk operations | ❌ Not supported | `ServiceProviderConfig.bulk.supported = false` |
+| Change password | ❌ Not supported | Passwords must be set in Keycloak |
 
-**Content-Type requis :** `application/scim+json` (Entra ID l'envoie automatiquement)
+**Required Content-Type:** `application/scim+json` (Entra ID sends automatically)
 
 ---
 
-## 📊 Vérification et Audit
+## 📊 Verification and Audit
 
-### Logs d'audit HMAC
+### HMAC Audit Logs
 
-Chaque opération SCIM génère une entrée d'audit signée avec HMAC-SHA256 :
+Each SCIM operation generates an HMAC-SHA256 signed audit entry:
 
-**Endpoint :** `GET /admin/audit` (authentification requise)
+**Endpoint:** `GET /admin/audit` (authentication required)
 
-**Exemple d'événement :**
+**Event example:**
 ```json
 {
   "timestamp": "2025-11-05T14:23:10Z",
@@ -244,14 +244,14 @@ Chaque opération SCIM génère une entrée d'audit signée avec HMAC-SHA256 :
 }
 ```
 
-**Champs importants :**
-- `auth_method` : `static` (token statique) ou `oauth` (OAuth2)
-- `client_ip` : IP source de la requête Entra ID
-- `correlation_id` : ID de traçabilité (header `X-Correlation-Id`)
+**Important fields:**
+- `auth_method`: `static` (static token) or `oauth` (OAuth2)
+- `client_ip`: Entra ID source IP
+- `correlation_id`: Traceability ID (header `X-Correlation-Id`)
 
-### Header de réponse
+### Response Header
 
-Chaque réponse SCIM inclut `X-Auth-Method` pour transparence :
+Each SCIM response includes `X-Auth-Method` for transparency:
 
 ```http
 HTTP/1.1 200 OK
@@ -264,82 +264,82 @@ Content-Type: application/scim+json
 
 ## 🔍 Troubleshooting
 
-### "Test Connection" échoue
+### "Test Connection" Fails
 
-**Symptômes :** Entra ID retourne "Failed to connect" lors du test.
+**Symptoms:** Entra ID returns "Failed to connect" during test.
 
-**Solutions :**
-1. Vérifiez que l'URL est accessible depuis Internet (ou configurez un VPN/Private Link).
-2. Testez manuellement avec `curl` :
+**Solutions:**
+1. Verify URL is accessible from Internet (or configure VPN/Private Link).
+2. Test manually with `curl`:
    ```bash
    curl -H "Authorization: Bearer <token>" \
-        https://votre-domaine/scim/v2/ServiceProviderConfig
+        https://your-domain/scim/v2/ServiceProviderConfig
    ```
-3. Vérifiez les logs de l'application pour les erreurs d'authentification.
+3. Check application logs for authentication errors.
 
-### Utilisateurs non créés
+### Users Not Created
 
-**Symptômes :** Le cycle de provisioning se termine sans créer d'utilisateurs.
+**Symptoms:** Provisioning cycle completes without creating users.
 
-**Solutions :**
-1. Vérifiez les **Scoping filters** dans Entra ID (Provisioning → Settings → Scope).
-2. Assurez-vous que les utilisateurs sont **assignés à l'application** (Users and groups).
-3. Consultez les **Provisioning logs** (Entra ID → Enterprise App → Provisioning logs).
+**Solutions:**
+1. Check **Scoping filters** in Entra ID (Provisioning → Settings → Scope).
+2. Ensure users are **assigned to the application** (Users and groups).
+3. Review **Provisioning logs** (Entra ID → Enterprise App → Provisioning logs).
 
-### Erreur 401 Unauthorized
+### 401 Unauthorized Error
 
-**Symptômes :** Toutes les requêtes SCIM retournent `401`.
+**Symptoms:** All SCIM requests return `401`.
 
-**Solutions :**
-1. Vérifiez que le **Secret Token** dans Entra ID correspond à `SCIM_STATIC_TOKEN` (ou au secret Key Vault).
-2. Assurez-vous que le mode statique est activé (`DEMO_MODE=true` ou `SCIM_STATIC_TOKEN_SOURCE=keyvault`).
-3. Vérifiez les logs pour voir le hash du token reçu (SHA256 tronqué, pas le token complet).
+**Solutions:**
+1. Verify **Secret Token** in Entra ID matches `SCIM_STATIC_TOKEN` (or Key Vault secret).
+2. Ensure static mode is enabled (`DEMO_MODE=true` or `SCIM_STATIC_TOKEN_SOURCE=keyvault`).
+3. Check logs for received token hash (truncated SHA256, not full token).
 
-### Erreur 403 Forbidden (portée)
+### 403 Forbidden Error (scope)
 
-**Symptômes :** L'authentification réussit mais Entra ID reçoit `403`.
+**Symptoms:** Authentication succeeds but Entra ID receives `403`.
 
-**Solutions :**
-1. Le token statique est accepté uniquement sur `/scim/v2/*`.
-2. Si vous utilisez OAuth2, vérifiez que le client Keycloak a les scopes `scim:read` et `scim:write`.
+**Solutions:**
+1. Static token is accepted only on `/scim/v2/*`.
+2. If using OAuth2, verify Keycloak client has `scim:read` and `scim:write` scopes.
 
-### Désactivation non détectée
+### Deactivation Not Detected
 
-**Symptômes :** Un utilisateur bloqué dans Entra ID reste actif dans l'application.
+**Symptoms:** User blocked in Entra ID remains active in application.
 
-**Solutions :**
-1. Vérifiez le mapping `accountEnabled → active` (voir section Attribute Mappings).
-2. Forcez un cycle de sync avec **Restart provisioning**.
-3. Consultez les logs Entra ID pour voir si `PATCH` est envoyé.
-
----
-
-## 🎓 Bonne pratique de sécurité
-
-### En développement
-
-- ✅ Utilisez `DEMO_MODE=true` avec `SCIM_STATIC_TOKEN` dans `.env`
-- ✅ Testez sur localhost avec HTTPS (certificats auto-signés OK)
-- ✅ Limitez la portée du token statique à `/scim/v2/*` (déjà implémenté)
-
-### En production
-
-- ✅ **Obligatoire :** Stockez `scim-static-token` dans Azure Key Vault
-- ✅ Définissez `SCIM_STATIC_TOKEN_SOURCE=keyvault` et `AZURE_USE_KEYVAULT=true`
-- ✅ Utilisez un token long et aléatoire (minimum 32 caractères) : `openssl rand -base64 32`
-- ✅ Configurez des **IP whitelisting** si possible (plages IP Entra ID)
-- ✅ Activez les **Provisioning logs** dans Entra ID (90 jours de rétention)
-- ✅ Surveillez les événements `auth_method=static` dans les logs d'audit
-
-**Rotation du secret :**
-1. Générez un nouveau token : `openssl rand -base64 32`
-2. Ajoutez-le dans Key Vault avec le nom `scim-static-token`
-3. Mettez à jour le **Secret Token** dans Entra ID (sans arrêter le provisioning)
-4. Redémarrez les services : `make load-secrets && make restart`
+**Solutions:**
+1. Verify `accountEnabled → active` mapping (see Attribute Mappings section).
+2. Force sync cycle with **Restart provisioning**.
+3. Review Entra ID logs to see if `PATCH` is sent.
 
 ---
 
-## 📚 Références
+## 🎓 Security Best Practices
+
+### In Development
+
+- ✅ Use `DEMO_MODE=true` with `SCIM_STATIC_TOKEN` in `.env`
+- ✅ Test on localhost with HTTPS (self-signed certificates OK)
+- ✅ Limit static token scope to `/scim/v2/*` (already implemented)
+
+### In Production
+
+- ✅ **Mandatory:** Store `scim-static-token` in Azure Key Vault
+- ✅ Set `SCIM_STATIC_TOKEN_SOURCE=keyvault` and `AZURE_USE_KEYVAULT=true`
+- ✅ Use long random token (minimum 32 characters): `openssl rand -base64 32`
+- ✅ Configure **IP whitelisting** if possible (Entra ID IP ranges)
+- ✅ Enable **Provisioning logs** in Entra ID (90-day retention)
+- ✅ Monitor `auth_method=static` events in audit logs
+
+**Secret rotation:**
+1. Generate new token: `openssl rand -base64 32`
+2. Add to Key Vault with name `scim-static-token`
+3. Update **Secret Token** in Entra ID (without stopping provisioning)
+4. Restart services: `make load-secrets && make restart`
+
+---
+
+## 📚 References
 
 - [RFC 7644 - SCIM Protocol](https://datatracker.ietf.org/doc/html/rfc7644)
 - [RFC 7643 - SCIM Core Schema](https://datatracker.ietf.org/doc/html/rfc7643)
@@ -348,25 +348,25 @@ Content-Type: application/scim+json
 
 ---
 
-## 📸 Captures d'écran (TODO)
+## 📸 Screenshots (TODO)
 
-Les images suivantes doivent être ajoutées dans `docs/images/` :
+The following images should be added in `docs/images/`:
 
-- [ ] `entra_provisioning_create_app.png` - Création de l'Enterprise Application
-- [ ] `entra_provisioning_config.png` - Configuration Tenant URL + Secret Token
-- [ ] `entra_provisioning_test_connection.png` - Résultat "Test Connection" réussi
-- [ ] `entra_provisioning_mappings.png` - Table des attribute mappings
-- [ ] `entra_provisioning_on_demand.png` - Résultat "Provision on demand" avec 4 étapes
+- [ ] `entra_provisioning_create_app.png` - Enterprise Application creation
+- [ ] `entra_provisioning_config.png` - Tenant URL + Secret Token configuration
+- [ ] `entra_provisioning_test_connection.png` - Successful "Test Connection" result
+- [ ] `entra_provisioning_mappings.png` - Attribute mappings table
+- [ ] `entra_provisioning_on_demand.png` - "Provision on demand" result with 4 steps
 - [ ] `entra_provisioning_enabled.png` - Provisioning Status: On
-- [ ] `entra_provisioning_deactivate.png` - Logs d'audit montrant désactivation
+- [ ] `entra_provisioning_deactivate.png` - Audit logs showing deactivation
 
-**Comment capturer :**
-1. Suivez ce guide étape par étape dans un tenant Entra ID de test.
-2. Prenez des captures au format PNG (résolution 1920x1080 max).
-3. Masquez les données sensibles (domaines, IPs, tokens).
-4. Sauvegardez dans `/home/alex/iam-poc/docs/images/`.
+**How to capture:**
+1. Follow this guide step by step in a test Entra ID tenant.
+2. Take PNG screenshots (max resolution 1920x1080).
+3. Hide sensitive data (domains, IPs, tokens).
+4. Save in `/home/alex/iam-poc/docs/images/`.
 
 ---
 
-**Dernière mise à jour :** 2025-11-05  
-**Auteur :** IAM PoC Team
+**Last updated:** 2025-11-05  
+**Author:** IAM PoC Team

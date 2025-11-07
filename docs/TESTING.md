@@ -1,109 +1,109 @@
 # 🧪 Testing Guide — Mini IAM Lab
 
-> **Guide complet des tests** : stratégie, commandes, et workflow de couverture de code
+> **Complete testing guide**: strategy, commands, and code coverage workflow
 
 ---
 
-## 📊 Métriques Actuelles
+## 📊 Current Metrics
 
-- **Tests totaux** : 328 tests (300+ unitaires, 27 intégration)
-- **Couverture** : 92% sur le code métier (`app/`)
-- **Temps d'exécution** : ~3.5s (parallélisé avec pytest-xdist)
-- **Stack de test** : pytest + pytest-cov + pytest-xdist + pytest-mock
+- **Total tests**: 328 tests (300+ unit, 27 integration)
+- **Coverage**: 92% on business code (`app/`)
+- **Execution time**: ~3.5s (parallelized with pytest-xdist)
+- **Test stack**: pytest + pytest-cov + pytest-xdist + pytest-mock
 
 ---
 
-## 🎯 Stratégie de Test
+## 🎯 Test Strategy
 
-### **Tests Unitaires** (300+ tests)
-**Objectif** : Valider la logique métier de manière isolée (mocks Keycloak)
+### **Unit Tests** (300+ tests)
+**Objective**: Validate business logic in isolation (Keycloak mocks)
 
-**Commande** :
+**Command**:
 ```bash
 make test
 ```
 
-**Couverture** :
-- `app/core/` : Validation SCIM, RBAC, provisioning (100% sur validators)
-- `app/api/` : Endpoints Flask, decorators, error handling (>90%)
-- `app/config/` : Validation configuration, settings (96%)
+**Coverage**:
+- `app/core/`: SCIM validation, RBAC, provisioning (100% on validators)
+- `app/api/`: Flask endpoints, decorators, error handling (>90%)
+- `app/config/`: Configuration validation, settings (96%)
 
-**Exécution** : Parallélisée avec `-n auto` (pytest-xdist)
+**Execution**: Parallelized with `-n auto` (pytest-xdist)
 
 ---
 
-### **Tests d'Intégration** (27 tests E2E)
-**Objectif** : Valider les flux complets avec stack Docker réelle (Keycloak + Flask + Nginx)
+### **Integration Tests** (27 E2E tests)
+**Objective**: Validate complete flows with real Docker stack (Keycloak + Flask + Nginx)
 
-**Commande** :
+**Command**:
 ```bash
 make test-e2e
 ```
 
-**Pré-requis** : Stack démarrée (`make ensure-stack` vérifie automatiquement)
+**Prerequisites**: Stack started (`make ensure-stack` automatically checks)
 
-**Couverture** :
+**Coverage**:
 - OIDC/JWT validation (token parsing, claims, expiration)
 - OAuth 2.0 SCIM authentication (Bearer tokens)
 - Nginx security headers (HSTS, CSP, X-Frame-Options)
 - Secrets security (Key Vault, Docker secrets)
 - E2E SCIM flows (Joiner/Mover/Leaver)
 
-**Skip automatique** : Si le stack n'est pas accessible ou si les credentials OAuth sont invalides, les tests se désactivent proprement (pytest.skip) au lieu de générer des erreurs en cascade.
+**Automatic skip**: If stack is not accessible or OAuth credentials are invalid, tests gracefully disable (pytest.skip) instead of generating cascading errors.
 
 ---
 
-### **Tests de Couverture** (328 tests complets)
-**Objectif** : Générer un rapport HTML détaillé de la couverture de code
+### **Coverage Tests** (328 complete tests)
+**Objective**: Generate detailed HTML report of code coverage
 
-**Commande** :
+**Command**:
 ```bash
 make test-coverage
 ```
 
-**Sortie** : Rapport HTML dans `htmlcov/index.html` + résumé terminal
+**Output**: HTML report in `htmlcov/index.html` + terminal summary
 
-**Workflow recommandé** :
+**Recommended workflow**:
 ```bash
-# 1. Lancer les tests avec couverture
+# 1. Run tests with coverage
 make test-coverage
 
-# 2. Voir les options d'affichage
+# 2. See viewing options
 make test-coverage-report
 
-# 3. Ouvrir dans VS Code (recommandé pour environnements CLI)
+# 3. Open in VS Code (recommended for CLI environments)
 make test-coverage-vscode
 
-# Alternatives selon l'environnement
-make test-coverage-open    # Navigateur système (Linux GUI, macOS)
+# Alternatives depending on environment
+make test-coverage-open    # System browser (Linux GUI, macOS)
 make test-coverage-serve   # HTTP server localhost:8888
 ```
 
-**Pourquoi plusieurs options ?**
-- **Environnement CLI** (WSL, serveurs SSH) : `test-coverage-vscode` ou `test-coverage-serve`
-- **Environnement GUI** (Linux desktop, macOS) : `test-coverage-open`
-- **Review distant** : `test-coverage-serve` + tunnel SSH
+**Why multiple options?**
+- **CLI environment** (WSL, SSH servers): `test-coverage-vscode` or `test-coverage-serve`
+- **GUI environment** (Linux desktop, macOS): `test-coverage-open`
+- **Remote review**: `test-coverage-serve` + SSH tunnel
 
 ---
 
-## 🛡️ Tests de Sécurité Critiques
+## 🛡️ Critical Security Tests
 
-**Commande** :
+**Command**:
 ```bash
 make test/security
 ```
 
-**Couverture** :
+**Coverage**:
 - JWT signature validation (JWKS, algorithms, expiration)
 - RBAC enforcement (permissions, role hierarchy)
 - Rate limiting (Nginx + Flask)
 - Audit log signatures (HMAC-SHA256 verification)
 
-**Marqueurs pytest** : `-m critical` (tests non-négociables)
+**Pytest markers**: `-m critical` (non-negotiable tests)
 
 ---
 
-## 🔄 Workflow CI/CD (GitHub Actions)
+## 🔄 CI/CD Workflow (GitHub Actions)
 
 ```yaml
 - name: Run tests with coverage
@@ -115,86 +115,86 @@ make test/security
     files: ./coverage.xml
 ```
 
-**Checks obligatoires** :
-- ✅ Tous les tests unitaires passent (300+)
-- ✅ Couverture >= 90% maintenue
-- ✅ Aucun test critique (security) échoué
-- ✅ Aucune régression détectée
+**Mandatory checks**:
+- ✅ All unit tests pass (300+)
+- ✅ Coverage >= 92% maintained
+- ✅ No critical (security) test failures
+- ✅ No regressions detected
 
 ---
 
 ## 🐛 Troubleshooting
 
-### **Problème : Tests d'intégration échouent avec erreur 401**
-**Cause** : Credentials OAuth invalides ou stack non démarré
+### **Problem: Integration tests fail with 401 error**
+**Cause**: Invalid OAuth credentials or stack not started
 
-**Solution** :
+**Solution**:
 ```bash
-# Vérifier que le stack est running
+# Verify stack is running
 make ensure-stack
 
-# Vérifier les secrets
+# Verify secrets
 cat .runtime/secrets/keycloak_service_client_secret
 
-# Re-générer les secrets si nécessaire
+# Regenerate secrets if necessary
 make fresh-demo
 ```
 
-**Note** : Depuis la correction récente, les fixtures OAuth utilisent `pytest.skip()` si les credentials sont invalides, évitant les erreurs en cascade.
+**Note**: Since recent fix, OAuth fixtures use `pytest.skip()` if credentials are invalid, avoiding cascading errors.
 
 ---
 
-### **Problème : Impossible d'ouvrir le rapport de couverture**
-**Cause** : Environnement Linux CLI sans navigateur
+### **Problem: Cannot open coverage report**
+**Cause**: Linux CLI environment without browser
 
-**Solution** :
+**Solution**:
 ```bash
-# Option 1 : Ouvrir dans VS Code
+# Option 1: Open in VS Code
 make test-coverage-vscode
 
-# Option 2 : Servir via HTTP
+# Option 2: Serve via HTTP
 make test-coverage-serve
-# Puis ouvrir http://localhost:8888 dans un navigateur local ou tunnelé
+# Then open http://localhost:8888 in local or tunneled browser
 ```
 
 ---
 
-### **Problème : Tests lents ou timeouts**
-**Cause** : Stack Docker non optimal, ou tests séquentiels
+### **Problem: Slow tests or timeouts**
+**Cause**: Non-optimal Docker stack, or sequential tests
 
-**Solution** :
+**Solution**:
 ```bash
-# Vérifier la santé du stack
+# Verify stack health
 docker compose ps
 
-# Redémarrer si nécessaire
+# Restart if necessary
 make restart
 
-# Les tests unitaires sont parallélisés par défaut (-n auto)
-# Les tests d'intégration sont séquentiels (rate limiting)
+# Unit tests are parallelized by default (-n auto)
+# Integration tests are sequential (rate limiting)
 ```
 
 ---
 
-## 📚 Références
+## 📚 References
 
-- **pytest** : https://docs.pytest.org/
-- **pytest-cov** : https://pytest-cov.readthedocs.io/
-- **Coverage.py** : https://coverage.readthedocs.io/
-- **pytest-xdist** : https://pytest-xdist.readthedocs.io/ (parallélisation)
-
----
-
-## 🎓 Bonnes Pratiques Appliquées
-
-1. **Tests isolés** : Mocks pour tests unitaires, stack réelle pour intégration
-2. **Skip intelligent** : `pytest.skip()` pour dépendances externes manquantes
-3. **Parallélisation** : `-n auto` pour tests unitaires (gain 3-4x)
-4. **Fixtures scope** : `module` pour setup coûteux (OAuth tokens), `function` pour isolation
-5. **Marqueurs pytest** : `@pytest.mark.integration`, `@pytest.mark.critical`
-6. **Coverage ciblée** : Seulement `app/`, pas les tests ou dépendances
-7. **CI/CD friendly** : Rapport XML pour CodeCov, skip automatique en l'absence de stack
+- **pytest**: https://docs.pytest.org/
+- **pytest-cov**: https://pytest-cov.readthedocs.io/
+- **Coverage.py**: https://coverage.readthedocs.io/
+- **pytest-xdist**: https://pytest-xdist.readthedocs.io/ (parallelization)
 
 ---
 
-**Retour** : [Documentation Hub](README.md) | [README Principal](../README.md)
+## 🎓 Applied Best Practices
+
+1. **Isolated tests**: Mocks for unit tests, real stack for integration
+2. **Smart skip**: `pytest.skip()` for missing external dependencies
+3. **Parallelization**: `-n auto` for unit tests (3-4x gain)
+4. **Fixture scope**: `module` for expensive setup (OAuth tokens), `function` for isolation
+5. **Pytest markers**: `@pytest.mark.integration`, `@pytest.mark.critical`
+6. **Targeted coverage**: Only `app/`, not tests or dependencies
+7. **CI/CD friendly**: XML report for CodeCov, automatic skip without stack
+
+---
+
+**Back**: [Documentation Hub](README.md) | [Main README](../README.md)

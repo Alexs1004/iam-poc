@@ -1,7 +1,7 @@
 # Deployment Guide — Azure-Native Roadmap
 
-> **Current State** : Azure Key Vault integrated, production-ready secrets management  
-> **Target State** : Full Azure-native (Entra ID, Managed Identity, App Service, Monitor)
+> **Current State**: Azure Key Vault integrated, production-ready secrets management  
+> **Target State**: Full Azure-native (Entra ID, Managed Identity, App Service, Monitor)
 
 This guide documents the Azure deployment path supported by `app/config/settings.py` and `app/core/provisioning_service.py`. Adjust values to match your environment; add TODO markers where additional work is required.
 
@@ -9,62 +9,62 @@ This guide documents the Azure deployment path supported by `app/config/settings
 
 ## 🚀 Azure-Native Evolution (4 Phases)
 
-### Phase 1 : Identity Provider Migration ✅ **Next Priority**
-**Objective** : Replace Keycloak with Azure Entra ID (ex-Azure AD)
+### Phase 1: Identity Provider Migration ✅ **Next Priority**
+**Objective**: Replace Keycloak with Azure Entra ID (ex-Azure AD)
 
-**Actions** :
+**Actions**:
 - [ ] Configure Entra ID App Registration (SCIM client)
 - [ ] Enable Conditional Access Policies (MFA, device compliance)
 - [ ] Migrate OIDC/OAuth flows to Entra ID endpoints
 - [ ] Update JWT validation to Entra ID JWKS
 - [ ] Test B2B guest access (inter-organization SCIM)
 
-**Benefits** :
+**Benefits**:
 - Cloud-native authentication (no self-hosted Keycloak)
 - Advanced MFA policies (Authenticator, FIDO2)
 - Integration with Microsoft 365 identities
 
-### Phase 2 : Secrets & Identity Management ✅ **Partially Complete**
-**Objective** : Eliminate Service Principals, adopt Managed Identity
+### Phase 2: Secrets & Identity Management ✅ **Partially Complete**
+**Objective**: Eliminate Service Principals, adopt Managed Identity
 
-**Actions** :
+**Actions**:
 - [x] Azure Key Vault integration (completed)
 - [x] Secret rotation automation (`make rotate-secret`)
 - [ ] Replace Service Principal with Managed Identity
 - [ ] Implement Workload Identity for AKS/Container Apps
 - [ ] Remove `.env` dependency (full Key Vault migration)
 
-**Benefits** :
+**Benefits**:
 - Zero credentials in code/config
 - Automatic credential rotation
 - RBAC-based access control
 
-### Phase 3 : Observability & Compliance
-**Objective** : Production-grade monitoring and audit
+### Phase 3: Observability & Compliance
+**Objective**: Production-grade monitoring and audit
 
-**Actions** :
+**Actions**:
 - [ ] Azure Monitor Application Insights integration
 - [ ] Log Analytics workspace for centralized logs
 - [ ] Azure Sentinel SIEM for FINMA compliance
 - [ ] Immutable Blob Storage for audit logs (nLPD retention)
 - [ ] Alerting rules for security events (failed auth, privilege escalation)
 
-**Benefits** :
+**Benefits**:
 - Real-time threat detection
 - Compliance audit trails (FINMA)
 - Performance monitoring
 
-### Phase 4 : Production Infrastructure
-**Objective** : Scalable, resilient deployment
+### Phase 4: Production Infrastructure
+**Objective**: Scalable, resilient deployment
 
-**Actions** :
+**Actions**:
 - [ ] Azure App Service with auto-scaling
 - [ ] Azure SQL Database (replace SQLite)
 - [ ] Azure Cache for Redis (distributed sessions)
 - [ ] Azure Front Door (global load balancing, WAF)
 - [ ] Azure Policy enforcement (compliance guardrails)
 
-**Benefits** :
+**Benefits**:
 - High availability (99.9% SLA)
 - Global distribution
 - Built-in DDoS protection
