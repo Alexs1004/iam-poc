@@ -368,7 +368,7 @@ def load_settings() -> AppConfig:
         for user in ["ALICE", "BOB", "CAROL", "JOE"]:
             demo_passwords[user] = _get_or_generate(
                 f"{user}_TEMP_PASSWORD",
-                demo_default=(os.environ.get(f"{user}_TEMP_PASSWORD_DEMO") or "Passw0rd!"),
+                demo_default=(os.environ.get(f"{user}_TEMP_PASSWORD_DEMO") or "Temp123!"),
                 required=False,
                 demo_mode=demo_mode
             )

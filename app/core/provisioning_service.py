@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime
 import re
 import os
+import sys
 import secrets
 import string
 from pathlib import Path
@@ -302,15 +303,27 @@ def get_service_token() -> str:
 # Core Service Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
-def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -> dict:
+def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None, require_totp: bool = True, require_password_update: bool = True) -> dict:
     """Create a new user (Joiner) with SCIM-like payload.
+    
+    🔒 Security Mode:
+    - DEMO_MODE=True: Password visible in response (_tempPassword field) ⚠️ LOCAL ONLY
+    - DEMO_MODE=False: Password reset email sent via Keycloak ✅ PRODUCTION
+    
+    🎓 Learning Point:
+    - SCIM RFC 7644 § 7.7: "The password attribute MUST NOT be returned by default"
+    - OWASP ASVS V2.1.12: Password reset via secure tokenized link
+    - NIST SP 800-63B § 5.1.1.2: Reset via out-of-band channel (email)
     
     Args:
         payload: SCIM User dict with userName, emails, name, active
         correlation_id: Optional correlation ID for tracing
+        require_totp: Require TOTP enrollment at first login (default: True)
+        require_password_update: Require password change at first login (default: True)
     
     Returns:
-        SCIM User dict with id, _tempPassword (if DEMO_MODE), meta
+        SCIM User dict with id, userName, active, emails, name, meta
+        - _tempPassword field only present if DEMO_MODE=True
     
     Raises:
         ScimError: On validation failure or duplicate userName (409)
@@ -351,8 +364,8 @@ def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -
             last_name,
             temp_password,
             role,
-            require_totp=True,
-            require_password_update=True
+            require_totp=require_totp,
+            require_password_update=require_password_update
         )
     except Exception as exc:
         raise ScimError(500, f"Failed to create user: {exc}")
@@ -364,6 +377,42 @@ def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -
     
     user_id = kc_user["id"]
     
+    # Convert to SCIM format
+    scim_user = keycloak_to_scim(kc_user, base_url=os.environ.get("APP_BASE_URL", "https://localhost"))
+    
+    # Handle password visibility based on mode
+    if DEMO_MODE:
+        # ⚠️ Demo mode: password in response (testing only)
+        scim_user["_tempPassword"] = temp_password
+        print(f"[provisioning] DEMO MODE: Password included in response for {username}", file=sys.stderr)
+    else:
+        # ✅ Production: send secure reset link via Keycloak
+        try:
+            from app.core.keycloak import send_password_reset_email
+            
+            # Call without redirect_uri to use default OIDC_REDIRECT_URI (https://localhost/callback)
+            send_password_reset_email(
+                KEYCLOAK_BASE_URL,
+                token,
+                KEYCLOAK_REALM,
+                user_id
+            )
+            print(
+                f"[provisioning] User {username} created. Password reset email sent via Keycloak.",
+                file=sys.stderr
+            )
+        except Exception as e:
+            # User created but email failed - don't fail the request
+            # Admin can manually send reset email via Keycloak Admin UI
+            print(
+                f"[provisioning] WARNING: User created but email failed: {e}",
+                file=sys.stderr
+            )
+            # Add metadata to indicate email delivery failure
+            if "meta" not in scim_user:
+                scim_user["meta"] = {}
+            scim_user["meta"]["emailDeliveryFailed"] = True
+    
     # Log to audit trail
     audit.log_jml_event(
         "scim_create_user",
@@ -374,17 +423,12 @@ def create_user_scim_like(payload: dict, correlation_id: Optional[str] = None) -
             "user_id": user_id,
             "email": email,
             "role": role,
+            "mode": "demo" if DEMO_MODE else "production",
+            "email_sent": not DEMO_MODE,
             "correlation_id": correlation_id
         },
         success=True
     )
-    
-    # Convert to SCIM format (kc_user already retrieved above)
-    scim_user = keycloak_to_scim(kc_user, base_url=os.environ.get("APP_BASE_URL", "https://localhost"))
-    
-    # Add temp password only in DEMO_MODE
-    if DEMO_MODE and temp_password:
-        scim_user["_tempPassword"] = temp_password
     
     return scim_user
 

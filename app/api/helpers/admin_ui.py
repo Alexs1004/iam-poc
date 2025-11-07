@@ -62,7 +62,11 @@ def ui_create_user(username: str, email: str, first_name: str, last_name: str,
             "role": role  # Custom extension
         }
         
-        result = provisioning_service.create_user_scim_like(payload)
+        result = provisioning_service.create_user_scim_like(
+            payload,
+            require_totp=require_totp,
+            require_password_update=require_password_update
+        )
         user_id = result.get("id", "")
         temp_pwd = result.get("_tempPassword", temp_password or "N/A")
         

@@ -311,21 +311,63 @@ def test_scim_error_without_scim_type():
 # ============================================================================
 
 def test_create_user_success(mock_jml, mock_audit, valid_create_payload):
-    """create_user_scim_like returns SCIM User with id and _tempPassword"""
+    """
+    create_user_scim_like returns SCIM User with id.
+    
+    🔒 Security: In DEMO_MODE=true (fixture default), _tempPassword is included.
+    """
     result = create_user_scim_like(valid_create_payload, correlation_id="test-123")
     
     assert result["schemas"] == ["urn:ietf:params:scim:schemas:core:2.0:User"]
     assert result["id"] == "test-uuid-123"
     assert result["userName"] == "alice"
-    assert result["_tempPassword"] == "TempPass123!"  # DEMO_MODE=true
+    
+    # ⚠️ In DEMO_MODE (fixture sets this), password IS included for testing
+    assert "_tempPassword" in result, "DEMO_MODE should include _tempPassword"
+    assert result["_tempPassword"] == "TempPass123!"
+    
     assert "meta" in result
-    assert result["meta"]["location"].endswith("/Users/test-uuid-123")  # May be /scim/v2/Users or /Users
+    assert result["meta"]["location"].endswith("/Users/test-uuid-123")
     
     # Verify create_user was called
     mock_jml.create_user.assert_called_once()
     
     # Verify audit log
     mock_audit.log_jml_event.assert_called_once()
+
+
+def test_create_user_production_no_password_in_response(mock_jml, mock_audit, valid_create_payload, monkeypatch):
+    """
+    🔒 SECURITY TEST: In production mode (DEMO_MODE=false), password NEVER in response.
+    
+    Validates RFC 7644 § 7.7: "The password attribute MUST NOT be returned by default"
+    """
+    # Force PRODUCTION mode (override fixture)
+    monkeypatch.setattr("app.core.provisioning_service.DEMO_MODE", False)
+    
+    # Mock send_password_reset_email at the keycloak module level
+    from unittest.mock import MagicMock
+    mock_send_email = MagicMock()
+    monkeypatch.setattr("app.core.keycloak.send_password_reset_email", mock_send_email)
+    
+    result = create_user_scim_like(valid_create_payload, correlation_id="test-prod-123")
+    
+    # ✅ Security: password MUST NOT be in response in production
+    assert "_tempPassword" not in result, "Production mode must NEVER include _tempPassword (RFC 7644 § 7.7)"
+    
+    # Verify basic SCIM structure
+    assert result["schemas"] == ["urn:ietf:params:scim:schemas:core:2.0:User"]
+    assert result["id"] == "test-uuid-123"
+    assert result["userName"] == "alice"
+    
+    # Verify email was sent via Keycloak
+    mock_send_email.assert_called_once()
+    
+    # Verify audit log includes production mode
+    mock_audit.log_jml_event.assert_called_once()
+    call_args = mock_audit.log_jml_event.call_args
+    assert call_args[1]["details"]["mode"] == "production"
+    assert call_args[1]["details"]["email_sent"] is True
 
 
 def test_create_user_missing_username(mock_jml, mock_audit):

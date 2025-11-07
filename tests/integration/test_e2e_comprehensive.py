@@ -383,6 +383,10 @@ def test_scim_01_create_user(scim_headers, test_user_unique, running_stack):
     - 201 Created
     - Response includes id, schemas, meta.resourceType
     - Schema compliant: urn:ietf:params:scim:schemas:core:2.0:User
+    
+    Security:
+    - DEMO_MODE=false (production): _tempPassword MUST NOT be in response (RFC 7644 § 7.7)
+    - DEMO_MODE=true (local testing): _tempPassword MAY be present for convenience
     """
     create_payload = {
         "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
@@ -408,11 +412,22 @@ def test_scim_01_create_user(scim_headers, test_user_unique, running_stack):
     assert user["active"] is True
     assert user["meta"]["resourceType"] == "User"
     
-    # Security: _tempPassword should NOT be in response
-    assert "_tempPassword" not in user, "_tempPassword leaked in response"
+    # Security: _tempPassword behavior depends on mode
+    demo_mode = os.getenv("DEMO_MODE", "false").lower() == "true"
+    
+    if demo_mode:
+        # ⚠️ DEMO MODE: Password visible for local testing
+        print(f"⚠️  DEMO MODE: _tempPassword present in response (expected for local testing)")
+        if "_tempPassword" in user:
+            assert len(user["_tempPassword"]) >= 12, "Temp password too short"
+            print(f"   Temp password: {user['_tempPassword']}")
+    else:
+        # ✅ PRODUCTION MODE: Password MUST NOT be in response
+        assert "_tempPassword" not in user, \
+            "🚨 SECURITY VIOLATION: _tempPassword leaked in production mode (RFC 7644 § 7.7)"
+        print(f"✅ PRODUCTION MODE: _tempPassword correctly excluded from response")
     
     print(f"✅ SCIM-01: Created user {user['id']}")
-    # Note: User ID is available in user['id'] for subsequent operations
 
 
 @pytest.mark.scim

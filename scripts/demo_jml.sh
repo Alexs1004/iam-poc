@@ -115,10 +115,10 @@ else
   export AUDIT_LOG_SIGNING_KEY_DEMO="${AUDIT_LOG_SIGNING_KEY_DEMO:-demo-audit-signing-key-change-in-production}"
   
   # Demo user passwords
-  export ALICE_TEMP_PASSWORD_DEMO="${ALICE_TEMP_PASSWORD_DEMO:-Passw0rd!}"
-  export BOB_TEMP_PASSWORD_DEMO="${BOB_TEMP_PASSWORD_DEMO:-Passw0rd!}"
-  export CAROL_TEMP_PASSWORD_DEMO="${CAROL_TEMP_PASSWORD_DEMO:-Passw0rd!}"
-  export JOE_TEMP_PASSWORD_DEMO="${JOE_TEMP_PASSWORD_DEMO:-Passw0rd!}"
+  export ALICE_TEMP_PASSWORD_DEMO="${ALICE_TEMP_PASSWORD_DEMO:-Temp123!}"
+  export BOB_TEMP_PASSWORD_DEMO="${BOB_TEMP_PASSWORD_DEMO:-Temp123!}"
+  export CAROL_TEMP_PASSWORD_DEMO="${CAROL_TEMP_PASSWORD_DEMO:-Temp123!}"
+  export JOE_TEMP_PASSWORD_DEMO="${JOE_TEMP_PASSWORD_DEMO:-Temp123!}"
 fi
 
 # Enforce DEMO_MODE consistency: Demo mode must never use Azure Key Vault
@@ -154,10 +154,10 @@ fi
 # Step 2: Apply demo defaults if DEMO_MODE=true
 if [[ "${DEMO_MODE,,}" == "true" ]]; then
   # Priority: 1. Already set env var, 2. *_DEMO var, 3. Hardcoded fallback
-  ALICE_TEMP_PASSWORD="${ALICE_TEMP_PASSWORD:-${ALICE_TEMP_PASSWORD_DEMO:-Passw0rd!}}"
-  BOB_TEMP_PASSWORD="${BOB_TEMP_PASSWORD:-${BOB_TEMP_PASSWORD_DEMO:-Passw0rd!}}"
-  CAROL_TEMP_PASSWORD="${CAROL_TEMP_PASSWORD:-${CAROL_TEMP_PASSWORD_DEMO:-Passw0rd!}}"
-  JOE_TEMP_PASSWORD="${JOE_TEMP_PASSWORD:-${JOE_TEMP_PASSWORD_DEMO:-Passw0rd!}}"
+  ALICE_TEMP_PASSWORD="${ALICE_TEMP_PASSWORD:-${ALICE_TEMP_PASSWORD_DEMO:-Temp123!}}"
+  BOB_TEMP_PASSWORD="${BOB_TEMP_PASSWORD:-${BOB_TEMP_PASSWORD_DEMO:-Temp123!}}"
+  CAROL_TEMP_PASSWORD="${CAROL_TEMP_PASSWORD:-${CAROL_TEMP_PASSWORD_DEMO:-Temp123!}}"
+  JOE_TEMP_PASSWORD="${JOE_TEMP_PASSWORD:-${JOE_TEMP_PASSWORD_DEMO:-Temp123!}}"
   echo "[demo] Using demo default passwords (DEMO_MODE=true)"
 fi
 
@@ -454,6 +454,20 @@ COMMON_FLAGS=(
 # (bootstrap only creates the realm and service account, not the application roles)
 printf "%b\n" "${BLUE}=== Création du realm et du client public ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" init --realm "${REALM}" --client-id "${CLIENT_ID}" --redirect-uri "${REDIRECT_URI}" --post-logout-redirect-uri "${POST_LOGOUT_REDIRECT_URI}"
+
+# Configure SMTP for password reset emails (production mode only)
+if [[ "${DEMO_MODE,,}" != "true" ]] && [[ -n "${SMTP_HOST}" ]] && [[ -n "${SMTP_USER}" ]]; then
+  printf "%b\n" "${BLUE}=== Configuration SMTP pour les emails de réinitialisation ===${RESET}"
+  if docker compose exec flask-app ${PYTHON_BIN} scripts/configure_smtp.py; then
+    printf "%b\n" "${GREEN}✓ SMTP configuré dans Keycloak${RESET}"
+  else
+    printf "%b\n" "${YELLOW}⚠ SMTP non configuré (vérifiez les variables SMTP_*)${RESET}"
+  fi
+else
+  if [[ "${DEMO_MODE,,}" == "true" ]]; then
+    printf "%b\n" "${YELLOW}[demo] Mode démo: SMTP non requis (mots de passe affichés dans l'UI)${RESET}"
+  fi
+fi
 
 printf "%b\n" "${YELLOW}=== Provision de l'utilisatrice alice (joiner) ===${RESET}"
 ${JML_CMD} "${COMMON_FLAGS[@]}" joiner --realm "${REALM}" --username alice --email alice@example.com --first Alice --last Demo --role analyst --temp-password "${ALICE_TEMP}"

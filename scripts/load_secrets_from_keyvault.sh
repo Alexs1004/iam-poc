@@ -126,6 +126,9 @@ write_secret_file "bob-temp-password" "bob_temp_password" "false"
 write_secret_file "carol-temp-password" "carol_temp_password" "false"
 write_secret_file "joe-temp-password" "joe_temp_password" "false"
 
+# SMTP password for email notifications (optional in demo mode)
+write_secret_file "smtp-password" "smtp_password" "false"
+
 # Display summary
 echo ""
 echo -e "${GREEN}[keyvault] ✓ All secrets written to ${SECRETS_DIR}/ (chmod 400)${RESET}"

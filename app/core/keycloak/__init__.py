@@ -68,6 +68,7 @@ from .users import (
     ensure_required_action,
     ensure_user_required_actions,
     set_user_required_actions,
+    send_password_reset_email,
     _user_has_totp,
     _desired_required_actions,
 )
@@ -138,6 +139,7 @@ __all__ = [
     "ensure_required_action",
     "ensure_user_required_actions",
     "set_user_required_actions",
+    "send_password_reset_email",
     "_user_has_totp",
     "_desired_required_actions",
     

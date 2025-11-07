@@ -70,7 +70,7 @@ def main() -> None:
     sj.add_argument("--first", required=True)
     sj.add_argument("--last", required=True)
     sj.add_argument("--role", default="analyst")
-    sj.add_argument("--temp-password", default=os.environ.get("ALICE_TEMP_PASSWORD_DEMO", "Passw0rd!"))
+    sj.add_argument("--temp-password", default=os.environ.get("ALICE_TEMP_PASSWORD_DEMO", "Temp123!"))
     sj.add_argument("--no-password-update", action="store_true")
     sj.add_argument("--no-totp", action="store_true")
 

@@ -84,6 +84,11 @@ class ScimTransformer:
             # Keycloak doesn't track lastModified, use created as fallback
             scim_resource["meta"]["lastModified"] = created_dt.isoformat() + "Z"
         
+        # Security: Remove sensitive fields from response
+        SENSITIVE_FIELDS = ["_tempPassword", "credentials", "password", "secret"]
+        for field in SENSITIVE_FIELDS:
+            scim_resource.pop(field, None)
+        
         return scim_resource
     
     @staticmethod

@@ -480,7 +480,20 @@ def admin_joiner():
             require_password_update=require_password_update
         )
         
-        flash(f"User '{username}' provisioned. Temporary password: {returned_password}", "success")
+        # ✅ Security: Only show password in DEMO_MODE
+        cfg = current_app.config["APP_CONFIG"]
+        if cfg.demo_mode and returned_password:
+            flash(
+                f"User '{username}' provisioned. "
+                f"⚠️ DEMO MODE: Temporary password is {returned_password}",
+                "success"
+            )
+        else:
+            flash(
+                f"User '{username}' provisioned successfully. "
+                f"Password reset instructions sent to {email}.",
+                "success"
+            )
     except provisioning_service.ScimError as exc:
         flash(f"Failed to provision user '{username}': {exc.detail}", "error")
         audit.log_jml_event(

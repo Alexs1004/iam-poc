@@ -365,3 +365,88 @@ def _desired_required_actions(
     """Compute required actions for new joiners, prompting for TOTP if needed."""
     service = UserService(create_client_with_token(kc_url, token))
     return service._desired_required_actions(realm, user_id, require_totp, require_password_update)
+
+
+def send_password_reset_email(kc_url: str, token: str, realm: str, user_id: str, redirect_uri: str = None, client_id: str = None) -> None:
+    """
+    Trigger Keycloak to send password reset email to user.
+    
+    🎓 Learning Point:
+    Keycloak's execute-actions-email endpoint provides a production-ready
+    password reset flow:
+    - Generates cryptographically secure one-time token (256 bits entropy)
+    - Sends email with configurable template (Keycloak Admin UI → Email)
+    - Token automatically expires (default 5 minutes)
+    - Audit trail logged in Keycloak events
+    
+    🔒 Security (OWASP ASVS V2.1.12, NIST SP 800-63B § 5.1.1.2):
+    - Password NEVER sent via email (phishing vector)
+    - Token is one-time use (prevents replay attacks)
+    - Secure channel (HTTPS) for password reset page
+    - Complies with RFC 7644 § 7.7 (password not returned in responses)
+    
+    ⚠️ Erreur fréquente évitée:
+    - Ne jamais coder ses propres tokens (risque crypto)
+    - Ne jamais envoyer le mot de passe en clair par email
+    - Toujours utiliser les fonctionnalités natives de l'IdP
+    
+    Args:
+        kc_url: Keycloak base URL (e.g., http://keycloak:8080)
+        token: Admin token for API authentication
+        realm: Realm name
+        user_id: Keycloak user UUID
+        redirect_uri: URL to redirect after password reset (default: /auth/login)
+        client_id: Client ID for redirect (default: flask-app)
+    
+    Raises:
+        requests.HTTPError: If user not found (404) or SMTP not configured (500)
+    
+    Example:
+        >>> send_password_reset_email(
+        ...     "http://keycloak:8080",
+        ...     admin_token,
+        ...     "demo",
+        ...     "user-uuid-123",
+        ...     redirect_uri="https://app.example.com/auth/login"
+        ... )
+    """
+    import os
+    
+    # Default values from environment
+    # Use OIDC_REDIRECT_URI as it's guaranteed to be in Valid Redirect URIs (https://localhost/callback)
+    if not redirect_uri:
+        redirect_uri = os.environ.get("OIDC_REDIRECT_URI", "https://localhost/callback")
+    
+    if not client_id:
+        client_id = os.environ.get("KEYCLOAK_CLIENT_ID", "flask-app")
+    
+    # Call Keycloak execute-actions-email endpoint
+    # This triggers Keycloak to:
+    # 1. Generate secure token
+    # 2. Send email with reset link
+    # 3. Log event in Keycloak audit trail
+    response = requests.put(
+        f"{kc_url}/admin/realms/{realm}/users/{user_id}/execute-actions-email",
+        headers={"Authorization": f"Bearer {token}"},
+        json=["UPDATE_PASSWORD"],  # Required action: UPDATE_PASSWORD
+        params={
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+        },
+        timeout=10
+    )
+    
+    # Handle errors
+    if response.status_code == 404:
+        raise requests.HTTPError(f"User {user_id} not found in Keycloak", response=response)
+    
+    if response.status_code >= 400:
+        error_detail = response.text or "Unknown error"
+        if "Failed to send email" in error_detail or "SMTP" in error_detail:
+            raise requests.HTTPError(
+                f"Failed to send email. Verify SMTP configuration in Keycloak (Realm Settings → Email). Error: {error_detail}",
+                response=response
+            )
+        raise requests.HTTPError(f"Keycloak API error: {error_detail}", response=response)
+    
+    print(f"[password_reset] Email sent via Keycloak for user {user_id}", file=sys.stderr)

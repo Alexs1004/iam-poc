@@ -267,6 +267,50 @@ Cette page exécute automatiquement une suite de tests de validation couvrant :
 - **RFC 7644 (SCIM 2.0)** : Implémentation stricte schemas + error handling
 - **NIST 800-63B** : Politique mots de passe robuste, MFA comptes privilégiés
 
+### Password Management (Keycloak Native)
+**Production Flow** : Passwords are **NEVER** returned in API responses or displayed in UI.
+- ✅ User created → Keycloak sends secure reset email
+- ✅ Token: 256-bit entropy, one-time use, 5-minute expiration
+- ✅ User clicks link → sets own password → redirects to login
+
+**Demo Mode** : For local testing without SMTP configuration
+- ⚠️ `DEMO_MODE=true` : Password visible in flash message (red warning banner)
+- ⚠️ Default `.env.production` has `DEMO_MODE=false`
+- ⚠️ Automated tests verify no password leaks in production
+
+**SMTP Configuration** (Production):
+```bash
+# 1. Configure variables in .env
+SMTP_HOST=smtp.gmail.com  # or Office365, SendGrid, etc.
+SMTP_PORT=587
+SMTP_USER=noreply@domain.com
+SMTP_FROM=noreply@domain.com
+
+# 2. Store password in Azure Key Vault
+az keyvault secret set \
+  --vault-name your-keyvault \
+  --name smtp-password \
+  --value "your-app-password"
+
+# 3. SMTP is automatically configured during bootstrap
+make quickstart  # or make fresh-demo
+
+# Or configure manually:
+docker compose exec flask-app python3 scripts/configure_smtp.py
+```
+
+**Gmail App Password Setup**:
+1. Enable 2FA: https://myaccount.google.com/signinoptions/two-step-verification
+2. Generate App Password: https://myaccount.google.com/apppasswords
+3. Store in Key Vault: `az keyvault secret set --vault-name ... --name smtp-password --value "xxxx xxxx xxxx xxxx"`
+
+**Compliance**:
+- **OWASP ASVS V2.1.12**: Password reset via secure tokenized link
+- **RFC 7644 § 7.7**: Password attribute MUST NOT be returned by default
+- **NIST SP 800-63B § 5.1.1.2**: Reset via out-of-band channel (email)
+
+📘 **Full Documentation**: [docs/SECURITY_DESIGN.md#password-management-architecture](docs/SECURITY_DESIGN.md)
+
 **Pipeline de sécurité** :
 - **Gitleaks** : Détection secrets (0 faux positifs, allowlist configurée)
 - **Trivy** : Scan CVE HIGH/CRITICAL (dépendances Python)
