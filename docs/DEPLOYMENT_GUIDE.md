@@ -98,9 +98,55 @@ PY)"
 az keyvault secret set --vault-name "$KV_NAME" --name audit-log-signing-key --value "$(python - <<'PY'
 import secrets; print(secrets.token_urlsafe(72))
 PY)"
+
+# SMTP password for Keycloak email delivery (password reset, account verification)
+az keyvault secret set --vault-name "$KV_NAME" --name smtp-password --value "<gmail-app-password>"
 ```
 
-Restrict access to the managed identity (next section) with `get`/`list` permissions only. Enable Key Vault diagnostics and Activity Logs retention.
+**📧 Email Configuration (Password Reset)**
+
+Password reset functionality requires SMTP configuration in Keycloak:
+
+```bash
+# 1. Generate Gmail App Password (or use Office365/SendGrid credentials)
+# Gmail: https://myaccount.google.com/apppasswords
+# Office365: Use app password or OAuth2 (recommended for production)
+
+# 2. Store SMTP password in Azure Key Vault
+az keyvault secret set \
+  --vault-name "$KV_NAME" \
+  --name smtp-password \
+  --value "xxxx xxxx xxxx xxxx"  # Gmail app password (remove spaces)
+
+# 3. Configure environment variables (.env.production or Azure App Configuration)
+SMTP_HOST=smtp.gmail.com       # or smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=noreply@yourdomain.com
+SMTP_FROM=noreply@yourdomain.com
+
+# 4. SMTP is automatically configured during stack bootstrap
+# Or configure manually:
+docker compose exec flask-app python3 scripts/configure_smtp.py
+
+# 5. Test SMTP connectivity
+docker compose exec flask-app python3 scripts/check_smtp.py
+```
+
+**Supported SMTP Providers**:
+- ✅ **Gmail**: `smtp.gmail.com:587` (requires App Password with 2FA enabled)
+- ✅ **Office 365**: `smtp.office365.com:587` (app password or OAuth2)
+- ✅ **SendGrid**: `smtp.sendgrid.net:587` (API key as password)
+- ✅ **Azure Communication Services**: Email service with managed identity
+
+**Security Notes**:
+- ✅ Never store SMTP password in `.env` or code — always use Azure Key Vault
+- ✅ Use TLS (port 587 with STARTTLS) or SSL (port 465)
+- ✅ Restrict SMTP credentials to least privilege (send-only permissions)
+- ✅ Monitor email delivery logs for abuse detection
+
+**Production Recommendation**: Use **Azure Communication Services** Email with Managed Identity (eliminates SMTP credentials entirely).
+
+---
 
 ## Managed Identity
 ```bash
@@ -135,7 +181,17 @@ AZURE_KEY_VAULT_NAME=$KV_NAME
 KEYCLOAK_URL_HOST=https://keycloak.<company>.com
 KEYCLOAK_ISSUER=https://keycloak.<company>.com/realms/prod
 APP_BASE_URL=https://iam.<company>.com
+
+# SMTP Configuration (password reset emails)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=noreply@yourdomain.com
+SMTP_FROM=noreply@yourdomain.com
+# SMTP_PASSWORD loaded from Azure Key Vault secret 'smtp-password'
 ```
+
+**📧 Email Delivery**: See [SMTP Configuration](#email-configuration-password-reset) section above.  
+**🔒 Password Security**: See [SECURITY_DESIGN.md](SECURITY_DESIGN.md#password-management-architecture) for details.
 
 Validate Key Vault access locally:
 ```bash
@@ -170,7 +226,70 @@ make load-secrets     # fetches secrets into .runtime/secrets/
 
 ---
 
-## 🔗 Related Documentation
+## � Troubleshooting
+
+### SMTP Email Not Delivered
+
+**Symptoms**: Password reset emails not received by users
+
+**Solutions**:
+1. **Test SMTP connectivity**:
+   ```bash
+   docker compose exec flask-app python3 scripts/check_smtp.py
+   ```
+   Expected output: "✅ SMTP test email sent successfully"
+
+2. **Check Keycloak SMTP configuration**:
+   - Login to Keycloak Admin Console: `http://localhost:8080/admin/demo/console`
+   - Navigate to: Realm Settings → Email
+   - Verify: Host, Port, From, Authentication enabled
+
+3. **Verify Azure Key Vault secret**:
+   ```bash
+   az keyvault secret show --vault-name "$KV_NAME" --name smtp-password --query value -o tsv
+   ```
+
+4. **Common Issues**:
+   - ❌ Gmail without App Password → Enable 2FA + generate App Password
+   - ❌ Office365 with MFA → Use app-specific password or OAuth2
+   - ❌ Firewall blocking port 587 → Check network security groups
+   - ❌ "Invalid credentials" → Verify SMTP_USER matches email provider
+
+5. **Check Keycloak logs**:
+   ```bash
+   docker compose logs keycloak | grep -i "email\|smtp"
+   ```
+
+### Azure Key Vault Access Denied
+
+**Symptoms**: `make load-secrets` fails with "Forbidden"
+
+**Solutions**:
+1. Verify Managed Identity has correct permissions:
+   ```bash
+   az keyvault set-policy --name "$KV_NAME" \
+     --object-id "$PRINCIPAL_ID" \
+     --secret-permissions get list
+   ```
+
+2. Check Azure CLI authentication:
+   ```bash
+   az account show  # Verify correct subscription
+   az keyvault list  # Verify access
+   ```
+
+### Password Reset Link Expired
+
+**Symptoms**: User clicks password reset link and sees "Token expired"
+
+**Solutions**:
+- Default Keycloak token lifetime: 5 minutes
+- Configure in Keycloak: Realm Settings → Tokens → Action Token Lifespan
+- Recommended: 15-30 minutes for production
+
+---
+
+## �🔗 Related Documentation
 - [Security Design](SECURITY_DESIGN.md) — OWASP ASVS L2, nLPD/RGPD/FINMA controls
 - [Threat Model](THREAT_MODEL.md) — STRIDE analysis, Swiss compliance threats
 - [API Reference](API_REFERENCE.md) — SCIM 2.0 endpoints, OAuth scopes
