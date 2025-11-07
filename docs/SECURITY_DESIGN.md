@@ -7,7 +7,7 @@ Authoritative view of the security controls implemented in this SCIM PoC. Derive
 
 ---
 
-## 🇨🇭 Swiss Compliance Context
+## Swiss Compliance Context
 
 ### nLPD (new Swiss Data Protection Act)
 - **Traceability**: HMAC-SHA256 audit trail with ISO 8601 timestamps

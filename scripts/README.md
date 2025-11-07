@@ -26,6 +26,8 @@ Utility scripts for IAM PoC automation, infrastructure, and secret management.
 ### Configuration & Validation
 | Script | Purpose | Used By |
 |--------|---------|---------|
+| **[configure_smtp.py](configure_smtp.py)** | Configure Keycloak SMTP settings | `make quickstart`, Docker entrypoint |
+| **[check_smtp.py](check_smtp.py)** | Test SMTP connection and credentials | Manual validation |
 | **[validate_env.sh](validate_env.sh)** | Validate `.env` configuration (DEMO_MODE guards) | `make validate-env` |
 | **[validate_config.sh](validate_config.sh)** | Validate project setup and dependencies | Manual validation |
 
@@ -33,6 +35,42 @@ Utility scripts for IAM PoC automation, infrastructure, and secret management.
 | Script | Purpose | Used By |
 |--------|---------|---------|
 | **[update_env.py](update_env.py)** | Update key=value in `.env` files | Internal scripts |
+
+---
+
+## ⚠️ Important: Script Naming Convention
+
+**Why some scripts don't follow `test_*.py` pattern:**
+
+Scripts in this directory are **standalone utilities**, not pytest tests. To avoid pytest collection errors:
+
+- ✅ **Use descriptive names**: `check_smtp.py`, `audit.py`, `configure_smtp.py`  
+- ❌ **Avoid `test_*.py`**: Would be collected by pytest and cause `INTERNALERROR` if they call `sys.exit()`
+
+**Pytest configuration** (`pytest.ini`) explicitly excludes this directory:
+```ini
+[pytest]
+testpaths = tests
+norecursedirs = scripts htmlcov .git .github certs docs openapi proxy
+```
+
+**Example error if misconfigured:**
+```python
+# ❌ Bad: scripts/test_smtp.py (collected by pytest)
+sys.exit(1)  # → INTERNALERROR: SystemExit: 1
+
+# ✅ Good: scripts/check_smtp.py (ignored by pytest)
+sys.exit(1)  # → Works as expected standalone script
+```
+
+**Running scripts:**
+```bash
+# Inside Docker (recommended)
+docker compose exec flask-app python3 scripts/check_smtp.py
+
+# On host (requires Python 3.12 + dependencies)
+python3 scripts/check_smtp.py
+```
 
 ---
 

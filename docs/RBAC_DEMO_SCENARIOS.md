@@ -501,10 +501,10 @@ pytest tests/unit/test_audit.py -v
 - ✅ **90% Test Coverage** : Verifiable quality
 
 ### Swiss Market Positioning
-- 🇨🇭 **Finance** : FINMA compliance (non-repudiation, audit trail)
-- 🇨🇭 **Healthcare** : Strict nLPD (traceability, soft-delete)
-- 🇨🇭 **Tech/SaaS** : Modern IAM (SCIM, OIDC, automation)
-- 🇨🇭 **Consulting** : Keycloak → Azure Entra ID migration path (Azure-native roadmap)
+- **Finance** : FINMA compliance (non-repudiation, audit trail)
+- **Healthcare** : Strict nLPD (traceability, soft-delete)
+- **Tech/SaaS** : Modern IAM (SCIM, OIDC, automation)
+- **Consulting** : Keycloak → Azure Entra ID migration path (Azure-native roadmap)
 
 **Summary** : This project demonstrates **complete operational mastery of IAM standards** in an **Azure-first context** compliant with **Swiss requirements**. Ideal for **Junior Cloud Security Engineer (Azure)**, **IAM Engineer**, **DevSecOps Cloud** roles in Romandy.
 

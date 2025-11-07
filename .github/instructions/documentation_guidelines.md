@@ -41,7 +41,7 @@ Chaque document doit clairement indiquer son public cible :
 
 [Introduction avec contexte Swiss]
 
-## 🇨🇭 Swiss Regulatory Context
+## Swiss Regulatory Context
 ### nLPD
 - **Requirements** : [liste]
 - **Implementation** : [preuves avec fichiers]
@@ -73,7 +73,7 @@ Chaque document doit clairement indiquer son public cible :
 
 [Contenu technique standard]
 
-## 🇨🇭 Swiss Azure Regions
+## Swiss Azure Regions
 [Table des régions avec latence et use cases]
 ```
 
@@ -186,7 +186,7 @@ grep -E "RFC [0-9]{4}|OWASP|NIST" docs/*.md | wc -l  # Minimum 25 occurrences
 
 ### ✅ Bon Exemple (SECURITY_DESIGN.md)
 ```markdown
-## 🇨🇭 Swiss Compliance Context
+## Swiss Compliance Context
 
 ### nLPD (nouvelle Loi sur la Protection des Données)
 - **Traçabilité** : Audit trail HMAC-SHA256 avec timestamps ISO 8601

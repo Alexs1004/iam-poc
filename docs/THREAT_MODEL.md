@@ -5,7 +5,7 @@
 
 ---
 
-## 🇨🇭 Swiss Regulatory Context
+## Swiss Regulatory Context
 
 ### nLPD (nouvelle Loi sur la Protection des Données)
 **Requirements** :

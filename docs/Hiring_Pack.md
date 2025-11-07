@@ -1,4 +1,4 @@
-# 🇨🇭 Swiss Hiring Pack — Mini IAM Lab
+# Swiss Hiring Pack — Mini IAM Lab
 
 > **Recipients**: Cloud Security / IAM Recruiters · Tech Leads · Hiring Managers  
 > **Objective**: Facilitate technical candidate evaluation via Resume ↔ Repository mapping
@@ -106,7 +106,7 @@ Key files to examine (15 min):
 
 ---
 
-## 🇨🇭 Romandy Context
+## Romandy Context
 
 ### Implemented Regulatory Compliance
 - **nLPD (new Swiss Data Protection Act)**:

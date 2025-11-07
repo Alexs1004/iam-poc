@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Quick SMTP connection test to verify credentials.
-Run: docker-compose exec flask-app python3 scripts/test_smtp.py
+Run: docker-compose exec flask-app python3 scripts/check_smtp.py
 """
 import smtplib
 import os

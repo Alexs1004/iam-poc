@@ -178,7 +178,7 @@ make load-secrets     # fetches secrets into .runtime/secrets/
 
 ---
 
-## 🇨🇭 Swiss Azure Regions
+## Swiss Azure Regions
 
 For Swiss data residency requirements (nLPD, financial sector):
 
