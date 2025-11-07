@@ -129,6 +129,7 @@ fi
 if [[ "${NEED_BUILD}" == "true" ]]; then
   echo "[https] Building Flask image (dependency change detected)..."
   docker compose build flask-app
+  mkdir -p "${RUNTIME_BASE_DIR}"
   echo "${CURRENT_HASH}" > "${BUILD_MARKER}"
 else
   echo "[https] Flask image up to date; skipping build."
