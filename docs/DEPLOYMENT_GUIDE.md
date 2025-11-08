@@ -226,7 +226,7 @@ make load-secrets     # fetches secrets into .runtime/secrets/
 
 ---
 
-## � Troubleshooting
+## Troubleshooting
 
 ### SMTP Email Not Delivered
 
@@ -289,22 +289,8 @@ make load-secrets     # fetches secrets into .runtime/secrets/
 
 ---
 
-## �🔗 Related Documentation
+## Related Documentation
 - [Security Design](SECURITY_DESIGN.md) — OWASP ASVS L2, nLPD/RGPD/FINMA controls
 - [Threat Model](THREAT_MODEL.md) — STRIDE analysis, Swiss compliance threats
 - [API Reference](API_REFERENCE.md) — SCIM 2.0 endpoints, OAuth scopes
 - [Swiss Hiring Pack](Hiring_Pack.md) — Azure skills demonstration for recruiters
-
----
-
-## Swiss Azure Regions
-
-For Swiss data residency requirements (nLPD, financial sector):
-
-| Region | Code | Latency (Geneva) | Use Case |
-|--------|------|------------------|----------|
-| **Switzerland North** | `switzerlandnorth` | <5ms | Primary (Zurich datacenter) |
-| **Switzerland West** | `switzerlandwest` | <10ms | DR/backup (Geneva datacenter) |
-| West Europe | `westeurope` | ~15ms | Non-critical workloads |
-
-**Recommendation** : Deploy production in `switzerlandnorth` with geo-replication to `switzerlandwest` for FINMA compliance.
