@@ -123,6 +123,37 @@ class TestSCIMSchemaEndpoints:
         assert user_schema is not None
         assert user_schema['name'] == 'User'
 
+    def test_get_schema_user(self, client):
+        """Test GET /Schemas/urn:ietf:params:scim:schemas:core:2.0:User (lines 452-536)"""
+        response = client.get(
+            '/scim/v2/Schemas/urn:ietf:params:scim:schemas:core:2.0:User',
+            headers={'Authorization': 'Bearer test-token'}
+        )
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['id'] == 'urn:ietf:params:scim:schemas:core:2.0:User'
+        assert data['name'] == 'User'
+        assert 'attributes' in data
+        assert len(data['attributes']) > 0
+        # Verify key attributes are present
+        attr_names = [attr['name'] for attr in data['attributes']]
+        assert 'userName' in attr_names
+        assert 'emails' in attr_names
+        assert 'active' in attr_names
+
+    def test_get_schema_not_found(self, client):
+        """Test GET /Schemas/{unknown-schema} returns 404"""
+        response = client.get(
+            '/scim/v2/Schemas/urn:unknown:schema',
+            headers={'Authorization': 'Bearer test-token'}
+        )
+        
+        assert response.status_code == 404
+        data = response.get_json()
+        assert data['status'] == '404'
+        assert 'not found' in data['detail'].lower()
+
 
 class TestSCIMUserCRUD:
     """Test SCIM User CRUD operations"""
@@ -395,7 +426,7 @@ class TestSCIMUserCRUD:
         mock_delete.assert_called_once()
         assert mock_delete.call_args[0][0] == mock_keycloak_user["id"]
 
-    @patch('app.core.provisioning_service.patch_user_scim')
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
     def test_patch_user_active_success(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
         """Test PATCH /Users/{id} toggles active state"""
         updated_user = keycloak_to_scim({**mock_keycloak_user, 'enabled': False})
@@ -418,11 +449,19 @@ class TestSCIMUserCRUD:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['active'] is False
-        mock_patch_user.assert_called_once_with(mock_keycloak_user["id"], False, None)
+        # Verify patch_user_scim_multi was called with updates dict
+        mock_patch_user.assert_called_once()
+        call_args = mock_patch_user.call_args
+        assert call_args[0][0] == mock_keycloak_user["id"]  # user_id
+        assert call_args[0][1] == {"active": False}  # updates dict
+        # correlation_id is third arg (None in this test)
 
-    @patch('app.core.provisioning_service.patch_user_scim')
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
     def test_patch_user_multiple_operations_rejected(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
-        """PATCH should reject multiple operations"""
+        """PATCH should accept multiple operations (RFC 7644 compliant)"""
+        updated_user = keycloak_to_scim({**mock_keycloak_user, 'enabled': True})
+        mock_patch_user.return_value = updated_user
+        
         response = client.patch(
             f'/scim/v2/Users/{mock_keycloak_user["id"]}',
             headers={
@@ -438,8 +477,12 @@ class TestSCIMUserCRUD:
             }
         )
         
-        assert response.status_code == 400
-        mock_patch_user.assert_not_called()
+        # Multi-op PATCH is now supported - last operation wins
+        assert response.status_code == 200
+        # Verify the updates dict contains the final value
+        mock_patch_user.assert_called_once()
+        call_args = mock_patch_user.call_args
+        assert call_args[0][1] == {"active": True}  # Last operation wins
 
     @patch('app.core.provisioning_service.patch_user_scim')
     def test_patch_user_requires_authorization_header(self, mock_patch_user, client, mock_keycloak_user, monkeypatch):
@@ -587,6 +630,326 @@ class TestHelperFunctions:
         assert error_dict['detail'] == 'Invalid input'
         assert 'urn:ietf:params:scim:api:messages:2.0:Error' in error_dict['schemas']
 
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_emails_add(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH with add operation for emails"""
+        updated_user = keycloak_to_scim(mock_keycloak_user)
+        mock_patch_user.return_value = updated_user
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'add', 'path': 'emails[type eq "work"].value', 'value': 'work@example.com'}
+                ]
+            }
+        )
+        
+        assert response.status_code == 200
+        mock_patch_user.assert_called_once()
+        updates = mock_patch_user.call_args[0][1]
+        assert 'emails' in updates
+        assert any(e.get('type') == 'work' and e.get('value') == 'work@example.com' for e in updates['emails'])
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_phonenumbers_replace(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH with replace operation for phoneNumbers"""
+        updated_user = keycloak_to_scim(mock_keycloak_user)
+        mock_patch_user.return_value = updated_user
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'phoneNumbers[type eq "mobile"].value', 'value': '+1234567890'}
+                ]
+            }
+        )
+        
+        assert response.status_code == 200
+        mock_patch_user.assert_called_once()
+        updates = mock_patch_user.call_args[0][1]
+        assert 'phoneNumbers' in updates
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_displayname(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH with replace operation for displayName"""
+        updated_user = keycloak_to_scim(mock_keycloak_user)
+        mock_patch_user.return_value = updated_user
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'displayName', 'value': 'Alice Wonder Updated'}
+                ]
+            }
+        )
+        
+        assert response.status_code == 200
+        mock_patch_user.assert_called_once()
+        updates = mock_patch_user.call_args[0][1]
+        assert updates.get('displayName') == 'Alice Wonder Updated'
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_name_givenname(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH with replace operation for name.givenName"""
+        updated_user = keycloak_to_scim(mock_keycloak_user)
+        mock_patch_user.return_value = updated_user
+        
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'name.givenName', 'value': 'Alicia'}
+                ]
+            }
+        )
+        
+        assert response.status_code == 200
+        mock_patch_user.assert_called_once()
+        updates = mock_patch_user.call_args[0][1]
+        assert 'name' in updates
+        assert updates['name'].get('givenName') == 'Alicia'
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_unsupported_operation(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH with unsupported operation returns 501"""
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'remove', 'path': 'emails[type eq "work"]'}
+                ]
+            }
+        )
+        
+        assert response.status_code == 501
+        mock_patch_user.assert_not_called()
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_invalid_email_path(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH with invalid email path filter returns 400"""
+        response = client.patch(
+            f'/scim/v2/Users/{mock_keycloak_user["id"]}',
+            headers={
+                'Content-Type': 'application/scim+json',
+                'Authorization': mock_token
+            },
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {'op': 'replace', 'path': 'emails[invalid filter].value', 'value': 'test@example.com'}
+                ]
+            }
+        )
+        
+        assert response.status_code == 400
+        mock_patch_user.assert_not_called()
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_bad_json(self, mock_patch_user, client, mock_token, mock_oauth_validation):
+        """Test PATCH /Users/{id} with invalid JSON (line 673-674)"""
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            data='invalid json',
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data['scimType'] == 'invalidSyntax'
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_invalid_schema(self, mock_patch_user, client, mock_token, mock_oauth_validation):
+        """Test PATCH /Users/{id} with wrong schema (line 681)"""
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            json={
+                'schemas': ['urn:wrong:schema'],
+                'Operations': [{'op': 'add', 'path': 'active', 'value': True}]
+            },
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'schema' in data['detail'].lower()
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_empty_operations(self, mock_patch_user, client, mock_token, mock_oauth_validation):
+        """Test PATCH /Users/{id} with empty Operations array (line 685)"""
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': []
+            },
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'Operations' in data['detail']
+        assert 'empty' in data['detail'].lower()
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_non_dict_operation(self, mock_patch_user, client, mock_token, mock_oauth_validation):
+        """Test PATCH /Users/{id} with non-dict operation (line 692)"""
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': ["invalid-operation"]
+            },
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 400
+        data = response.get_json()
+        assert 'Operation must be an object' in data['detail']
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_phonenumber_value(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH phoneNumbers[type eq \"mobile\"].value (lines 773-787)"""
+        mock_patch_user.return_value = keycloak_to_scim({
+            **mock_keycloak_user,
+            'attributes': {'phone_mobile': ['+33612345678']}
+        })
+        
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {
+                        'op': 'add',
+                        'path': 'phoneNumbers[type eq "mobile"].value',
+                        'value': '+33612345678'
+                    }
+                ]
+            },
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 200
+        assert mock_patch_user.called
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_phonenumber_primary(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH phoneNumbers[type eq \"mobile\"].primary (lines 789-808)"""
+        mock_patch_user.return_value = keycloak_to_scim(mock_keycloak_user)
+        
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {
+                        'op': 'replace',
+                        'path': 'phoneNumbers[type eq "mobile"].primary',
+                        'value': True
+                    }
+                ]
+            },
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 200
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_phonenumber_invalid_path(self, mock_patch_user, client, mock_token, mock_oauth_validation):
+        """Test PATCH with invalid phoneNumber path filter (line 808)"""
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {
+                        'op': 'add',
+                        'path': 'phoneNumbers[invalid].value',
+                        'value': '+33612345678'
+                    }
+                ]
+            },
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data['scimType'] == 'invalidFilter'
+
+    @patch('app.core.provisioning_service.patch_user_scim_multi')
+    def test_patch_user_email_primary_boolean(self, mock_patch_user, client, mock_keycloak_user, mock_token, mock_oauth_validation):
+        """Test PATCH emails[type eq \"work\"].primary with boolean value (line 752-767)"""
+        mock_patch_user.return_value = keycloak_to_scim(mock_keycloak_user)
+        
+        response = client.patch(
+            '/scim/v2/Users/user-123',
+            json={
+                'schemas': ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+                'Operations': [
+                    {
+                        'op': 'replace',
+                        'path': 'emails[type eq "work"].primary',
+                        'value': True
+                    }
+                ]
+            },
+            headers={
+                'Authorization': mock_token,
+                'Content-Type': 'application/scim+json'
+            }
+        )
+        
+        assert response.status_code == 200
+
 
 class TestSCIMPaginationAndFiltering:
     """Test SCIM pagination and filtering logic"""
@@ -637,3 +1000,4 @@ class TestSCIMPaginationAndFiltering:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+

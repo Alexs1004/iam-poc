@@ -635,35 +635,33 @@ class TestCleanupVerifierUsers:
     """Test cleanup_verifier_users function."""
     
     @patch('app.api.verification.provisioning_service.get_service_token')
+    @patch('app.api.verification.provisioning_service.hard_delete_user')
     @patch('app.api.verification.requests.get')
-    @patch('app.api.verification.requests.delete')
-    @patch('os.environ.get')
-    def test_cleanup_success(self, mock_env_get, mock_delete, mock_get, mock_get_token):
-        """Test successful cleanup of verifier users."""
+    def test_cleanup_success(self, mock_get, mock_hard_delete, mock_get_token):
+        """Test successful cleanup of verifier users via hard delete."""
         mock_get_token.return_value = "service-token"
-        mock_env_get.return_value = "http://localhost:8000"
         
-        # Mock GET response with verifier users
+        # Mock GET response from Keycloak Admin API (not SCIM)
         mock_get_response = Mock()
         mock_get_response.status_code = 200
-        mock_get_response.json.return_value = {
-            "Resources": [
-                {"id": "1", "userName": "verifier-test1"},
-                {"id": "2", "userName": "alice"},  # Should be ignored
-                {"id": "3", "userName": "verifier-test2"},
-            ]
-        }
+        mock_get_response.json.return_value = [
+            {"id": "user-1", "username": "verifier-test1"},
+            {"id": "user-2", "username": "alice"},  # Should be ignored (no verifier- prefix)
+            {"id": "user-3", "username": "verifier-test2"},
+        ]
         mock_get.return_value = mock_get_response
         
-        # Mock DELETE responses
-        mock_delete_response = Mock()
-        mock_delete_response.status_code = 204
-        mock_delete.return_value = mock_delete_response
+        # Mock hard_delete_user (no exceptions)
+        mock_hard_delete.return_value = None
         
         result = cleanup_verifier_users()
         
         assert result == 2  # Only 2 verifier users deleted
-        assert mock_delete.call_count == 2
+        assert mock_hard_delete.call_count == 2
+        # Verify hard_delete_user was called with correct user IDs
+        calls = [call[0][0] for call in mock_hard_delete.call_args_list]
+        assert "user-1" in calls
+        assert "user-3" in calls
 
     @patch('app.api.verification.provisioning_service.get_service_token')
     @patch('app.api.verification.requests.get')

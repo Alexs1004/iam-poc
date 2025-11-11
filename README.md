@@ -39,11 +39,13 @@ open https://localhost
 - Secrets loaded from Azure Key Vault (zero-config demo mode available)
 - Cryptographic audit trail with verifiable HMAC-SHA256 signatures
 - Interactive verification page: https://localhost/verification
+- **API Documentation**: [ReDoc](https://localhost/scim/docs) | [OpenAPI 3.0.3 Spec](openapi/scim_openapi.yaml) — **v2.0.0** (Multi-operation PATCH, phoneNumbers, UPN support)
 
 **🎯 Entra ID Integration Status** (Phase Z1 - SCIM Provisioning):
-- SCIM 2.0 endpoints (`/scim/v2/Users`, `/Schemas`, `/ServiceProviderConfig`)
+- SCIM 2.0 endpoints (`/scim/v2/Users`, `/Schemas/{id}`, `/ServiceProviderConfig`)
 - Static Bearer token authentication (stored in Azure Key Vault)
-- Multi-operation PATCH support (RFC 7644 compliant)
+- **Multi-operation PATCH support** (RFC 7644 § 3.5.2: add, replace on emails, phoneNumbers, name, displayName, active)
+- **Upsert semantics** (add = create-or-update for emails/phones with type filters `emails[type eq "work"].value`)
 - UPN format support (`alice@domain.com`)
 - Active attribute synchronization (soft-delete for Leavers)
 - Public ngrok endpoint for Entra ID provisioning agent

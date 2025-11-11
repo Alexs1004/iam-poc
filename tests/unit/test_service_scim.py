@@ -184,9 +184,9 @@ def test_validate_username_too_long():
 
 
 def test_validate_username_invalid_chars():
-    """Usernames with special chars raise ScimError"""
+    """Usernames with special chars raise ScimError (@ is now allowed for UPN)"""
     with pytest.raises(ScimError) as exc:
-        validate_username("alice@example.com")
+        validate_username("alice#invalid!")  # # and ! are not allowed
     assert exc.value.status == 400
     assert exc.value.scim_type == "invalidValue"
 
@@ -920,3 +920,411 @@ def test_internal_error_wrapped_in_scim_error(mock_jml, mock_audit, valid_create
     
     assert exc.value.status == 500
     assert "failed to create user" in exc.value.detail.lower()
+
+
+# ============================================================================
+# PATCH Multi-Operations Tests (RFC 7644)
+# ============================================================================
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.put')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_displayname(mock_token, mock_put, mock_get):
+    """Test patch_user_scim_multi with displayName update"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET: initial state, then refreshed state after PUT
+    mock_get.side_effect = [
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'email': 'alice@example.com',
+                'firstName': 'Alice',
+                'lastName': 'Wonder',
+                'enabled': True
+            }
+        ),
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'email': 'alice@example.com',
+                'firstName': 'Alice',
+                'lastName': 'Wonder Updated',
+                'enabled': True
+            }
+        )
+    ]
+    
+    # Mock PUT: success
+    mock_put.return_value = MagicMock(status_code=204)
+    
+    updates = {'displayName': 'Alice Wonder Updated'}
+    result = patch_user_scim_multi('user-123', updates, correlation_id='test-123')
+    
+    # keycloak_to_scim returns name.givenName/familyName, not displayName
+    assert result['name']['givenName'] == 'Alice'
+    assert result['name']['familyName'] == 'Wonder Updated'
+    mock_put.assert_called_once()
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.put')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_name_fields(mock_token, mock_put, mock_get):
+    """Test patch_user_scim_multi with name.givenName and name.familyName"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET: initial state, then refreshed state
+    mock_get.side_effect = [
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'email': 'alice@example.com',
+                'firstName': 'Alice',
+                'lastName': 'Wonder',
+                'enabled': True
+            }
+        ),
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'email': 'alice@example.com',
+                'firstName': 'Alicia',
+                'lastName': 'Wonderland',
+                'enabled': True
+            }
+        )
+    ]
+    mock_put.return_value = MagicMock(status_code=204)
+    
+    updates = {
+        'name': {
+            'givenName': 'Alicia',
+            'familyName': 'Wonderland'
+        }
+    }
+    result = patch_user_scim_multi('user-123', updates)
+    
+    assert result['name']['givenName'] == 'Alicia'
+    assert result['name']['familyName'] == 'Wonderland'
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.put')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_emails_upsert(mock_token, mock_put, mock_get):
+    """Test patch_user_scim_multi with emails upsert logic"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET: initial state, then refreshed state with new email
+    mock_get.side_effect = [
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'email': 'alice@example.com',
+                'firstName': 'Alice',
+                'lastName': 'Wonder',
+                'enabled': True
+            }
+        ),
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'email': 'alice.work@company.com',
+                'firstName': 'Alice',
+                'lastName': 'Wonder',
+                'enabled': True
+            }
+        )
+    ]
+    mock_put.return_value = MagicMock(status_code=204)
+    
+    updates = {
+        'emails': [
+            {'type': 'work', 'value': 'alice.work@company.com', 'primary': True}
+        ]
+    }
+    result = patch_user_scim_multi('user-123', updates)
+    
+    # keycloak_to_scim returns emails with value and primary, not type
+    assert len(result['emails']) >= 1
+    primary_email = next((e for e in result['emails'] if e.get('primary')), None)
+    assert primary_email is not None
+    assert primary_email['value'] == 'alice.work@company.com'
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_user_not_found(mock_token, mock_get):
+    """Test patch_user_scim_multi raises 404 when user not found"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET: 404 Not Found
+    mock_get.return_value = MagicMock(status_code=404)
+    
+    with pytest.raises(ScimError) as exc:
+        patch_user_scim_multi('nonexistent-user', {'displayName': 'Test'})
+    
+    assert exc.value.status == 404
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.put')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_active_false_idempotent(mock_token, mock_put, mock_get):
+    """Test patch_user_scim_multi with active=false is idempotent"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET: user already disabled (both calls return same state)
+    mock_get.side_effect = [
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'enabled': False  # Already disabled
+            }
+        ),
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'enabled': False
+            }
+        )
+    ]
+    
+    updates = {'active': False}
+    result = patch_user_scim_multi('user-123', updates)
+    
+    # Should NOT call PUT (idempotent: no change detected)
+    mock_put.assert_not_called()
+    assert result['active'] is False
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.put')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_phonenumbers(mock_token, mock_put, mock_get):
+    """Test patch_user_scim_multi with phoneNumbers update (lines 769-784)"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET: initial state, then refreshed state with phone
+    mock_get.side_effect = [
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'enabled': True
+            }
+        ),
+        MagicMock(
+            status_code=200,
+            json=lambda: {
+                'id': 'user-123',
+                'username': 'alice',
+                'enabled': True,
+                'attributes': {
+                    'phone_mobile': ['+33612345678'],
+                    'phone_mobile_primary': ['true']
+                }
+            }
+        )
+    ]
+    mock_put.return_value = MagicMock(status_code=204)
+    
+    updates = {
+        'phoneNumbers': [
+            {'type': 'mobile', 'value': '+33612345678', 'primary': True}
+        ]
+    }
+    result = patch_user_scim_multi('user-123', updates)
+    
+    # Verify PUT was called with phone attributes
+    assert mock_put.called
+    call_payload = mock_put.call_args[1]['json']
+    assert 'attributes' in call_payload
+    assert call_payload['attributes']['phone_mobile'] == ['+33612345678']
+    assert call_payload['attributes']['phone_mobile_primary'] == ['true']
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_get_error(mock_token, mock_get):
+    """Test patch_user_scim_multi handles GET errors (lines 707-708)"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET to raise generic exception
+    mock_get.side_effect = Exception("Network timeout")
+    
+    with pytest.raises(ScimError) as exc:
+        patch_user_scim_multi('user-123', {'displayName': 'Test'})
+    
+    assert exc.value.status == 500
+    assert "Failed to retrieve user" in exc.value.detail
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.put')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_put_error(mock_token, mock_put, mock_get):
+    """Test patch_user_scim_multi handles PUT errors (lines 791-792)"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock successful GET
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {
+            'id': 'user-123',
+            'username': 'alice',
+            'enabled': True
+        }
+    )
+    
+    # Mock PUT to raise exception
+    mock_put.side_effect = Exception("Keycloak unavailable")
+    
+    with pytest.raises(ScimError) as exc:
+        patch_user_scim_multi('user-123', {'displayName': 'Test New'})
+    
+    assert exc.value.status == 500
+    assert "Failed to update user" in exc.value.detail
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.put')
+@patch('app.core.provisioning_service.get_service_token')
+def test_patch_user_scim_multi_refresh_error(mock_token, mock_put, mock_get):
+    """Test patch_user_scim_multi handles refresh GET error (lines 799-800)"""
+    from app.core.provisioning_service import patch_user_scim_multi
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock: first GET succeeds, PUT succeeds, second GET (refresh) fails
+    mock_get.side_effect = [
+        MagicMock(
+            status_code=200,
+            json=lambda: {'id': 'user-123', 'username': 'alice', 'enabled': True}
+        ),
+        Exception("Network error on refresh")  # Second GET fails
+    ]
+    mock_put.return_value = MagicMock(status_code=204)
+    
+    with pytest.raises(ScimError) as exc:
+        patch_user_scim_multi('user-123', {'displayName': 'Test New'})
+    
+    assert exc.value.status == 500
+    assert "could not be refreshed" in exc.value.detail.lower()
+
+
+# ============================================================================
+# Hard Delete Tests
+# ============================================================================
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.delete')
+@patch('app.core.provisioning_service.get_service_token')
+@patch('app.core.provisioning_service.audit.log_jml_event')
+def test_hard_delete_user_success(mock_audit, mock_token, mock_delete, mock_get):
+    """Test hard_delete_user successfully deletes user (lines 881-908)"""
+    from app.core.provisioning_service import hard_delete_user
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET to retrieve username
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {'id': 'user-123', 'username': 'alice'}
+    )
+    
+    # Mock DELETE success
+    mock_delete.return_value = MagicMock(status_code=204)
+    
+    hard_delete_user('user-123')
+    
+    # Verify GET was called to fetch username
+    assert mock_get.called
+    assert 'user-123' in mock_get.call_args[0][0]
+    
+    # Verify DELETE was called
+    assert mock_delete.called
+    assert 'user-123' in mock_delete.call_args[0][0]
+    
+    # Verify audit log
+    mock_audit.assert_called_once()
+    assert mock_audit.call_args[0][0] == "hard_delete_user"
+    assert mock_audit.call_args[0][1] == "alice"
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.get_service_token')
+def test_hard_delete_user_not_found(mock_token, mock_get):
+    """Test hard_delete_user raises 404 when user not found"""
+    from app.core.provisioning_service import hard_delete_user
+    import requests
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET raises RequestException
+    mock_get.side_effect = requests.RequestException("Not found")
+    
+    with pytest.raises(ScimError) as exc:
+        hard_delete_user('nonexistent-user')
+    
+    assert exc.value.status == 404
+
+
+@patch('app.core.provisioning_service.requests.get')
+@patch('app.core.provisioning_service.requests.delete')
+@patch('app.core.provisioning_service.get_service_token')
+def test_hard_delete_user_delete_fails(mock_token, mock_delete, mock_get):
+    """Test hard_delete_user handles DELETE failures"""
+    from app.core.provisioning_service import hard_delete_user
+    import requests
+    
+    mock_token.return_value = "service-token"
+    
+    # Mock GET success
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {'id': 'user-123', 'username': 'alice'}
+    )
+    
+    # Mock DELETE fails
+    mock_delete.side_effect = requests.RequestException("Keycloak error")
+    
+    with pytest.raises(ScimError) as exc:
+        hard_delete_user('user-123')
+    
+    assert exc.value.status == 500
+    assert "Failed to hard-delete user" in exc.value.detail

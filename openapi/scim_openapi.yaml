@@ -1,11 +1,32 @@
 openapi: 3.0.3
 info:
   title: IAM PoC SCIM 2.0 API
-  version: 1.0.0
-  description: >
-    Lightweight SCIM 2.0 service designed to model enterprise identity lifecycle flows.
-    Emphasis on secure defaults, standards alignment, and interoperability with cloud IdPs.
-    Filtering limited to `userName eq`. PATCH limited to toggling `active`.
+  version: 2.0.0
+  description: |
+    **RFC 7644 compliant SCIM 2.0 service** for enterprise identity lifecycle management.
+    
+    **Key Features:**
+    - Multi-operation PATCH (RFC 7644 § 3.5.2): add, replace operations
+    - Complex multi-valued attributes: emails, phoneNumbers with type filters
+    - UPN username format support (alice@domain.com)
+    - Azure Entra ID Enterprise App compatible
+    - Static Bearer Token OR OAuth2 authentication
+    - Comprehensive schema discovery (/Schemas, /ResourceTypes, /ServiceProviderConfig)
+    
+    **Supported PATCH paths:**
+    - `active` (boolean)
+    - `displayName` (string)
+    - `name.givenName`, `name.familyName` (string)
+    - `emails[type eq "work"].value` (string, upsert semantics)
+    - `emails[type eq "work"].primary` (boolean)
+    - `phoneNumbers[type eq "mobile"].value` (string, upsert semantics)
+    - `phoneNumbers[type eq "mobile"].primary` (boolean)
+    
+    **Authentication:**
+    - OAuth2 Bearer Token (Keycloak service account)
+    - Static Bearer Token (Azure Entra ID Enterprise App: `SCIM_STATIC_TOKEN`)
+    
+    **Production Deployment:** https://github.com/Alexs1004/iam-poc
   contact:
     name: Alexs1004 — IAM & Cloud Security
     url: https://github.com/Alexs1004/iam-poc
@@ -65,6 +86,75 @@ paths:
             application/scim+json:
               schema:
                 $ref: '#/components/schemas/SchemaList'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /scim/v2/Schemas/{schemaId}:
+    get:
+      tags: [Metadata]
+      summary: Retrieve detailed schema definition
+      description: |
+        Returns the complete attribute metadata for a SCIM schema (RFC 7643 § 7).
+        
+        **Supported schemas:**
+        - `urn:ietf:params:scim:schemas:core:2.0:User`
+      operationId: getSchema
+      parameters:
+        - name: schemaId
+          in: path
+          required: true
+          description: Schema URN identifier
+          schema:
+            type: string
+            example: urn:ietf:params:scim:schemas:core:2.0:User
+      responses:
+        '200':
+          description: Schema definition with attribute metadata
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/SchemaDefinition'
+              example:
+                id: urn:ietf:params:scim:schemas:core:2.0:User
+                name: User
+                description: User Account
+                schemas: ["urn:ietf:params:scim:schemas:core:2.0:Schema"]
+                attributes:
+                  - name: userName
+                    type: string
+                    multiValued: false
+                    required: true
+                    caseExact: false
+                    mutability: readWrite
+                    returned: default
+                    uniqueness: server
+                  - name: emails
+                    type: complex
+                    multiValued: true
+                    required: false
+                    mutability: readWrite
+                    returned: default
+                    subAttributes:
+                      - name: value
+                        type: string
+                        multiValued: false
+                        required: false
+                      - name: type
+                        type: string
+                        canonicalValues: ["work", "home", "other"]
+                meta:
+                  resourceType: Schema
+                  location: https://localhost/scim/v2/Schemas/urn:ietf:params:scim:schemas:core:2.0:User
+        '404':
+          description: Schema not found
+          content:
+            application/scim+json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"]
+                status: "404"
+                detail: "Schema urn:unknown:schema not found"
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -206,23 +296,102 @@ paths:
 
     patch:
       tags: [Users]
-      summary: Toggle user active state
-      description: >
-        Minimal PatchOp implementation that supports a single `replace` operation
-        on the `active` attribute.
-      operationId: patchUserActive
+      summary: Partial update user attributes (RFC 7644 § 3.5.2)
+      description: |
+        **Multi-operation PATCH support** with add and replace operations.
+        
+        **Supported operations:**
+        - `add`: Create or update attribute (upsert semantics)
+        - `replace`: Update existing attribute
+        
+        **Supported paths:**
+        - `active` (boolean): Enable/disable user account
+        - `displayName` (string): Full display name (splits to firstName/lastName)
+        - `name.givenName` (string): First name
+        - `name.familyName` (string): Last name
+        - `emails[type eq "work"].value` (string): Work email (upsert)
+        - `emails[type eq "work"].primary` (boolean): Primary flag
+        - `phoneNumbers[type eq "mobile"].value` (string): Mobile phone (upsert)
+        - `phoneNumbers[type eq "mobile"].primary` (boolean): Primary flag
+        
+        **Multi-operation behavior:**
+        - Multiple operations processed sequentially
+        - Last operation wins for conflicting paths
+        - Upsert semantics: `add` creates if missing, updates if exists
+        
+        **Examples:**
+        ```json
+        // Disable account
+        {"Operations": [{"op": "replace", "path": "active", "value": false}]}
+        
+        // Update name
+        {"Operations": [
+          {"op": "replace", "path": "name.givenName", "value": "Alice"},
+          {"op": "replace", "path": "name.familyName", "value": "Smith"}
+        ]}
+        
+        // Add/update work email
+        {"Operations": [
+          {"op": "add", "path": "emails[type eq \"work\"].value", "value": "alice@company.com"}
+        ]}
+        ```
+      operationId: patchUser
       requestBody:
         required: true
         content:
           application/scim+json:
             schema:
-              $ref: '#/components/schemas/UserPatchActiveRequest'
-            example:
-              schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
-              Operations:
-                - op: replace
-                  path: active
-                  value: false
+              $ref: '#/components/schemas/UserPatchRequest'
+            examples:
+              disableAccount:
+                summary: Disable user account
+                value:
+                  schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
+                  Operations:
+                    - op: replace
+                      path: active
+                      value: false
+              updateName:
+                summary: Update user name
+                value:
+                  schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
+                  Operations:
+                    - op: replace
+                      path: name.givenName
+                      value: Alice
+                    - op: replace
+                      path: name.familyName
+                      value: Smith
+              addWorkEmail:
+                summary: Add or update work email (upsert)
+                value:
+                  schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
+                  Operations:
+                    - op: add
+                      path: emails[type eq "work"].value
+                      value: alice.work@company.com
+              addMobilePhone:
+                summary: Add mobile phone number
+                value:
+                  schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
+                  Operations:
+                    - op: add
+                      path: phoneNumbers[type eq "mobile"].value
+                      value: "+33612345678"
+              multiOperation:
+                summary: Multiple operations (last wins)
+                value:
+                  schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"]
+                  Operations:
+                    - op: replace
+                      path: displayName
+                      value: Alice Smith
+                    - op: add
+                      path: emails[type eq "work"].value
+                      value: alice@company.com
+                    - op: replace
+                      path: active
+                      value: true
       responses:
         '200':
           description: Updated user representation
@@ -291,9 +460,25 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: >
-        OAuth 2.0 bearer token issued by Keycloak (`automation-cli` client).
-        Requests without Authorization header are rejected in production.
+      description: |
+        **Two authentication methods supported:**
+        
+        1. **OAuth 2.0 Bearer Token** (Keycloak service account)
+           - Client: `automation-cli`
+           - Scopes: `scim:read`, `scim:write`
+           - Issued by: Keycloak `/realms/demo/protocol/openid-connect/token`
+        
+        2. **Static Bearer Token** (Azure Entra ID Enterprise App)
+           - Environment variable: `SCIM_STATIC_TOKEN`
+           - Length: 44+ characters (cryptographically secure)
+           - Used for Azure AD provisioning integration
+        
+        **Example:**
+        ```
+        Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+        ```
+        
+        Requests without `Authorization` header are rejected with `401 Unauthorized`.
 
   parameters:
     UserId:
@@ -547,6 +732,79 @@ components:
           items:
             type: object
           description: SCIM schema definitions (core:User, etc.).
+    
+    SchemaDefinition:
+      type: object
+      required: [id, name, schemas, attributes]
+      description: RFC 7643 § 7 - Complete schema definition with attribute metadata
+      properties:
+        id:
+          type: string
+          example: urn:ietf:params:scim:schemas:core:2.0:User
+        name:
+          type: string
+          example: User
+        description:
+          type: string
+          example: User Account
+        schemas:
+          type: array
+          items: { type: string }
+          example: ["urn:ietf:params:scim:schemas:core:2.0:Schema"]
+        attributes:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                example: userName
+              type:
+                type: string
+                enum: [string, boolean, integer, decimal, dateTime, reference, complex]
+                example: string
+              multiValued:
+                type: boolean
+                example: false
+              required:
+                type: boolean
+                example: true
+              caseExact:
+                type: boolean
+                example: false
+              mutability:
+                type: string
+                enum: [readOnly, readWrite, immutable, writeOnly]
+                example: readWrite
+              returned:
+                type: string
+                enum: [always, never, default, request]
+                example: default
+              uniqueness:
+                type: string
+                enum: [none, server, global]
+                example: server
+              subAttributes:
+                type: array
+                description: For complex types (emails, phoneNumbers)
+                items:
+                  type: object
+              canonicalValues:
+                type: array
+                description: Valid values for enumerations
+                items:
+                  type: string
+                example: ["work", "home", "other"]
+        meta:
+          type: object
+          properties:
+            resourceType:
+              type: string
+              example: Schema
+            location:
+              type: string
+              format: uri
+              example: https://localhost/scim/v2/Schemas/urn:ietf:params:scim:schemas:core:2.0:User
     SearchRequest:
       type: object
       properties:
@@ -570,6 +828,7 @@ components:
     User:
       type: object
       required: [schemas, id, userName, active]
+      description: SCIM User resource (RFC 7643 § 4.1)
       properties:
         schemas:
           type: array
@@ -577,21 +836,41 @@ components:
           example: ["urn:ietf:params:scim:schemas:core:2.0:User"]
         id:
           type: string
+          description: Unique identifier (Keycloak user UUID)
           example: 5111c028-18a2-4eb4-8b41-08bf4dcdce5a
         externalId:
           type: string
           nullable: true
+          description: External system identifier (optional)
         userName:
           type: string
-          example: alice
+          description: |
+            Unique username for login.
+            
+            **Supported formats:**
+            - Alphanumeric: `alice`, `bob123`
+            - UPN: `alice@example.com`, `bob@company.ch`
+            - Underscores/hyphens: `alice_wonder`, `bob-smith`
+          example: alice@example.com
+        displayName:
+          type: string
+          description: Full display name (computed from firstName + lastName in Keycloak)
+          example: Alice Wonder
         name:
           $ref: '#/components/schemas/Name'
         emails:
           type: array
           items:
             $ref: '#/components/schemas/Email'
+          description: Multi-valued email addresses (work, home, other)
+        phoneNumbers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhoneNumber'
+          description: Multi-valued phone numbers (mobile, work, home)
         active:
           type: boolean
+          description: Account enabled status (true = active, false = disabled)
           example: true
         meta:
           $ref: '#/components/schemas/Meta'
@@ -604,6 +883,7 @@ components:
     UserUpdateRequest:
       type: object
       required: [schemas]
+      description: User update payload (PUT /Users/{id} - currently returns 501)
       properties:
         schemas:
           type: array
@@ -611,18 +891,36 @@ components:
           default: ["urn:ietf:params:scim:schemas:core:2.0:User"]
         userName:
           type: string
+          description: Username (UPN format supported)
+          example: alice@example.com
+        displayName:
+          type: string
+          description: Full display name
+          example: Alice Wonder
         name:
           $ref: '#/components/schemas/Name'
         emails:
           type: array
           items:
             $ref: '#/components/schemas/Email'
+        phoneNumbers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PhoneNumber'
         active:
           type: boolean
+          description: Account enabled status
+          example: true
 
-    UserPatchActiveRequest:
+    UserPatchRequest:
       type: object
       required: [schemas, Operations]
+      description: |
+        RFC 7644 § 3.5.2 compliant PATCH request with multi-operation support.
+        
+        **Supported operations:** `add`, `replace`
+        
+        **Supported paths:** See endpoint description for complete list.
       properties:
         schemas:
           type: array
@@ -634,19 +932,40 @@ components:
         Operations:
           type: array
           minItems: 1
-          maxItems: 1
+          description: One or more PATCH operations (processed sequentially, last wins)
           items:
             type: object
-            required: [op, path, value]
+            required: [op]
             properties:
               op:
                 type: string
-                enum: ["replace"]
+                enum: [add, replace]
+                description: |
+                  - `add`: Create or update (upsert semantics)
+                  - `replace`: Update existing value
               path:
                 type: string
-                enum: ["active"]
+                description: |
+                  Attribute path (optional for single-value operations).
+                  
+                  **Examples:**
+                  - `active`
+                  - `displayName`
+                  - `name.givenName`
+                  - `name.familyName`
+                  - `emails[type eq "work"].value`
+                  - `emails[type eq "work"].primary`
+                  - `phoneNumbers[type eq "mobile"].value`
+                  - `phoneNumbers[type eq "mobile"].primary`
+                example: active
               value:
-                type: boolean
+                oneOf:
+                  - type: boolean
+                  - type: string
+                  - type: object
+                  - type: array
+                description: New value for the attribute
+                example: false
 
     UserListResponse:
       type: object
@@ -683,9 +1002,28 @@ components:
         value:
           type: string
           format: email
+          example: alice@example.com
         type:
           type: string
+          enum: [work, home, other]
           example: work
+        primary:
+          type: boolean
+          example: true
+
+    PhoneNumber:
+      type: object
+      required: [value]
+      description: Multi-valued phone number attribute (RFC 7643 § 4.1.2)
+      properties:
+        value:
+          type: string
+          description: Phone number in E.164 format recommended
+          example: "+33612345678"
+        type:
+          type: string
+          enum: [work, home, mobile, fax, pager, other]
+          example: mobile
         primary:
           type: boolean
           example: true

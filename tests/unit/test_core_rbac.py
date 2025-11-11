@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import patch, MagicMock
 
 import pytest
 from flask import Flask, session
@@ -17,6 +18,8 @@ def app_ctx():
     app.config["APP_CONFIG"] = SimpleNamespace(
         keycloak_server_url="https://localhost",
         keycloak_issuer="https://localhost/realms/demo",
+        oidc_client_id="flask-app",
+        oidc_client_secret="test-secret",
     )
     # Provide deterministic logger interface for assertions
     app.logger = SimpleNamespace(warning=lambda *args, **kwargs: None, error=lambda *args, **kwargs: None)
@@ -176,24 +179,34 @@ def test_current_user_context_fetches_userinfo(app_ctx, monkeypatch):
     assert roles == ["admin", "analyst"]
 
 
-def test_refresh_session_token_success(app_ctx, monkeypatch):
+@patch('app.core.rbac.requests.post')
+@patch('app.api.auth.get_oidc_client')
+def test_refresh_session_token_success(mock_get_client, mock_post, app_ctx, monkeypatch):
+    """Test successful token refresh using requests.post (Authlib 1.6.5+)."""
     session["token"] = {"access_token": "old", "refresh_token": "refresh", "expires_at": 900}
     monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
 
-    class FakeClient:
-        def refresh_token(self, endpoint, refresh_token):
-            assert refresh_token == "refresh"
-            return {"access_token": "new", "refresh_token": "new-refresh", "expires_in": 120}
+    # Mock requests.post response
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"access_token": "new", "refresh_token": "new-refresh", "expires_in": 120}
+    mock_response.raise_for_status = MagicMock()  # No exception
+    mock_post.return_value = mock_response
 
-        def parse_id_token(self, token):
-            return {"sub": "svc-account"}
-
-    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+    # Mock OIDC client
+    mock_client = MagicMock()
+    mock_client.parse_id_token.return_value = {"sub": "svc-account"}
+    mock_get_client.return_value = mock_client
 
     assert rbac.refresh_session_token() is True
     assert session["token"]["access_token"] == "new"
     assert session["token"]["expires_at"] == pytest.approx(1120.0)
     assert session["id_claims"] == {"sub": "svc-account"}
+    
+    # Verify requests.post was called with correct parameters
+    assert mock_post.called
+    call_data = mock_post.call_args[1]['data']
+    assert call_data['grant_type'] == 'refresh_token'
+    assert call_data['refresh_token'] == 'refresh'
 
 
 def test_refresh_session_token_missing_refresh_token(app_ctx, monkeypatch):
@@ -206,15 +219,14 @@ def test_refresh_session_token_missing_refresh_token(app_ctx, monkeypatch):
     assert "id_claims" not in session
 
 
-def test_refresh_session_token_handles_refresh_failure(app_ctx, monkeypatch):
+@patch('app.core.rbac.requests.post')
+def test_refresh_session_token_handles_refresh_failure(mock_post, app_ctx, monkeypatch):
+    """Test refresh_session_token handles HTTP errors from token endpoint"""
     session["token"] = {"access_token": "a", "refresh_token": "r", "expires_at": 900}
     monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
 
-    class FakeClient:
-        def refresh_token(self, endpoint, refresh_token):
-            raise RuntimeError("cannot refresh")
-
-    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+    # Mock requests.post to raise HTTP error
+    mock_post.side_effect = RuntimeError("cannot refresh")
 
     assert rbac.refresh_session_token() is False
     assert "token" not in session
@@ -239,19 +251,23 @@ def test_decode_access_token_with_empty_token():
     assert rbac.decode_access_token(None, "issuer") == {}
 
 
-def test_refresh_session_token_with_expires_in_conversion_error(app_ctx, monkeypatch):
+@patch('app.core.rbac.requests.post')
+@patch('app.api.auth.get_oidc_client')
+def test_refresh_session_token_with_expires_in_conversion_error(mock_get_client, mock_post, app_ctx, monkeypatch):
     """Test refresh_session_token handles invalid expires_in (lines 140-147)."""
     session["token"] = {"access_token": "a", "refresh_token": "r", "expires_at": 900, "expires_in": "invalid"}
     monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
 
-    class FakeClient:
-        def refresh_token(self, endpoint, refresh_token):
-            return {"access_token": "new", "expires_in": "not-an-int"}
-        
-        def parse_id_token(self, token):
-            raise RuntimeError("parse failure")
+    # Mock requests.post response with invalid expires_in
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"access_token": "new", "expires_in": "not-an-int"}
+    mock_response.raise_for_status = MagicMock()
+    mock_post.return_value = mock_response
 
-    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+    # Mock OIDC client that raises exception
+    mock_client = MagicMock()
+    mock_client.parse_id_token.side_effect = RuntimeError("parse failure")
+    mock_get_client.return_value = mock_client
 
     result = rbac.refresh_session_token()
     assert result is True
@@ -282,36 +298,43 @@ def test_current_username_with_no_valid_fields(app_ctx, monkeypatch):
     assert rbac.current_username() == ""
 
 
-def test_refresh_session_token_with_null_new_token(app_ctx, monkeypatch):
-    """Test refresh_session_token when refresh returns None (line 173-174)."""
+@patch('app.core.rbac.requests.post')
+def test_refresh_session_token_with_null_new_token(mock_post, app_ctx, monkeypatch):
+    """Test refresh_session_token when refresh returns empty JSON (line 173-174)."""
     session["token"] = {"access_token": "a", "refresh_token": "r", "expires_at": 900}
     monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
 
-    class FakeClient:
-        def refresh_token(self, endpoint, refresh_token):
-            return None  # Simulate null response
-
-    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+    # Mock requests.post response returning empty/null JSON
+    mock_response = MagicMock()
+    mock_response.json.return_value = None  # Simulate null/empty response
+    mock_response.raise_for_status = MagicMock()
+    mock_post.return_value = mock_response
 
     result = rbac.refresh_session_token()
     assert result is False
     assert "token" not in session
 
 
-def test_refresh_session_token_without_expires_at_fallback(app_ctx, monkeypatch):
+@patch('app.core.rbac.requests.post')
+@patch('app.api.auth.get_oidc_client')
+def test_refresh_session_token_without_expires_at_fallback(mock_get_client, mock_post, app_ctx, monkeypatch):
     """Test refresh_session_token expires_at fallback (line 185-186)."""
     session["token"] = {"access_token": "a", "refresh_token": "r", "expires_at": 1030}  # Expires in 30s
     monkeypatch.setattr(rbac.time, "time", lambda: 1000.0)
 
-    class FakeClient:
-        def refresh_token(self, endpoint, refresh_token):
-            # Return token without expires_in and expires_at
-            return {"access_token": "new", "refresh_token": "r"}
-        
-        def parse_id_token(self, token):
-            return {"sub": "user"}
+    # Mock requests.post response without expires_in and expires_at
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"access_token": "new", "refresh_token": "r"}
+    mock_response.raise_for_status = MagicMock()
+    mock_post.return_value = mock_response
 
-    monkeypatch.setattr("app.api.auth.get_oidc_client", lambda: FakeClient())
+    # Mock OIDC client
+    mock_client = MagicMock()
+    mock_client.parse_id_token.return_value = {"sub": "user"}
+    mock_get_client.return_value = mock_client
+
+    result = rbac.refresh_session_token()
+    assert result is True
 
     result = rbac.refresh_session_token()
     assert result is True
