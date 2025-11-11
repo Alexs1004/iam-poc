@@ -15,12 +15,12 @@
 | **[Main README](../README.md)** | Cloud Security Engineer positioning (Swiss), 2-min start | All (initial screening) |
 
 **What recruiters should remember**:
+- **Azure Entra ID SCIM 2.0 provisioning** (production-ready, RFC 7644 compliant)
 - Operational Azure Key Vault (production-ready secrets management)
-- SCIM 2.0 RFC 7644 compliant (inter-enterprise IAM standard)
 - Swiss compliance: nLPD, GDPR, FINMA (non-repudiable audit trail)
 - 346 automated tests, 91% coverage (verifiable code quality)
 - Security pipeline: Gitleaks, Trivy, Syft, Grype (CI/CD + local)
-- Azure-native roadmap: Entra ID migration planned
+- Azure-native integration: Entra ID SCIM provisioning operational
 
 ---
 

@@ -198,6 +198,10 @@ def validate_request():
         "/scim/v2/ResourceTypes",
         "/scim/v2/Schemas"
     ]
+    
+    # Allow schema discovery by ID (Entra ID needs this for attribute discovery)
+    if request.path.startswith("/scim/v2/Schemas/"):
+        discovery_endpoints.append(request.path)
     if request.path in discovery_endpoints:
         return None  # Allow public access
     
@@ -437,6 +441,105 @@ def schemas():
     return jsonify(schema_list), 200
 
 
+@bp.route('/Schemas/<path:schema_id>', methods=['GET'])
+def schema_by_id(schema_id):
+    """Return a specific SCIM schema by ID.
+    
+    RFC 7643 Section 8.7: Schema Discovery
+    Some SCIM clients (like Azure Entra ID) request schemas individually.
+    """
+    # For now, we only support User schema
+    if schema_id == "urn:ietf:params:scim:schemas:core:2.0:User":
+        user_schema = {
+            "id": "urn:ietf:params:scim:schemas:core:2.0:User",
+            "name": "User",
+            "description": "User Account",
+            "attributes": [
+                {
+                    "name": "userName",
+                    "type": "string",
+                    "multiValued": False,
+                    "required": True,
+                    "caseExact": False,
+                    "mutability": "readWrite",
+                    "returned": "default",
+                    "uniqueness": "server"
+                },
+                {
+                    "name": "externalId",
+                    "type": "string",
+                    "multiValued": False,
+                    "required": False,
+                    "caseExact": True,
+                    "mutability": "readWrite",
+                    "returned": "default",
+                    "uniqueness": "none"
+                },
+                {
+                    "name": "emails",
+                    "type": "complex",
+                    "multiValued": True,
+                    "required": False,
+                    "mutability": "readWrite",
+                    "returned": "default",
+                    "subAttributes": [
+                        {
+                            "name": "value",
+                            "type": "string",
+                            "multiValued": False,
+                            "required": False,
+                            "caseExact": False,
+                            "mutability": "readWrite",
+                            "returned": "default"
+                        },
+                        {
+                            "name": "type",
+                            "type": "string",
+                            "multiValued": False,
+                            "required": False,
+                            "caseExact": False,
+                            "mutability": "readWrite",
+                            "returned": "default",
+                            "canonicalValues": ["work", "home", "other"]
+                        }
+                    ]
+                },
+                {
+                    "name": "displayName",
+                    "type": "string",
+                    "multiValued": False,
+                    "required": False,
+                    "caseExact": False,
+                    "mutability": "readWrite",
+                    "returned": "default"
+                },
+                {
+                    "name": "active",
+                    "type": "boolean",
+                    "multiValued": False,
+                    "required": False,
+                    "mutability": "readWrite",
+                    "returned": "default",
+                    "description": "A Boolean value indicating the User's administrative status"
+                }
+            ],
+            "meta": {
+                "resourceType": "Schema",
+                "location": f"{request.host_url.rstrip('/')}/scim/v2/Schemas/{schema_id}"
+            }
+        }
+        # Add SCIM schemas array for compatibility
+        user_schema["schemas"] = ["urn:ietf:params:scim:schemas:core:2.0:Schema"]
+        return jsonify(user_schema), 200
+    
+    # Schema not found
+    return jsonify({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+        "status": "404",
+        "detail": f"Schema {schema_id} not found"
+    }), 404
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SCIM User CRUD Operations
 # ─────────────────────────────────────────────────────────────────────────────
@@ -557,10 +660,12 @@ def replace_user(user_id: str):
 
 @bp.route('/Users/<user_id>', methods=['PATCH'])
 def patch_user(user_id: str):
-    """Partially update a user (active flag only).
+    """Partially update a user (RFC 7644 Section 3.5.2).
     
-    Implements minimal SCIM PatchOp (RFC 7644 Section 3.5.2) restricted to
-    toggling the `active` attribute.
+    Supports multiple operations in a single PATCH request.
+    Supported operations:
+    - replace: active, displayName, name.givenName, name.familyName, emails[...], phoneNumbers[...]
+    - add: same paths as replace (upsert logic: create if absent, update if present)
     """
     try:
         try:
@@ -576,26 +681,140 @@ def patch_user(user_id: str):
             return scim_error(400, "schemas must equal ['urn:ietf:params:scim:api:messages:2.0:PatchOp']", "invalidSyntax")
         
         operations = payload.get("Operations")
-        if not isinstance(operations, list) or len(operations) != 1:
-            return scim_error(400, "Exactly one operation is required", "invalidSyntax")
+        if not isinstance(operations, list) or len(operations) == 0:
+            return scim_error(400, "Operations array is required and must not be empty", "invalidSyntax")
         
-        operation = operations[0]
-        if not isinstance(operation, dict):
-            return scim_error(400, "Operation must be an object", "invalidSyntax")
+        # Collect all changes to apply atomically
+        updates = {}
         
-        if operation.get("op") != "replace":
-            return scim_error(501, "Only 'replace' operations are supported", "notImplemented")
+        for operation in operations:
+            if not isinstance(operation, dict):
+                return scim_error(400, "Operation must be an object", "invalidSyntax")
+            
+            op = operation.get("op", "").lower()
+            if op not in ("replace", "add"):
+                return scim_error(501, f"Only 'replace' and 'add' operations are supported, got '{op}'", "notImplemented")
+            
+            path = operation.get("path", "")
+            value = operation.get("value")
+            
+            # For 'add' and 'replace', use upsert logic (same behavior)
+            # Process each supported path
+            if path == "active":
+                # Accept bool or string ("True"/"False") and convert to bool
+                if isinstance(value, bool):
+                    active_value = value
+                elif isinstance(value, str) and value.lower() in ("true", "false"):
+                    active_value = value.lower() == "true"
+                else:
+                    return scim_error(400, "active value must be a boolean or 'True'/'False' string", "invalidValue")
+                updates["active"] = active_value
+                
+            elif path == "displayName":
+                if not isinstance(value, str):
+                    return scim_error(400, "displayName value must be a string", "invalidValue")
+                updates["displayName"] = value
+                
+            elif path == "name.givenName":
+                if not isinstance(value, str):
+                    return scim_error(400, "name.givenName value must be a string", "invalidValue")
+                if "name" not in updates:
+                    updates["name"] = {}
+                updates["name"]["givenName"] = value
+                
+            elif path == "name.familyName":
+                if not isinstance(value, str):
+                    return scim_error(400, "name.familyName value must be a string", "invalidValue")
+                if "name" not in updates:
+                    updates["name"] = {}
+                updates["name"]["familyName"] = value
+                
+            elif path.startswith("emails[") and (path.endswith("].value") or path.endswith("].primary")):
+                # Parse filter: emails[type eq "work"].value or emails[type eq "work"].primary
+                import re
+                match_value = re.match(r'emails\[type eq "([^"]+)"\]\.value', path)
+                match_primary = re.match(r'emails\[type eq "([^"]+)"\]\.primary', path)
+                
+                if match_value:
+                    email_type = match_value.group(1)
+                    if not isinstance(value, str):
+                        return scim_error(400, "email value must be a string", "invalidValue")
+                    if "emails" not in updates:
+                        updates["emails"] = []
+                    # Upsert: find existing or create new
+                    existing = next((e for e in updates["emails"] if e.get("type") == email_type), None)
+                    if existing:
+                        existing["value"] = value
+                    else:
+                        updates["emails"].append({"type": email_type, "value": value})
+                        
+                elif match_primary:
+                    email_type = match_primary.group(1)
+                    # Accept bool or string ("True"/"False") and convert to bool
+                    if isinstance(value, bool):
+                        primary_value = value
+                    elif isinstance(value, str) and value.lower() in ("true", "false"):
+                        primary_value = value.lower() == "true"
+                    else:
+                        return scim_error(400, "email primary must be a boolean or 'True'/'False' string", "invalidValue")
+                    if "emails" not in updates:
+                        updates["emails"] = []
+                    # Upsert: find existing or create new
+                    existing = next((e for e in updates["emails"] if e.get("type") == email_type), None)
+                    if existing:
+                        existing["primary"] = primary_value
+                    else:
+                        updates["emails"].append({"type": email_type, "primary": primary_value})
+                else:
+                    return scim_error(400, f"Invalid email path filter: {path}", "invalidFilter")
+                    
+            elif path.startswith("phoneNumbers[") and (path.endswith("].value") or path.endswith("].primary")):
+                # Parse filter: phoneNumbers[type eq "mobile"].value
+                import re
+                match_value = re.match(r'phoneNumbers\[type eq "([^"]+)"\]\.value', path)
+                match_primary = re.match(r'phoneNumbers\[type eq "([^"]+)"\]\.primary', path)
+                
+                if match_value:
+                    phone_type = match_value.group(1)
+                    if not isinstance(value, str):
+                        return scim_error(400, "phoneNumber value must be a string", "invalidValue")
+                    if "phoneNumbers" not in updates:
+                        updates["phoneNumbers"] = []
+                    # Upsert
+                    existing = next((p for p in updates["phoneNumbers"] if p.get("type") == phone_type), None)
+                    if existing:
+                        existing["value"] = value
+                    else:
+                        updates["phoneNumbers"].append({"type": phone_type, "value": value})
+                        
+                elif match_primary:
+                    phone_type = match_primary.group(1)
+                    # Accept bool or string ("True"/"False") and convert to bool
+                    if isinstance(value, bool):
+                        primary_value = value
+                    elif isinstance(value, str) and value.lower() in ("true", "false"):
+                        primary_value = value.lower() == "true"
+                    else:
+                        return scim_error(400, "phoneNumber primary must be a boolean or 'True'/'False' string", "invalidValue")
+                    if "phoneNumbers" not in updates:
+                        updates["phoneNumbers"] = []
+                    # Upsert
+                    existing = next((p for p in updates["phoneNumbers"] if p.get("type") == phone_type), None)
+                    if existing:
+                        existing["primary"] = primary_value
+                    else:
+                        updates["phoneNumbers"].append({"type": phone_type, "primary": primary_value})
+                else:
+                    return scim_error(400, f"Invalid phoneNumber path filter: {path}", "invalidFilter")
+                
+            else:
+                return scim_error(501, f"Path '{path}' is not supported", "notImplemented")
         
-        if operation.get("path") != "active":
-            return scim_error(501, "Only path 'active' is supported", "notImplemented")
-        
-        if "value" not in operation or not isinstance(operation.get("value"), bool):
-            return scim_error(400, "Operation value must be a boolean", "invalidValue")
-        
+        # Apply updates via provisioning service
         correlation_id = request.headers.get("X-Correlation-Id")
-        scim_user = provisioning_service.patch_user_scim(
+        scim_user = provisioning_service.patch_user_scim_multi(
             user_id,
-            operation["value"],
+            updates,
             correlation_id
         )
         return jsonify(scim_user), 200

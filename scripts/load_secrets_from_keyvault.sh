@@ -129,6 +129,9 @@ write_secret_file "joe-temp-password" "joe_temp_password" "false"
 # SMTP password for email notifications (optional in demo mode)
 write_secret_file "smtp-password" "smtp_password" "false"
 
+# SCIM Static Token for Entra ID provisioning (optional, for demo/dev)
+write_secret_file "scim-static-token" "scim_static_token" "false"
+
 # Display summary
 echo ""
 echo -e "${GREEN}[keyvault] ✓ All secrets written to ${SECRETS_DIR}/ (chmod 400)${RESET}"

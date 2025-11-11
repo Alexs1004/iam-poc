@@ -442,40 +442,42 @@ def _extract_user_access_token(cfg) -> Optional[str]:
 
 # Add cleanup function
 def cleanup_verifier_users():
-    """Delete leftover verifier-* users. Safe: only touches users starting with 'verifier-'."""
+    """Hard-delete leftover verifier-* test users (permanent removal).
+    
+    Uses hard_delete instead of soft-delete (active=false) because:
+    - Test users don't require JML traceability/audit retention
+    - Prevents accumulation of disabled test users in Keycloak
+    - Ensures cleanup button actually removes users from the database
+    
+    Safety: Only deletes users with usernames starting with 'verifier-'
+    """
     try:
+        # Hard delete directly via provisioning service (bypasses SCIM soft-delete)
         token = provisioning_service.get_service_token()
-        # Use internal URL for verification tests (avoid nginx SSL from inside container)
-        base_url = os.environ.get('VERIFICATION_BASE_URL', 'http://localhost:8000')
         
-        # List all users and find verifier-* ones
+        # List all users via Keycloak Admin API (not SCIM, to get disabled users too)
         response = requests.get(
-            f"{base_url}/scim/v2/Users",
+            f"{provisioning_service.KEYCLOAK_BASE_URL}/admin/realms/{provisioning_service.KEYCLOAK_REALM}/users",
             headers={"Authorization": f"Bearer {token}"},
             timeout=REQUEST_TIMEOUT,
         )
         if response.status_code != 200:
             return 0
             
-        data = response.json()
+        users = response.json()
         cleaned = 0
         
-        for user in data.get("Resources", []):
-            username = user.get("userName", "")
+        for user in users:
+            username = user.get("username", "")
             user_id = user.get("id", "")
             
             if _safe_username_check(username) and user_id:
-                # Safe to delete - it's a verifier user
+                # Hard delete test user (permanent removal)
                 try:
-                    delete_resp = requests.delete(
-                        f"{base_url}/scim/v2/Users/{user_id}",
-                        headers={"Authorization": f"Bearer {token}"},
-                        timeout=REQUEST_TIMEOUT,
-                    )
-                    if delete_resp.status_code in [204, 404]:  # Success or already gone
-                        cleaned += 1
-                except:
-                    pass  # Ignore errors, this is cleanup
+                    provisioning_service.hard_delete_user(user_id, correlation_id="cleanup-verifier")
+                    cleaned += 1
+                except Exception:
+                    pass  # Ignore errors, this is best-effort cleanup
                     
         return cleaned
     except:

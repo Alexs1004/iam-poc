@@ -2,7 +2,7 @@
 ### SCIM 2.0 · OIDC/MFA · Azure Key Vault · Cryptographic Audit Trail
 
 ![Azure Key Vault](https://img.shields.io/badge/Azure-Key%20Vault-0078D4?logo=microsoft-azure&logoColor=white)
-![Entra ID Ready](https://img.shields.io/badge/Migration-Entra%20ID%20Ready-0078D4?logo=microsoft-azure)
+![Entra ID Ready](https://img.shields.io/badge/Entra%20ID-SCIM%20Provisioning%20Ready-brightgreen?logo=microsoft-azure&logoColor=white)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Tests 91%](https://img.shields.io/badge/Coverage-91%25-brightgreen?logo=codecov)
 ![Security OWASP](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
@@ -34,11 +34,20 @@ open https://localhost
 ```
 
 **What you'll see**:
-- OIDC authentication with MFA (Keycloak → Entra ID migration planned)
-- RFC 7644-compliant SCIM 2.0 API (Joiner/Mover/Leaver automation)
+- OIDC authentication with MFA (Keycloak → Entra ID migration in progress)
+- **Azure Entra ID SCIM 2.0 provisioning** (RFC 7644-compliant, production-ready)
 - Secrets loaded from Azure Key Vault (zero-config demo mode available)
 - Cryptographic audit trail with verifiable HMAC-SHA256 signatures
 - Interactive verification page: https://localhost/verification
+
+**🎯 Entra ID Integration Status** (Phase Z1 - SCIM Provisioning):
+- SCIM 2.0 endpoints (`/scim/v2/Users`, `/Schemas`, `/ServiceProviderConfig`)
+- Static Bearer token authentication (stored in Azure Key Vault)
+- Multi-operation PATCH support (RFC 7644 compliant)
+- UPN format support (`alice@domain.com`)
+- Active attribute synchronization (soft-delete for Leavers)
+- Public ngrok endpoint for Entra ID provisioning agent
+- See [`docs/ENTRA_SCIM_HOWTO.md`](docs/ENTRA_SCIM_HOWTO.md) for Azure Enterprise App configuration
 
 ### 👥 Demo Users & RBAC Matrix
 
@@ -98,7 +107,7 @@ make verify-audit
 ```
 
 **Technical Stack**:
-- **Identity Provider**: Keycloak 24 (OIDC + MFA) → **Entra ID migration planned**
+- **Identity Provider**: Keycloak 24 (OIDC + MFA) + **Azure Entra ID** (SCIM 2.0 provisioning)
 - **API Backend**: Flask (Python 3.12) + SCIM 2.0 RFC 7644
 - **Secrets Management**: Azure Key Vault SDK (azure-keyvault-secrets)
 - **Reverse Proxy**: Nginx (TLS 1.3, rate limiting, security headers)
@@ -109,18 +118,20 @@ make verify-audit
 ## 🎯 What This Project Demonstrates
 
 ### Azure Cloud Security
-- **Azure Key Vault** as single source of truth for secrets (KEYCLOAK_SERVICE_CLIENT_SECRET, FLASK_SECRET_KEY, AUDIT_LOG_SIGNING_KEY)
+- **Azure Entra ID integration**: SCIM 2.0 provisioning with Enterprise App (see [setup guide](docs/ENTRA_SCIM_HOWTO.md))
+- **Azure Key Vault** as single source of truth for secrets (KEYCLOAK_SERVICE_CLIENT_SECRET, FLASK_SECRET_KEY, AUDIT_LOG_SIGNING_KEY, SCIM_STATIC_TOKEN)
 - **Automated secret rotation** with integrity validation (dry-run available)
 - **Managed Identity-ready architecture** (eliminates Service Principals)
 - **Security headers**: HSTS, CSP, X-Frame-Options, X-Content-Type-Options
 - **Rate limiting**: DoS protection on critical endpoints (SCIM, admin, verification)
 
 ### Identity & Access Management (IAM)
-- **SCIM 2.0 RFC 7644**: Standardized identity provisioning API
+- **Azure Entra ID SCIM 2.0 provisioning**: Production-ready integration with Enterprise App
+- **SCIM 2.0 RFC 7644**: Standardized identity provisioning API (multi-operation PATCH, upsert semantics)
 - **OIDC/OAuth 2.0**: Federated authentication with PKCE (RFC 7636)
 - **Multi-Factor Authentication**: Mandatory TOTP for admin accounts
 - **Granular RBAC**: realm-admin, iam-operator, iam-verifier (privilege separation)
-- **Joiner/Mover/Leaver (JML)**: User lifecycle automation
+- **Joiner/Mover/Leaver (JML)**: User lifecycle automation with soft-delete (active=false) for Leavers
 
 ### Compliance & Audit
 - **Immutable audit trail**: HMAC-SHA256 signatures for every SCIM operation
@@ -347,14 +358,19 @@ SKIP_E2E=true make test-all  # Full suite without integration
 
 ## 🚀 Roadmap Azure-Native
 
-### Phase 1: Entra ID Migration ✅ Prepared
+### Phase 1: Entra ID Migration 🔄 In Progress
 - [ ] Replace Keycloak with **Azure AD B2C** (cloud-native OIDC)
 - [ ] Implement **Conditional Access Policies** (MFA, device compliance)
-- [ ] Migrate SCIM to **Entra ID Provisioning API**
+- [x] **Entra ID SCIM 2.0 Provisioning** (RFC 7644 compliant, production-ready)
+- [x] **Static Bearer token authentication** (stored in Azure Key Vault)
+- [x] **Multi-operation PATCH support** (add/replace, upsert semantics)
+- [x] **UPN format support** (alice@domain.com)
+- [x] **Active attribute sync** (soft-delete for Leavers)
 
-### Phase 2: Secrets & Identity 🔄 In Progress
+### Phase 2: Secrets & Identity ✅ Completed
 - [x] **Azure Key Vault** for secrets (implemented)
 - [x] Automated **secret rotation** (implemented)
+- [x] **SCIM static token** stored in Key Vault (implemented)
 - [ ] **Managed Identity** to eliminate Service Principals
 - [ ] **Azure Key Vault RBAC** (replace access policies)
 

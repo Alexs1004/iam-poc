@@ -129,7 +129,7 @@ NAME_MAX_LENGTH = 64
 JSON_MAX_SIZE_BYTES = 65536  # 64 KB
 
 # Regex patterns
-USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9._-]{3,64}$")
+USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9._@-]{3,64}$")
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -183,7 +183,7 @@ def generate_temp_password(length: int = 16) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def validate_username(username: str) -> None:
-    """Validate username format (3-64 chars, alphanumeric + .-_)."""
+    """Validate username format (3-64 chars, alphanumeric + .-_@)."""
     if not username:
         raise ScimError(400, "userName is required", "invalidValue")
     
@@ -191,7 +191,7 @@ def validate_username(username: str) -> None:
         raise ScimError(
             400,
             f"userName must be {USERNAME_MIN_LENGTH}-{USERNAME_MAX_LENGTH} characters, "
-            "alphanumeric with .-_ allowed",
+            "alphanumeric with .-_@ allowed",
             "invalidValue"
         )
 
@@ -677,6 +677,145 @@ def patch_user_scim(user_id: str, active: bool, correlation_id: Optional[str] = 
     return keycloak_to_scim(kc_user, base_url=os.environ.get("APP_BASE_URL", "https://localhost"))
 
 
+def patch_user_scim_multi(user_id: str, updates: dict, correlation_id: Optional[str] = None) -> dict:
+    """Apply multiple PATCH operations to a user (RFC 7644 compliant).
+    
+    Args:
+        user_id: Keycloak user ID
+        updates: Dict with keys: active, displayName, name, emails
+        correlation_id: Optional correlation ID for tracing
+    
+    Returns:
+        Updated SCIM User dict
+    
+    Raises:
+        ScimError: 404 if user not found, 500 on update failure
+    """
+    token = get_service_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    user_url = f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}"
+    
+    # Get current user state
+    try:
+        resp = requests.get(user_url, headers=headers, timeout=10)
+        if resp.status_code == 404:
+            raise ScimError(404, f"User with id '{user_id}' not found")
+        resp.raise_for_status()
+        kc_user = resp.json()
+    except ScimError:
+        raise
+    except Exception as exc:
+        raise ScimError(500, f"Failed to retrieve user: {exc}")
+    
+    username = kc_user.get("username") or user_id
+    update_payload = dict(kc_user)
+    changed = False
+    
+    # Apply active state (idempotent: only update if different)
+    if "active" in updates:
+        current_enabled = bool(kc_user.get("enabled", True))
+        new_enabled = updates["active"]
+        if current_enabled != new_enabled:
+            update_payload["enabled"] = new_enabled
+            changed = True
+    
+    # Apply displayName (maps to firstName + lastName in Keycloak)
+    if "displayName" in updates:
+        # Split displayName into firstName/lastName
+        parts = updates["displayName"].strip().split(None, 1)
+        update_payload["firstName"] = parts[0] if parts else ""
+        update_payload["lastName"] = parts[1] if len(parts) > 1 else ""
+        changed = True
+    
+    # Apply name.givenName and name.familyName
+    if "name" in updates:
+        if "givenName" in updates["name"]:
+            update_payload["firstName"] = updates["name"]["givenName"]
+            changed = True
+        if "familyName" in updates["name"]:
+            update_payload["lastName"] = updates["name"]["familyName"]
+            changed = True
+    
+    # Apply emails (upsert logic: merge with existing attributes if needed)
+    if "emails" in updates:
+        # Get existing attributes to merge
+        existing_attrs = update_payload.get("attributes", {})
+        
+        # Process each email update
+        for email_entry in updates["emails"]:
+            email_type = email_entry.get("type", "work")
+            
+            # Primary email (type="work") goes to Keycloak's email field
+            if email_type == "work" and "value" in email_entry:
+                update_payload["email"] = email_entry["value"]
+                changed = True
+            
+            # Store all emails (including "other") in attributes for SCIM retrieval
+            # Format: email_<type> and email_<type>_primary
+            if "value" in email_entry:
+                if "attributes" not in update_payload:
+                    update_payload["attributes"] = existing_attrs.copy()
+                update_payload["attributes"][f"email_{email_type}"] = [email_entry["value"]]
+                changed = True
+            
+            if "primary" in email_entry:
+                if "attributes" not in update_payload:
+                    update_payload["attributes"] = existing_attrs.copy()
+                update_payload["attributes"][f"email_{email_type}_primary"] = [str(email_entry["primary"]).lower()]
+                changed = True
+    
+    # Apply phoneNumbers (store in attributes)
+    if "phoneNumbers" in updates:
+        existing_attrs = update_payload.get("attributes", {})
+        
+        for phone_entry in updates["phoneNumbers"]:
+            phone_type = phone_entry.get("type", "mobile")
+            
+            if "value" in phone_entry:
+                if "attributes" not in update_payload:
+                    update_payload["attributes"] = existing_attrs.copy()
+                update_payload["attributes"][f"phone_{phone_type}"] = [phone_entry["value"]]
+                changed = True
+            
+            if "primary" in phone_entry:
+                if "attributes" not in update_payload:
+                    update_payload["attributes"] = existing_attrs.copy()
+                update_payload["attributes"][f"phone_{phone_type}_primary"] = [str(phone_entry["primary"]).lower()]
+                changed = True
+    
+    # Send update to Keycloak if changes detected
+    if changed:
+        try:
+            resp = requests.put(user_url, headers=headers, json=update_payload, timeout=10)
+            resp.raise_for_status()
+        except Exception as exc:
+            raise ScimError(500, f"Failed to update user: {exc}")
+    
+    # Refresh state to ensure consistency
+    try:
+        refreshed = requests.get(user_url, headers=headers, timeout=10)
+        refreshed.raise_for_status()
+        kc_user = refreshed.json()
+    except Exception as exc:
+        raise ScimError(500, f"User state could not be refreshed: {exc}")
+    
+    # Audit log
+    audit.log_jml_event(
+        "scim_patch_user_multi",
+        username,
+        operator="scim-api",
+        realm=KEYCLOAK_REALM,
+        details={
+            "user_id": user_id,
+            "updates": updates,
+            "correlation_id": correlation_id
+        },
+        success=True
+    )
+    
+    return keycloak_to_scim(kc_user, base_url=os.environ.get("APP_BASE_URL", "https://localhost"))
+
+
 def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None:
     """Soft-delete a user by disabling (Leaver).
     
@@ -720,6 +859,61 @@ def delete_user_scim(user_id: str, correlation_id: Optional[str] = None) -> None
         details={
             "user_id": user_id,
             "correlation_id": correlation_id
+        },
+        success=True
+    )
+
+
+def hard_delete_user(user_id: str, correlation_id: Optional[str] = None) -> None:
+    """Hard-delete a user from Keycloak (permanent removal).
+    
+    WARNING: This performs a PERMANENT deletion with no recovery possible.
+    Use only for test users (verifier-*) that don't require JML traceability.
+    Production users should use delete_user_scim() for soft-delete (active=false).
+    
+    Args:
+        user_id: Keycloak user ID
+        correlation_id: Optional correlation ID for tracing
+    
+    Raises:
+        ScimError: 404 if user not found, 500 on deletion failure
+    """
+    token = get_service_token()
+    
+    # Find user by ID to get username for audit logging
+    try:
+        resp = requests.get(
+            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        kc_user = resp.json()
+        username = kc_user.get("username")
+    except requests.RequestException:
+        raise ScimError(404, f"User with id '{user_id}' not found")
+    
+    # Perform hard delete via Keycloak Admin API
+    try:
+        delete_resp = requests.delete(
+            f"{KEYCLOAK_BASE_URL}/admin/realms/{KEYCLOAK_REALM}/users/{user_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        delete_resp.raise_for_status()
+    except requests.RequestException as exc:
+        raise ScimError(500, f"Failed to hard-delete user: {exc}")
+    
+    # Log to audit trail
+    audit.log_jml_event(
+        "hard_delete_user",
+        username,
+        operator="scim-api",
+        realm=KEYCLOAK_REALM,
+        details={
+            "user_id": user_id,
+            "correlation_id": correlation_id,
+            "warning": "PERMANENT deletion - no recovery possible"
         },
         success=True
     )

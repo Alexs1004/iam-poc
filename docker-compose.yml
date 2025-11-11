@@ -72,6 +72,9 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_FROM: ${SMTP_FROM}
       SMTP_REPLY_TO: ${SMTP_REPLY_TO}
+      # SCIM Static Token (for Entra ID provisioning)
+      SCIM_STATIC_TOKEN_SOURCE: ${SCIM_STATIC_TOKEN_SOURCE}
+      SCIM_STATIC_TOKEN: ${SCIM_STATIC_TOKEN}
     volumes: # in production mount must be deleted to use image content only
       - .:/srv/app
       - ./.runtime/secrets:/run/secrets:ro

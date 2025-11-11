@@ -32,7 +32,6 @@ This guide describes the integration of **Microsoft Entra ID (workforce identiti
 
 **Screenshot:**  
 ![Enterprise App Creation](images/entra_provisioning_create_app.png)  
-*Placeholder: Application creation page capture*
 
 ---
 
@@ -55,12 +54,7 @@ This guide describes the integration of **Microsoft Entra ID (workforce identiti
 6. If successful → **Save**
 
 **Screenshot:**  
-![Provisioning configuration](images/entra_provisioning_config.png)  
-*Placeholder: Tenant URL + Secret Token form*
-
-**Screenshot:**  
 ![Test connection successful](images/entra_provisioning_test_connection.png)  
-*Placeholder: Success message "You are connected..."*
 
 ---
 
@@ -87,7 +81,6 @@ This guide describes the integration of **Microsoft Entra ID (workforce identiti
 
 **Screenshot:**  
 ![Attribute mappings](images/entra_provisioning_mappings.png)  
-*Placeholder: Mappings table userPrincipalName → userName, etc.*
 
 ---
 
@@ -108,7 +101,6 @@ Before enabling full provisioning, test with a specific user:
 
 **Screenshot:**  
 ![Provision on demand](images/entra_provisioning_on_demand.png)  
-*Placeholder: Result of 4 steps with success*
 
 ---
 
@@ -120,8 +112,7 @@ Before enabling full provisioning, test with a specific user:
 4. Entra ID launches initial sync cycle (may take 20-40 min)
 
 **Screenshot:**  
-![Provisioning enabled](images/entra_provisioning_enabled.png)  
-*Placeholder: Toggle "Provisioning Status: On"*
+![Provisioning enabled](images/entra_provisioning_enabled.png)
 
 ---
 
@@ -135,7 +126,6 @@ Before enabling full provisioning, test with a specific user:
 
 **Screenshot:**  
 ![Visible deactivation](images/entra_provisioning_deactivate.png)  
-*Placeholder: HMAC audit logs showing user.deactivated*
 
 ---
 
@@ -346,27 +336,3 @@ Content-Type: application/scim+json
 - [Microsoft Entra ID SCIM Documentation](https://learn.microsoft.com/en-us/azure/active-directory/app-provisioning/use-scim-to-provision-users-and-groups)
 - [Azure Key Vault Best Practices](https://learn.microsoft.com/en-us/azure/key-vault/general/best-practices)
 
----
-
-## 📸 Screenshots (TODO)
-
-The following images should be added in `docs/images/`:
-
-- [ ] `entra_provisioning_create_app.png` - Enterprise Application creation
-- [ ] `entra_provisioning_config.png` - Tenant URL + Secret Token configuration
-- [ ] `entra_provisioning_test_connection.png` - Successful "Test Connection" result
-- [ ] `entra_provisioning_mappings.png` - Attribute mappings table
-- [ ] `entra_provisioning_on_demand.png` - "Provision on demand" result with 4 steps
-- [ ] `entra_provisioning_enabled.png` - Provisioning Status: On
-- [ ] `entra_provisioning_deactivate.png` - Audit logs showing deactivation
-
-**How to capture:**
-1. Follow this guide step by step in a test Entra ID tenant.
-2. Take PNG screenshots (max resolution 1920x1080).
-3. Hide sensitive data (domains, IPs, tokens).
-4. Save in `/home/alex/iam-poc/docs/images/`.
-
----
-
-**Last updated:** 2025-11-05  
-**Author:** IAM PoC Team

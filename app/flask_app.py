@@ -132,9 +132,16 @@ def _register_middleware(app: Flask, trusted_proxy_networks: list):
         if forwarded_proto and forwarded_proto != "https":
             abort(400, description="Invalid forwarded protocol")
         
+        # Allow multiple proxies if TRUSTED_PROXY_IPS includes 0.0.0.0/0 (ngrok demo)
+        # In production, this should be restricted to specific proxy IPs
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for and "," in forwarded_for:
-            abort(400, description="Multiple forwarded clients not permitted")
+            # Check if we trust all proxies (0.0.0.0/0 means ngrok/demo mode)
+            trust_all = any(
+                str(network) == "0.0.0.0/0" for network in trusted_proxy_networks
+            )
+            if not trust_all:
+                abort(400, description="Multiple forwarded clients not permitted")
         
         g.csrf_token = _generate_csrf_token()
     

@@ -163,7 +163,21 @@ def refresh_session_token() -> Optional[bool]:
     try:
         client = get_oidc_client()
         token_endpoint = f"{cfg.keycloak_server_url}/protocol/openid-connect/token"
-        new_token = client.refresh_token(token_endpoint, refresh_token=refresh_token)
+        
+        # Use requests directly for refresh_token grant (Authlib FlaskOAuth2App limitation)
+        import requests
+        response = requests.post(
+            token_endpoint,
+            data={
+                'grant_type': 'refresh_token',
+                'refresh_token': refresh_token,
+                'client_id': cfg.oidc_client_id,
+                'client_secret': cfg.oidc_client_secret
+            },
+            timeout=10
+        )
+        response.raise_for_status()
+        new_token = response.json()
     except Exception as exc:
         current_app.logger.warning("Token refresh failed: %s", exc, exc_info=False)
         clear_session_tokens()
