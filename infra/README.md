@@ -4,15 +4,20 @@
 
 ### Installation de Terraform
 
-**Sur Ubuntu/Debian:**
+**Option 1 : Docker (recommandé, pas d'installation locale)**
+```bash
+# Build du conteneur Terraform
+docker compose build terraform
+
+# Vérifier l'installation
+docker compose run --rm terraform version
+```
+
+**Option 2 : Installation locale sur Ubuntu/Debian**
 ```bash
 wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 sudo apt update && sudo apt install terraform
-```
-
-**Vérifier l'installation:**
-```bash
 terraform version
 ```
 
@@ -50,51 +55,79 @@ terraform -chdir=infra init -backend-config=backend.hcl
 
 Si vous voulez tester sans backend distant, commentez le bloc `backend "azurerm"` dans `backend.tf`.
 
-### 1. Initialisation (avec backend)
+### 1. Initialisation
 
+**Avec Docker (recommandé) :**
+```bash
+cd infra
+make init
+```
+
+**Ou en local :**
 ```bash
 terraform -chdir=infra init -backend-config=backend.hcl
 ```
 
-**Ou sans backend (local) :**
-
-```bash
-terraform -chdir=infra init
-```
-
 ### 2. Validation de la configuration
 
+**Docker :**
+```bash
+cd infra && make validate
+```
+
+**Local :**
 ```bash
 terraform -chdir=infra validate
 ```
 
 ### 3. Formatage du code
 
+**Docker :**
+```bash
+cd infra && make fmt
+```
+
+**Local :**
 ```bash
 terraform -chdir=infra fmt -recursive
 ```
 
 ### 4. Plan (simulation)
 
+**Docker :**
 ```bash
-terraform -chdir=infra plan \
-  -var="tenant_id=$(az account show --query tenantId -o tsv)"
+cd infra && make plan
+```
+
+**Local :**
+```bash
+terraform -chdir=infra plan -var="tenant_id=$(az account show --query tenantId -o tsv)"
 ```
 
 ### 5. Application (déploiement réel)
 
 ⚠️ **Attention**: Cela va créer des ressources Azure facturables.
 
+**Docker :**
 ```bash
-terraform -chdir=infra apply \
-  -var="tenant_id=$(az account show --query tenantId -o tsv)"
+cd infra && make apply
+```
+
+**Local :**
+```bash
+terraform -chdir=infra apply -var="tenant_id=$(az account show --query tenantId -o tsv)"
 ```
 
 ### 6. Destruction
 
+**Docker :**
 ```bash
-terraform -chdir=infra destroy \
-  -var="tenant_id=$(az account show --query tenantId -o tsv)"
+cd infra && make destroy
+```
+
+**Local :**
+```bash
+terraform -chdir=infra destroy -var="tenant_id=$(az account show --query tenantId -o tsv)"
 ```
 
 ## 📝 Variables disponibles
@@ -183,6 +216,7 @@ infra/
 ├── backend.tf           # Backend Azure Storage (state distant)
 ├── backend.hcl.example  # Exemple de configuration backend
 ├── setup-backend.sh     # Script de création du backend
+├── Makefile             # Commandes Terraform simplifiées (Docker)
 ├── .gitignore           # Protection secrets/state
 └── README.md            # Ce fichier
 ```

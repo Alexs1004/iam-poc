@@ -12,3 +12,12 @@ proxy/nginx.conf
 .vscode
 *.log
 *.zip
+
+# Terraform
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfvars
+**/*.tfvars.json
+**/backend.hcl

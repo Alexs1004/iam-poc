@@ -113,5 +113,23 @@ services:
       timeout: 5s
       retries: 10
 
+  terraform:
+    build:
+      context: .
+      dockerfile: Dockerfile.terraform
+    image: iam-poc-terraform
+    container_name: terraform
+    working_dir: /workspace/infra
+    volumes:
+      - ./infra:/workspace/infra:ro
+      - ~/.azure:/root/.azure:ro
+    environment:
+      ARM_TENANT_ID: ${ARM_TENANT_ID}
+      ARM_SUBSCRIPTION_ID: ${ARM_SUBSCRIPTION_ID}
+      ARM_CLIENT_ID: ${ARM_CLIENT_ID}
+      ARM_CLIENT_SECRET: ${ARM_CLIENT_SECRET}
+    profiles:
+      - tools
+
 volumes:
   keycloak_data:
