@@ -2,19 +2,24 @@
 
 output "resource_group_name" {
   description = "Name of the resource group"
-  value       = local.rg_name
+  value       = azurerm_resource_group.main.name
 }
 
 output "resource_group_location" {
   description = "Location of the resource group"
-  value       = var.location
+  value       = azurerm_resource_group.main.location
 }
 
-# Placeholder for Log Analytics Workspace (Phase C2)
-# output "log_analytics_workspace_id" {
-#   description = "ID of the Log Analytics Workspace"
-#   value       = azurerm_log_analytics_workspace.main.id
-# }
+# Log Analytics Workspace (Phase C2)
+output "log_analytics_workspace_id" {
+  description = "ID of the Log Analytics Workspace"
+  value       = azurerm_log_analytics_workspace.main.id
+}
+
+output "log_analytics_workspace_name" {
+  description = "Name of the Log Analytics Workspace"
+  value       = azurerm_log_analytics_workspace.main.name
+}
 
 # Placeholder for VNet/Subnet (Phase C3)
 # output "vnet_id" {

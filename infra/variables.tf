@@ -18,12 +18,7 @@ variable "location" {
 variable "rg_name" {
   description = "Resource Group name (if empty, will be auto-generated from prefix)"
   type        = string
-  default     = ""
-}
-
-variable "tenant_id" {
-  description = "Azure AD Tenant ID for Key Vault access policies"
-  type        = string
+  default     = "rg-iam-demo"
 }
 
 variable "subnet_id" {
