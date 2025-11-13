@@ -121,10 +121,11 @@ services:
     container_name: terraform
     working_dir: /workspace/infra
     volumes:
-      - ./infra:/workspace/infra:ro
+      - ./infra:/workspace/infra
       - ~/.azure:/root/.azure:ro
       - ./.runtime/secrets:/run/secrets:ro
     environment:
+      ARM_USE_CLI: "false"
       ARM_TENANT_ID: ${ARM_TENANT_ID}
       ARM_SUBSCRIPTION_ID: ${ARM_SUBSCRIPTION_ID}
       ARM_CLIENT_ID: ${ARM_CLIENT_ID}

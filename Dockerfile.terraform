@@ -1,12 +1,6 @@
-FROM hashicorp/terraform:1.9-alpine
+FROM hashicorp/terraform:1.9.8
 
-RUN apk add --no-cache \
-    bash \
-    curl \
-    ca-certificates \
-    && rm -rf /var/cache/apk/*
-
-RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+RUN apk add --no-cache bash ca-certificates
 
 WORKDIR /workspace
 

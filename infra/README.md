@@ -42,7 +42,7 @@ az account show
 
 ```bash
 # 1. Créer l'infrastructure de backend (une seule fois)
-./infra/setup-backend.sh
+./scripts/setup-backend.sh
 
 # 2. Le script affichera les commandes pour créer backend.hcl
 # Suivez les instructions affichées
@@ -215,10 +215,15 @@ infra/
 ├── main.tf              # Configuration principale (placeholder)
 ├── backend.tf           # Backend Azure Storage (state distant)
 ├── backend.hcl.example  # Exemple de configuration backend
-├── setup-backend.sh     # Script de création du backend
 ├── Makefile             # Commandes Terraform simplifiées (Docker)
 ├── .gitignore           # Protection secrets/state
-└── README.md            # Ce fichier
+├── README.md            # Ce fichier
+└── scripts/             # Scripts d'infrastructure
+    ├── setup-backend.sh           # Création backend Azure Storage
+    ├── register-providers.sh      # Enregistrement providers Azure
+    ├── setup-local-mode.sh        # Configuration mode local
+    ├── upload-terraform-secret.sh # Upload secrets vers Key Vault
+    └── README.md                  # Documentation scripts
 ```
 
 ## 🗺️ Phases suivantes

@@ -25,6 +25,26 @@ echo "📋 Subscription: $SUBSCRIPTION_ID"
 echo "📋 Tenant: $TENANT_ID"
 echo ""
 
+# Check if Microsoft.Storage provider is registered
+echo "🔍 Checking Microsoft.Storage provider registration..."
+STORAGE_STATE=$(az provider show --namespace Microsoft.Storage --query "registrationState" -o tsv 2>/dev/null || echo "NotRegistered")
+
+if [ "$STORAGE_STATE" != "Registered" ]; then
+    echo "📝 Registering Microsoft.Storage provider (required for storage accounts)..."
+    az provider register --namespace Microsoft.Storage
+    
+    echo "⏳ Waiting for provider registration (this may take 1-2 minutes)..."
+    while [ "$(az provider show --namespace Microsoft.Storage --query 'registrationState' -o tsv)" != "Registered" ]; do
+        echo -n "."
+        sleep 5
+    done
+    echo ""
+    echo "✅ Microsoft.Storage provider registered successfully"
+else
+    echo "✅ Microsoft.Storage provider already registered"
+fi
+echo ""
+
 # Create resource group
 echo "📦 Creating resource group: $RESOURCE_GROUP_NAME"
 az group create \

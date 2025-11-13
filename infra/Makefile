@@ -1,6 +1,5 @@
 .PHONY: help init validate plan apply destroy fmt clean
 
-TENANT_ID ?= $(shell az account show --query tenantId -o tsv 2>/dev/null)
 DOCKER_RUN = docker compose run --rm terraform
 
 help:
@@ -21,19 +20,19 @@ init:
 	fi
 
 validate: init
-	$(DOCKER_RUN) validate
+	@$(DOCKER_RUN) validate
 
 plan: init
-	$(DOCKER_RUN) plan -var="tenant_id=$(TENANT_ID)"
+	@$(DOCKER_RUN) plan -var="tenant_id=$(ARM_TENANT_ID)"
 
 apply: init
-	$(DOCKER_RUN) apply -var="tenant_id=$(TENANT_ID)"
+	@$(DOCKER_RUN) apply -var="tenant_id=$(ARM_TENANT_ID)"
 
 destroy: init
-	$(DOCKER_RUN) destroy -var="tenant_id=$(TENANT_ID)"
+	@$(DOCKER_RUN) destroy -var="tenant_id=$(ARM_TENANT_ID)"
 
 fmt:
-	$(DOCKER_RUN) fmt -recursive
+	@$(DOCKER_RUN) fmt -recursive
 
 clean:
-	rm -rf .terraform .terraform.lock.hcl
+	@rm -rf .terraform .terraform.lock.hcl
