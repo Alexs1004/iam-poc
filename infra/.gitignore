@@ -11,6 +11,10 @@
 *.tfvars
 *.tfvars.json
 
+# Backend configuration (may contain sensitive data)
+backend.hcl
+backend.conf
+
 # Override files
 override.tf
 override.tf.json

@@ -25,7 +25,38 @@ az account show
 
 ## 🚀 Utilisation
 
-### 1. Initialisation
+### 0. Configuration du backend distant (RECOMMANDÉ pour production)
+
+**Pourquoi ?** Le state Terraform contient des données sensibles (IPs, credentials, metadata). Un backend distant offre :
+- ✅ Encryption au repos (AES-256)
+- ✅ State locking (évite les modifications concurrentes)
+- ✅ Versioning (rollback possible)
+- ✅ Audit trail (traçabilité LPD/FINMA)
+
+**Setup rapide :**
+
+```bash
+# 1. Créer l'infrastructure de backend (une seule fois)
+./infra/setup-backend.sh
+
+# 2. Le script affichera les commandes pour créer backend.hcl
+# Suivez les instructions affichées
+
+# 3. Initialiser Terraform avec le backend
+terraform -chdir=infra init -backend-config=backend.hcl
+```
+
+**Alternative (développement local uniquement) :**
+
+Si vous voulez tester sans backend distant, commentez le bloc `backend "azurerm"` dans `backend.tf`.
+
+### 1. Initialisation (avec backend)
+
+```bash
+terraform -chdir=infra init -backend-config=backend.hcl
+```
+
+**Ou sans backend (local) :**
 
 ```bash
 terraform -chdir=infra init
@@ -114,6 +145,22 @@ terraform -chdir=infra apply
 
 ## 🔐 Sécurité
 
+### Backend Terraform State
+
+**⚠️ IMPORTANT** : Le state Terraform contient :
+- IPs publiques de vos ressources
+- Identifiants de déploiement (site credentials)
+- Metadata de configuration (potentiellement sensible)
+
+**Bonnes pratiques :**
+1. **Production** : Toujours utiliser un backend distant (Azure Storage)
+2. **Ne jamais commiter** `terraform.tfstate` ou `backend.hcl` dans Git
+3. **Activer le versioning** sur le Storage Account (rollback)
+4. **Activer soft delete** (conformité LPD/FINMA - rétention 30j)
+5. **Utiliser Azure CLI auth** plutôt que des access keys en clair
+
+### Fichiers à ne jamais commiter
+
 - ⚠️ **Ne jamais commiter** `terraform.tfvars` ou `*.tfstate` dans Git
 - Le fichier `.gitignore` à la racine du projet doit contenir:
   ```
@@ -129,11 +176,15 @@ terraform -chdir=infra apply
 
 ```
 infra/
-├── providers.tf   # Configuration du provider azurerm ~>3
-├── variables.tf   # Variables d'entrée
-├── outputs.tf     # Outputs (placeholders pour phases suivantes)
-├── main.tf        # Configuration principale (placeholder)
-└── README.md      # Ce fichier
+├── providers.tf         # Configuration du provider azurerm ~>3
+├── variables.tf         # Variables d'entrée
+├── outputs.tf           # Outputs (placeholders pour phases suivantes)
+├── main.tf              # Configuration principale (placeholder)
+├── backend.tf           # Backend Azure Storage (state distant)
+├── backend.hcl.example  # Exemple de configuration backend
+├── setup-backend.sh     # Script de création du backend
+├── .gitignore           # Protection secrets/state
+└── README.md            # Ce fichier
 ```
 
 ## 🗺️ Phases suivantes
