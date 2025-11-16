@@ -1,8 +1,14 @@
 # Main Terraform configuration - Infrastructure skeleton
 
+# Get current Azure context (tenant, subscription, client)
+data "azurerm_client_config" "current" {}
+
 locals {
   # Auto-generate resource group name if not provided
   rg_name = var.rg_name != "" ? var.rg_name : "${var.prefix}-rg-${var.environment}"
+
+  # Use current tenant ID from Azure context
+  tenant_id = data.azurerm_client_config.current.tenant_id
 
   # Merge default tags with environment tag
   common_tags = merge(

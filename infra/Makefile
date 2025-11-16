@@ -23,13 +23,13 @@ validate: init
 	@$(DOCKER_RUN) validate
 
 plan: init
-	@$(DOCKER_RUN) plan -var="tenant_id=$(ARM_TENANT_ID)"
+	@$(DOCKER_RUN) plan
 
 apply: init
-	@$(DOCKER_RUN) apply -var="tenant_id=$(ARM_TENANT_ID)"
+	@$(DOCKER_RUN) apply
 
 destroy: init
-	@$(DOCKER_RUN) destroy -var="tenant_id=$(ARM_TENANT_ID)"
+	@$(DOCKER_RUN) destroy
 
 fmt:
 	@$(DOCKER_RUN) fmt -recursive
