@@ -1,0 +1,15 @@
+FROM hashicorp/terraform:1.9.8
+
+RUN apk add --no-cache bash ca-certificates
+
+WORKDIR /workspace
+
+COPY --chmod=755 <<'EOF' /usr/local/bin/terraform-wrapper
+#!/bin/bash
+if [ -f /run/secrets/arm_client_secret ]; then
+    export ARM_CLIENT_SECRET=$(cat /run/secrets/arm_client_secret)
+fi
+exec terraform "$@"
+EOF
+
+ENTRYPOINT ["terraform-wrapper"]

@@ -39,4 +39,4 @@ htmlcov/
 
 copilot_context.md
 .runtime/sbom/
-.github/instructions
+.github/instructions/

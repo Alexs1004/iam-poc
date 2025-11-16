@@ -1,0 +1,7 @@
+# Backend configuration (keep out of Git for security)
+# Usage: terraform init -backend-config=backend.hcl
+
+resource_group_name  = "tfstate-rg"
+storage_account_name = "tfstateiam"  # Must be globally unique, change this!
+container_name       = "tfstate"
+key                  = "iam-poc.terraform.tfstate"

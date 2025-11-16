@@ -132,6 +132,9 @@ write_secret_file "smtp-password" "smtp_password" "false"
 # SCIM Static Token for Entra ID provisioning (optional, for demo/dev)
 write_secret_file "scim-static-token" "scim_static_token" "false"
 
+# Terraform Service Principal secret (optional, for CI/CD)
+write_secret_file "arm-client-secret" "arm_client_secret" "false"
+
 # Display summary
 echo ""
 echo -e "${GREEN}[keyvault] ✓ All secrets written to ${SECRETS_DIR}/ (chmod 400)${RESET}"
