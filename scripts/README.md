@@ -22,6 +22,10 @@ Utility scripts for IAM PoC automation, infrastructure, and secret management.
 | **[rotate_secret.sh](rotate_secret.sh)** | **Secure secret rotation** (Keycloak → Key Vault → Flask) | `make rotate-secret` |
 | **[load_secrets_from_keyvault.sh](load_secrets_from_keyvault.sh)** | Load secrets from Azure Key Vault | `make load-secrets` |
 | **[keycloak_entrypoint.sh](keycloak_entrypoint.sh)** | Keycloak Docker container entrypoint | `docker-compose.yml` |
+| **[infra/setup-backend.sh](infra/setup-backend.sh)** | Create Azure Storage backend for Terraform state | `make infra/init` |
+| **[infra/register-providers.sh](infra/register-providers.sh)** | Register Azure resource providers | `infra/setup-backend.sh` |
+| **[infra/setup-local-mode.sh](infra/setup-local-mode.sh)** | Configure Terraform local backend (no Azure) | Manual setup |
+| **[infra/upload-terraform-secret.sh](infra/upload-terraform-secret.sh)** | Upload ARM_CLIENT_SECRET to Azure Key Vault | Manual setup |
 
 ### Configuration & Validation
 | Script | Purpose | Used By |

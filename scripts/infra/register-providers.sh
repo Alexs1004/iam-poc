@@ -97,9 +97,9 @@ if [ "$ALL_REGISTERED" = true ]; then
     echo "🚀 You can now deploy Azure resources without provider errors!"
     echo ""
     echo "Next steps:"
-    echo "  1. Setup Terraform backend: ./infra/setup-backend.sh"
-    echo "  2. Initialize Terraform: cd infra && make init"
-    echo "  3. Deploy infrastructure: make apply"
+    echo "  1. Setup Terraform backend: ./scripts/infra/setup-backend.sh"
+    echo "  2. Initialize Terraform: make infra/init"
+    echo "  3. Deploy infrastructure: make infra/apply"
 else
     echo "⚠️  Provider registration timed out after 5 minutes."
     echo "   This is normal for the first registration."

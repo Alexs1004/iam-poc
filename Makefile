@@ -21,7 +21,7 @@ PYTEST := $(VENV_PYTHON) -m pytest
 PYTEST_UNIT_FLAGS ?= -n auto --dist=loadscope --cache-clear
 
 
-UX_TARGETS := help help-all quickstart fresh-demo up down logs test test-coverage test-coverage-report test-e2e test-all rotate-secret doctor security-check scan-secrets scan-vulns sbom scan-sbom
+UX_TARGETS := help help-all quickstart fresh-demo up down logs test test-coverage test-coverage-report test-e2e test-all rotate-secret doctor security-check scan-secrets scan-vulns sbom scan-sbom infra/init infra/plan infra/apply
 
 COMMON_FLAGS = --kc-url $${KEYCLOAK_URL} --auth-realm $${KEYCLOAK_SERVICE_REALM} --svc-client-id $${KEYCLOAK_SERVICE_CLIENT_ID} --svc-client-secret $${KEYCLOAK_SERVICE_CLIENT_SECRET}
 WITH_ENV := set -a; source .env; set +a; \
@@ -672,3 +672,41 @@ rotate-secret: ## Rotate Keycloak service client secret (production only)
 .PHONY: rotate-secret-dry
 rotate-secret-dry: ## Dry-run of secret rotation (no changes applied)
 	@./scripts/rotate_secret.sh --dry-run
+
+# ============================================================================
+# Terraform Infrastructure Management
+# ============================================================================
+
+TERRAFORM_DOCKER = docker compose run --rm terraform
+
+.PHONY: infra/init infra/validate infra/plan infra/apply infra/destroy infra/fmt infra/clean
+
+infra/init: ## Initialize Terraform (with Azure backend if configured)
+	@$(WITH_ENV) \
+	if [ -f infra/backend.hcl ]; then \
+		echo "[infra/init] Initializing with Azure backend..."; \
+		$(TERRAFORM_DOCKER) init -backend-config=infra/backend.hcl; \
+	else \
+		echo "[infra/init] Initializing with local backend (run scripts/infra/setup-backend.sh for Azure)..."; \
+		$(TERRAFORM_DOCKER) init; \
+	fi
+
+infra/validate: infra/init ## Validate Terraform configuration
+	@$(TERRAFORM_DOCKER) validate
+
+infra/plan: infra/init ## Show Terraform execution plan
+	@$(TERRAFORM_DOCKER) plan
+
+infra/apply: infra/init ## Apply Terraform changes (requires confirmation)
+	@$(TERRAFORM_DOCKER) apply
+
+infra/destroy: infra/init ## Destroy Terraform infrastructure (requires confirmation)
+	@$(TERRAFORM_DOCKER) destroy
+
+infra/fmt: ## Format Terraform files
+	@$(TERRAFORM_DOCKER) fmt -recursive
+
+infra/clean: ## Remove Terraform cache and lock file
+	@echo "[infra/clean] Removing .terraform/ and .terraform.lock.hcl..."
+	@rm -rf infra/.terraform infra/.terraform.lock.hcl
+	@echo "[infra/clean] ✓ Cleaned"
