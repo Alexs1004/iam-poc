@@ -1,166 +1,140 @@
 # Infrastructure Terraform - IAM POC
 
+**Azure-native infrastructure** déployée avec Terraform pour l'IAM Security PoC.
+
+---
+
+## 🚀 Quick Start
+
+```bash
+# 1. Setup Azure backend (première fois uniquement)
+./scripts/infra/setup-backend.sh
+
+# 2. Initialize Terraform
+make infra/init
+
+# 3. Preview changes
+make infra/plan
+
+# 4. Deploy to Azure
+make infra/apply
+```
+
+---
+
 ## 📋 Prérequis
 
-### Installation de Terraform
-
-**Option 1 : Docker (recommandé, pas d'installation locale)**
+### Azure CLI (requis)
 ```bash
-# Build du conteneur Terraform
-docker compose build terraform
+az login
+az account show  # Vérifier la souscription active
+```
 
-# Vérifier l'installation
+### Terraform (optionnel - Docker recommandé)
+**Option 1: Docker (recommandé)**
+```bash
 docker compose run --rm terraform version
 ```
 
-**Option 2 : Installation locale sur Ubuntu/Debian**
+**Option 2: Installation locale**
 ```bash
 wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 sudo apt update && sudo apt install terraform
-terraform version
 ```
 
-### Authentification Azure
+---
+
+## 🔧 Commandes Terraform
+
+### Via Makefile (recommandé)
+```bash
+make infra/init       # Initialize Terraform
+make infra/validate   # Validate configuration
+make infra/plan       # Show execution plan
+make infra/apply      # Apply changes
+make infra/destroy    # Destroy infrastructure
+make infra/fmt        # Format Terraform files
+make infra/clean      # Remove cache
+```
+
+### Via Docker directement
+```bash
+docker compose run --rm terraform init -backend-config=infra/backend.hcl
+docker compose run --rm terraform plan
+docker compose run --rm terraform apply
+```
+
+---
+
+## 📂 Infrastructure Actuelle (Phase C2)
+
+### Ressources Déployées
+- ✅ **Resource Group**: `rg-iam-demo` (Switzerland North)
+- ✅ **Log Analytics Workspace**: `iam-poc-law-dev`
+  - Retention: 30 jours (compliance FINMA)
+  - SKU: PerGB2018
+  - Tags: `Compliance=LPD-FINMA`, `Purpose=Observability`
+
+### Backend Azure Storage
+- **Storage Account**: Auto-généré (`tfstateiam<random>`)
+- **Container**: `tfstate`
+- **Security**:
+  - ✅ Encryption at rest (AES-256)
+  - ✅ Versioning (rollback capability)
+  - ✅ Soft delete (30 jours)
+  - ✅ HTTPS only (TLS 1.2+)
+  - ✅ Public access disabled
+
+---
+
+## 🔐 Configuration Backend (Première fois)
+
+### 1. Créer le backend Azure Storage
 
 ```bash
-az login
-az account show
+./scripts/infra/setup-backend.sh
 ```
 
-## 🚀 Utilisation
+**Ce script va**:
+- Créer un Resource Group dédié (`tfstate-rg`)
+- Créer un Storage Account sécurisé (nom unique)
+- Activer versioning, soft delete, encryption
+- Générer `infra/backend.hcl` automatiquement
 
-### 0. Configuration du backend distant (RECOMMANDÉ pour production)
-
-**Pourquoi ?** Le state Terraform contient des données sensibles (IPs, credentials, metadata). Un backend distant offre :
-- ✅ Encryption au repos (AES-256)
-- ✅ State locking (évite les modifications concurrentes)
-- ✅ Versioning (rollback possible)
-- ✅ Audit trail (traçabilité LPD/FINMA)
-
-**Setup rapide :**
+### 2. Initialiser Terraform
 
 ```bash
-# 1. Créer l'infrastructure de backend (une seule fois)
-./scripts/setup-backend.sh
-
-# 2. Le script affichera les commandes pour créer backend.hcl
-# Suivez les instructions affichées
-
-# 3. Initialiser Terraform avec le backend
-terraform -chdir=infra init -backend-config=backend.hcl
+make infra/init
 ```
 
-**Alternative (développement local uniquement) :**
-
-Si vous voulez tester sans backend distant, commentez le bloc `backend "azurerm"` dans `backend.tf`.
-
-### 1. Initialisation
-
-**Avec Docker (recommandé) :**
+**Alternative (mode local - dev uniquement)**:
 ```bash
-cd infra
-make init
+./scripts/infra/setup-local-mode.sh
 ```
 
-**Ou en local :**
-```bash
-terraform -chdir=infra init -backend-config=backend.hcl
-```
+---
 
-### 2. Validation de la configuration
-
-**Docker :**
-```bash
-cd infra && make validate
-```
-
-**Local :**
-```bash
-terraform -chdir=infra validate
-```
-
-### 3. Formatage du code
-
-**Docker :**
-```bash
-cd infra && make fmt
-```
-
-**Local :**
-```bash
-terraform -chdir=infra fmt -recursive
-```
-
-### 4. Plan (simulation)
-
-**Docker :**
-```bash
-cd infra && make plan
-```
-
-**Local :**
-```bash
-terraform -chdir=infra plan -var="tenant_id=$(az account show --query tenantId -o tsv)"
-```
-
-### 5. Application (déploiement réel)
-
-⚠️ **Attention**: Cela va créer des ressources Azure facturables.
-
-**Docker :**
-```bash
-cd infra && make apply
-```
-
-**Local :**
-```bash
-terraform -chdir=infra apply -var="tenant_id=$(az account show --query tenantId -o tsv)"
-```
-
-### 6. Destruction
-
-**Docker :**
-```bash
-cd infra && make destroy
-```
-
-**Local :**
-```bash
-terraform -chdir=infra destroy -var="tenant_id=$(az account show --query tenantId -o tsv)"
-```
-
-## 📝 Variables disponibles
+## 📝 Variables Terraform
 
 | Variable | Description | Défaut | Requis |
 |----------|-------------|--------|--------|
 | `prefix` | Préfixe pour nommer les ressources | `iam-poc` | Non |
 | `location` | Région Azure | `switzerlandnorth` | Non |
-| `rg_name` | Nom du Resource Group | Auto-généré | Non |
-| `tenant_id` | Azure AD Tenant ID | - | **Oui** |
+| `rg_name` | Nom du Resource Group | `rg-iam-demo` | Non |
 | `subnet_id` | ID du subnet pour Private Endpoints | `""` | Non |
 | `environment` | Environnement (dev/staging/prod) | `dev` | Non |
 | `tags` | Tags communs | `{Project, ManagedBy}` | Non |
 
+**Note**: `tenant_id` est auto-détecté via `data.azurerm_client_config`
+
 ### Exemple avec variables personnalisées
 
-```bash
-terraform -chdir=infra plan \
-  -var="prefix=mon-iam" \
-  -var="location=switzerlandnorth" \
-  -var="environment=prod" \
-  -var="tenant_id=$(az account show --query tenantId -o tsv)"
-```
-
-### Utilisation d'un fichier .tfvars
-
 Créez `infra/terraform.tfvars`:
-
 ```hcl
-prefix      = "iam-poc"
+prefix      = "mon-iam"
 location    = "switzerlandnorth"
-environment = "dev"
-tenant_id   = "votre-tenant-id-ici"
+environment = "prod"
 
 tags = {
   Project   = "IAM-POC"
@@ -169,71 +143,108 @@ tags = {
 }
 ```
 
-Puis exécutez:
+---
 
-```bash
-terraform -chdir=infra plan
-terraform -chdir=infra apply
-```
+## 🗺️ Roadmap Infrastructure
 
-## 🔐 Sécurité
+### ✅ Phase C1: Skeleton (Completed)
+- Providers configuration (azurerm ~>3)
+- Azure Storage backend
+- Variables + outputs structure
+- Docker containerization
 
-### Backend Terraform State
+### ✅ Phase C2: Foundation (Completed)
+- Resource Group (imported existing `rg-iam-demo`)
+- Log Analytics Workspace (30d retention)
+- Service Principal authentication
+- Auto-detection `tenant_id`
 
-**⚠️ IMPORTANT** : Le state Terraform contient :
-- IPs publiques de vos ressources
-- Identifiants de déploiement (site credentials)
-- Metadata de configuration (potentiellement sensible)
+### 🔄 Phase C3: Network (In Progress)
+- VNet (10.0.0.0/16)
+- Subnet for Private Endpoints
+- Network Security Group (NSG)
 
-**Bonnes pratiques :**
-1. **Production** : Toujours utiliser un backend distant (Azure Storage)
-2. **Ne jamais commiter** `terraform.tfstate` ou `backend.hcl` dans Git
-3. **Activer le versioning** sur le Storage Account (rollback)
-4. **Activer soft delete** (conformité LPD/FINMA - rétention 30j)
-5. **Utiliser Azure CLI auth** plutôt que des access keys en clair
+### 📋 Phase C4: Key Vault
+- Azure Key Vault with Private Endpoint
+- Network isolation (no public access)
+- RBAC policies
 
-### Fichiers à ne jamais commiter
+### 📋 Phase C5: App Service
+- Azure App Service Plan (Linux)
+- Web App with Managed Identity
+- VNet integration
 
-- ⚠️ **Ne jamais commiter** `terraform.tfvars` ou `*.tfstate` dans Git
-- Le fichier `.gitignore` à la racine du projet doit contenir:
-  ```
-  **/.terraform/
-  **/.terraform.lock.hcl
-  **/terraform.tfstate
-  **/terraform.tfstate.backup
-  **/*.tfvars
-  **/*.tfvars.json
-  ```
-
-## 📂 Structure actuelle
-
-```
-infra/
-├── providers.tf         # Configuration du provider azurerm ~>3
-├── variables.tf         # Variables d'entrée
-├── outputs.tf           # Outputs (placeholders pour phases suivantes)
-├── main.tf              # Configuration principale (placeholder)
-├── backend.tf           # Backend Azure Storage (state distant)
-├── backend.hcl.example  # Exemple de configuration backend
-├── Makefile             # Commandes Terraform simplifiées (Docker)
-├── .gitignore           # Protection secrets/state
-├── README.md            # Ce fichier
-└── scripts/             # Scripts d'infrastructure
-    ├── setup-backend.sh           # Création backend Azure Storage
-    ├── register-providers.sh      # Enregistrement providers Azure
-    ├── setup-local-mode.sh        # Configuration mode local
-    ├── upload-terraform-secret.sh # Upload secrets vers Key Vault
-    └── README.md                  # Documentation scripts
-```
-
-## 🗺️ Phases suivantes
-
-- **C2**: Resource Group + Log Analytics Workspace
-- **C3**: VNet + Subnet pour Private Endpoints
-- **C4**: Key Vault privé avec Private Endpoint
-- **C5**: App Service + Managed Identity
-- **C6**: Diagnostic Settings vers Log Analytics
+### 📋 Phase C6: Monitoring
+- Diagnostic settings to Log Analytics
+- Alerts + dashboards
+- Cost monitoring
 
 ---
 
-**Note**: Cette infrastructure suit les bonnes pratiques de sécurité Azure et les exigences de conformité suisses (LPD/FINMA).
+## 📂 Structure du Projet
+
+```
+infra/
+├── providers.tf         # Configuration azurerm provider
+├── variables.tf         # Variables d'entrée
+├── outputs.tf           # Outputs Terraform
+├── main.tf              # Auto-detection tenant_id
+├── log_analytics.tf     # Resource Group + Log Analytics
+├── backend.tf           # Backend Azure Storage
+├── backend.hcl          # Configuration backend (généré par script)
+├── .gitignore           # Protection secrets/state
+└── README.md            # Ce fichier
+```
+
+---
+
+## 🔒 Sécurité & Bonnes Pratiques
+
+### Backend Terraform State
+⚠️ **Le state Terraform contient des données sensibles**:
+- IPs publiques
+- Identifiants de déploiement
+- Metadata de configuration
+
+**Bonnes pratiques**:
+1. ✅ Toujours utiliser un backend distant (Azure Storage)
+2. ✅ Activer versioning (rollback possible)
+3. ✅ Activer soft delete (30 jours - compliance FINMA)
+4. ✅ Utiliser Azure CLI auth (éviter access keys en clair)
+5. ❌ **Ne jamais commiter** `terraform.tfstate`, `backend.hcl`, `*.tfvars`
+
+### Fichiers à ne jamais commiter
+```gitignore
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/*.tfvars
+**/*.tfvars.json
+**/backend.hcl
+```
+
+---
+
+## 🛠️ Scripts d'Infrastructure
+
+Disponibles dans `scripts/infra/`:
+
+| Script | Description |
+|--------|-------------|
+| `setup-backend.sh` | Créer backend Azure Storage (première fois) |
+| `register-providers.sh` | Enregistrer providers Azure (si nécessaire) |
+| `setup-local-mode.sh` | Mode local sans backend distant (dev) |
+| `upload-terraform-secret.sh` | Upload ARM_CLIENT_SECRET dans Key Vault |
+
+---
+
+## 📘 Documentation Complémentaire
+
+- **[Main README](../README.md)**: Vue d'ensemble du projet
+- **[Deployment Guide](../docs/DEPLOYMENT_GUIDE.md)**: Déploiement Azure App Service
+- **[Security Design](../docs/SECURITY_DESIGN.md)**: Architecture de sécurité
+
+---
+
+**Note**: Cette infrastructure suit les bonnes pratiques Azure et les exigences de conformité suisses (LPD/FINMA).
