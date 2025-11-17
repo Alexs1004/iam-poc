@@ -5,7 +5,7 @@
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Tests 91%](https://img.shields.io/badge/Coverage-91%25-brightgreen?logo=codecov)
 ![Security](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
-![Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20FINMA-red)
+![Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20RGPD%20%7C%20FINMA-red)
 
 > **🎯 Production-ready IAM platform · Infrastructure as Code · Swiss compliance by design**
 
