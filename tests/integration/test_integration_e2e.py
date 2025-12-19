@@ -56,7 +56,8 @@ pytestmark = [
 def auth_token():
     """Get OAuth Bearer token from Keycloak
     
-    Skip if credentials are invalid (prevents test failures when stack not properly configured).
+    Skip if credentials are invalid or realm doesn't exist
+    (prevents test failures when stack not properly configured).
     """
     token_url = f"{KEYCLOAK_URL}/realms/{SERVICE_REALM}/protocol/openid-connect/token"
     
@@ -73,6 +74,9 @@ def auth_token():
         
         if response.status_code == 401:
             pytest.skip(f"Service account credentials invalid (stack may not be properly initialized): {response.text}")
+        
+        if response.status_code == 404:
+            pytest.skip(f"Realm '{SERVICE_REALM}' does not exist. Run 'make quickstart' to initialize.")
         
         assert response.status_code == 200, f"Failed to get token: {response.text}"
         token_data = response.json()
