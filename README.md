@@ -1,9 +1,11 @@
 # IAM Security PoC — Azure-Native Architecture
 ### SCIM 2.0 · OIDC/MFA · Azure Key Vault · Terraform IaC · Cryptographic Audit
 
+[![CI](https://github.com/Alexs1004/iam-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexs1004/iam-poc/actions/workflows/ci.yml)
+[![Security Scans](https://github.com/Alexs1004/iam-poc/actions/workflows/security-scans.yml/badge.svg)](https://github.com/Alexs1004/iam-poc/actions/workflows/security-scans.yml)
+[![codecov](https://codecov.io/gh/Alexs1004/iam-poc/graph/badge.svg)](https://codecov.io/gh/Alexs1004/iam-poc)
 ![Azure](https://img.shields.io/badge/Azure-Key%20Vault%20%7C%20Entra%20ID%20%7C%20Terraform-0078D4?logo=microsoft-azure&logoColor=white)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Tests 91%](https://img.shields.io/badge/Coverage-91%25-brightgreen?logo=codecov)
 ![Security](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
 ![Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20RGPD%20%7C%20FINMA-red)
 
