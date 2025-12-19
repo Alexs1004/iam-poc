@@ -4,6 +4,7 @@
 [![CI](https://github.com/Alexs1004/iam-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexs1004/iam-poc/actions/workflows/ci.yml)
 [![Security Scans](https://github.com/Alexs1004/iam-poc/actions/workflows/security-scans.yml/badge.svg)](https://github.com/Alexs1004/iam-poc/actions/workflows/security-scans.yml)
 [![codecov](https://codecov.io/gh/Alexs1004/iam-poc/graph/badge.svg)](https://codecov.io/gh/Alexs1004/iam-poc)
+[![GHCR](https://img.shields.io/badge/GHCR-Image%20Published-blue?logo=github)](https://ghcr.io/alexs1004/iam-poc)
 ![Azure](https://img.shields.io/badge/Azure-Key%20Vault%20%7C%20Entra%20ID%20%7C%20Terraform-0078D4?logo=microsoft-azure&logoColor=white)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Security](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
@@ -278,7 +279,7 @@ When enabled, the app validates the `amr` (Authentication Methods References) cl
 | **DevSecOps** | CI/CD (5 security jobs), 91% tests | `.github/workflows/security-scans.yml` |
 | **Security Scanning** | Gitleaks, Trivy, SBOM | `make security-check` |
 | **Python 3.12** | Flask, pytest, type hints | All `.py` files |
-| **Docker** | Multi-service Compose | `docker-compose.yml` |
+| **Docker** | Multi-service Compose, GHCR publishing | `docker-compose.yml`, `.github/workflows/ci.yml` |
 | **Nginx** | TLS, rate limiting, headers | `proxy/nginx.conf` |
 
 ---
