@@ -153,6 +153,7 @@ make rotate-secret       # Azure Key Vault secret rotation
 - **[Security Design](docs/SECURITY_DESIGN.md)** — OWASP ASVS L2, JWT validation
 - **[Threat Model](docs/THREAT_MODEL.md)** — STRIDE analysis, non-repudiation
 - **[Security Scanning](docs/SECURITY_SCANNING.md)** — Gitleaks, Trivy, SBOM
+- **[SecOps & MFA](docs/SECOPS.md)** — Conditional Access, MFA enforcement
 
 ### 🛠️ For DevOps
 - **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** — Azure App Service, CI/CD

@@ -8,8 +8,10 @@ import ipaddress
 import hmac
 import os
 import secrets
+from functools import wraps
 from pathlib import Path
 from tempfile import gettempdir
+from typing import Callable
 
 from flask import Flask, session, request, g, abort, redirect, url_for, get_flashed_messages
 from flask_session import Session
@@ -111,6 +113,55 @@ def create_app() -> Flask:
         print("[flask_app] WARNING: Demo mode active - do not deploy with demo credentials")
     
     return app
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MFA Guard Decorator (Conditional Access)
+# ─────────────────────────────────────────────────────────────────────────────
+def require_mfa(fn: Callable) -> Callable:
+    """
+    Decorator to enforce MFA verification on protected routes.
+    
+    Checks the 'amr' (Authentication Methods References) claim in the OIDC
+    ID token. If REQUIRE_MFA=true and 'amr' exists but doesn't contain 'mfa',
+    returns 403 Forbidden.
+    
+    Permissive fallback: If 'amr' claim is missing (IdP doesn't provide it),
+    access is allowed to avoid breaking non-MFA-aware IdPs.
+    
+    References:
+        - RFC 8176: Authentication Method Reference Values
+        - Azure AD 'amr' claim: https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens
+    """
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        # Check if MFA enforcement is enabled
+        require_mfa_env = os.environ.get("REQUIRE_MFA", "false").lower() == "true"
+        
+        if not require_mfa_env:
+            return fn(*args, **kwargs)
+        
+        # Get ID token claims from session
+        id_token_claims = session.get("id_token_claims", {})
+        amr = id_token_claims.get("amr")
+        
+        # Permissive fallback: if 'amr' claim is missing, allow access
+        # (IdP may not provide amr claim)
+        if amr is None:
+            return fn(*args, **kwargs)
+        
+        # Normalize amr to list (some IdPs return string)
+        if isinstance(amr, str):
+            amr = [amr]
+        
+        # Check if MFA was used (common values: 'mfa', 'otp', 'hwk', 'swk')
+        mfa_methods = {"mfa", "otp", "hwk", "swk", "pop", "fido"}
+        if not any(method in amr for method in mfa_methods):
+            abort(403, description="MFA required for this endpoint")
+        
+        return fn(*args, **kwargs)
+    
+    return wrapper
 
 
 def _register_middleware(app: Flask, trusted_proxy_networks: list):
