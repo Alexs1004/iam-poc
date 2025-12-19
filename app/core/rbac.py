@@ -13,20 +13,35 @@ _JWKS_CACHE: Optional[JsonWebKey] = None
 
 
 def collect_roles(*sources) -> list[str]:
-    """Collect all roles from ID claims, userinfo, and access token claims."""
+    """Collect all roles from ID claims, userinfo, and access token claims.
+    
+    Handles both Keycloak and Entra ID claim formats:
+    - Keycloak: realm_access.roles, resource_access.*.roles
+    - Entra ID: roles (top-level array)
+    """
     roles = []
     for source in sources:
         if not isinstance(source, dict):
             continue
+        
+        # Keycloak: realm_access.roles
         realm_access = source.get("realm_access")
         if isinstance(realm_access, dict):
             roles.extend(r for r in realm_access.get("roles", []) if r not in roles)
+        
+        # Keycloak: resource_access.*.roles
         resource_access = source.get("resource_access")
         if isinstance(resource_access, dict):
             for client_access in resource_access.values():
                 if not isinstance(client_access, dict):
                     continue
                 roles.extend(r for r in client_access.get("roles", []) if r not in roles)
+        
+        # Entra ID: roles (top-level array)
+        entra_roles = source.get("roles")
+        if isinstance(entra_roles, list):
+            roles.extend(r for r in entra_roles if r not in roles)
+    
     return roles
 
 
@@ -112,8 +127,14 @@ def current_user_context() -> tuple[Optional[dict], dict, dict, list[str]]:
         session["userinfo"] = userinfo
     
     id_claims = session.get("id_claims") or {}
-    access_claims = decode_access_token(token.get("access_token"), cfg.keycloak_issuer)
-    roles = collect_roles(id_claims, userinfo, access_claims)
+    
+    # Use pre-computed normalized_roles from session (set during callback)
+    # This ensures Entra ID roles are correctly handled
+    roles = session.get("normalized_roles")
+    if roles is None:
+        # Fallback: compute roles from claims (legacy or Keycloak)
+        access_claims = decode_access_token(token.get("access_token"), cfg.keycloak_issuer)
+        roles = collect_roles(id_claims, userinfo, access_claims)
     
     return token, id_claims, userinfo, roles
 

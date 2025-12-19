@@ -168,7 +168,7 @@ make rotate-secret       # Azure Key Vault secret rotation
 
 ---
 
-## � Multi-IdP Support
+## 🔀 Multi-IdP Support
 
 Switch between **Keycloak** and **Microsoft Entra ID** for authentication:
 
@@ -177,14 +177,26 @@ Switch between **Keycloak** and **Microsoft Entra ID** for authentication:
 | `OIDC_PROVIDER` | `keycloak` | Default IdP (`keycloak` or `entra`) |
 | `ENTRA_ISSUER` | — | Entra tenant URL (e.g., `https://login.microsoftonline.com/{tenant}/v2.0`) |
 | `ENTRA_CLIENT_ID` | — | Entra App Registration client ID |
-| `ENTRA_CLIENT_SECRET` | — | Entra client secret (optional for public clients) |
+| `ENTRA_CLIENT_SECRET` | — | Stored in Key Vault (never in `.env`) |
 
 **Demo override**: `/login?provider=entra` switches IdP for current session.  
-⚠️ **Security**: Query param override only works when `DEMO_MODE=true` or `FLASK_DEBUG=true`.
+⚠️ **Security**: Query param override disabled when `DEMO_MODE=false`.
+
+📘 **Setup guide**: [docs/ENTRA_OIDC_APPREG.md](docs/ENTRA_OIDC_APPREG.md)
+
+### MFA Conditional Access (Zero Trust)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REQUIRE_MFA` | `false` | Enforce MFA on `/admin/*` routes |
+
+When enabled, the app validates the `amr` (Authentication Methods References) claim in the ID token. Access is denied if the user didn't authenticate with MFA.
+
+📘 **Configuration**: [docs/SECOPS.md](docs/SECOPS.md)
 
 ---
 
-## �📊 SCIM 2.0 Support Matrix
+## 📊 SCIM 2.0 Support Matrix
 
 | Method | Endpoint | Status | Description |
 |--------|----------|--------|-------------|

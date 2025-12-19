@@ -4,8 +4,10 @@
 
 ### Overview
 
-The application implements a **Conditional Access** guard for privileged endpoints (`/admin/*`).
+The application implements a **Zero Trust Conditional Access** guard for privileged endpoints (`/admin/*`).
 When enabled, it verifies that the user authenticated with Multi-Factor Authentication (MFA).
+
+**Implementation**: [`app/flask_app.py`](../app/flask_app.py) — `require_mfa()` decorator
 
 ### Configuration
 

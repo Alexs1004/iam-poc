@@ -83,7 +83,10 @@ def require_any_role(*required_roles):
 
 
 def require_admin_view(fn):
-    """Allow viewing admin dashboard (manager, iam-operator, realm-admin only)."""
+    """Allow viewing admin dashboard (manager, iam-operator, realm-admin, admin only).
+    
+    Note: 'admin' is the Entra ID App Role equivalent to realm-admin.
+    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         # Check authentication first
@@ -101,6 +104,7 @@ def require_admin_view(fn):
             
             allowed_roles = [
                 "manager",
+                "admin",  # Entra ID App Role (equivalent to realm-admin)
                 cfg.realm_admin_role,
                 cfg.iam_operator_role
             ]
