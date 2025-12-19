@@ -403,13 +403,21 @@ def test_scim_token_keyvault_mode_enabled(app_static_token_keyvault):
 
 @patch("app.core.provisioning_service.list_users_scim")
 def test_scim_token_keyvault_mode_authentication(mock_list_users, app_static_token_keyvault):
-    """Authentication succeeds with KeyVault-sourced token."""
+    """Authentication succeeds with KeyVault-sourced token.
+    
+    Note: In production mode with SCIM_STATIC_TOKEN_SOURCE=keyvault,
+    the token is loaded from /run/secrets/scim_static_token file,
+    NOT from the SCIM_STATIC_TOKEN environment variable.
+    """
     mock_list_users.return_value = {"schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"], "totalResults": 0, "Resources": []}
     
     with app_static_token_keyvault.test_client() as client:
+        # Get the actual token from app config (loaded from /run/secrets)
+        actual_token = app_static_token_keyvault.config["APP_CONFIG"].scim_static_token
+        
         response = client.get(
             "/scim/v2/Users",
-            headers={"Authorization": "Bearer prod-keyvault-token-67890"}
+            headers={"Authorization": f"Bearer {actual_token}"}
         )
         assert response.status_code == 200
         assert response.headers.get("X-Auth-Method") == "static"
