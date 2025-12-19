@@ -27,9 +27,17 @@ COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade pip setuptools \
     && pip install --no-cache-dir -r requirements.txt
 
+# Create non-root user for security (CIS Docker Benchmark 4.1)
+RUN groupadd --gid 1000 appgroup \
+    && useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser \
+    && chown -R appuser:appgroup /srv/app
+
 # Copy application code (still bind-mounted for live dev)
-COPY . /srv/app
+COPY --chown=appuser:appgroup . /srv/app
 
 EXPOSE 8000
+
+# Run as non-root user
+USER appuser
 
 CMD ["gunicorn", "--config", "gunicorn.conf.py", "--bind", "0.0.0.0:8000", "app.flask_app:app"]
