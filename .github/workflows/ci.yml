@@ -69,13 +69,22 @@ jobs:
   terraform-validate:
     name: Terraform Validate
     runs-on: ubuntu-latest
-    # Only run if infra/ directory exists
-    if: hashFiles('infra/*.tf') != ''
     
     steps:
     - uses: actions/checkout@v4
     
+    - name: Check if Terraform files exist
+      id: check-tf
+      run: |
+        if ls infra/*.tf 1> /dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "No Terraform files found in infra/, skipping validation"
+        fi
+    
     - name: Azure Login (OIDC)
+      if: steps.check-tf.outputs.exists == 'true'
       uses: azure/login@v2
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -84,24 +93,29 @@ jobs:
       continue-on-error: true  # Don't fail if secrets not configured
     
     - name: Setup Terraform
+      if: steps.check-tf.outputs.exists == 'true'
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: "1.6"
     
     - name: Terraform Format Check
+      if: steps.check-tf.outputs.exists == 'true'
       run: terraform fmt -check -recursive
       working-directory: infra
       continue-on-error: true
     
     - name: Terraform Init
+      if: steps.check-tf.outputs.exists == 'true'
       run: terraform init -backend=false
       working-directory: infra
     
     - name: Terraform Validate
+      if: steps.check-tf.outputs.exists == 'true'
       run: terraform validate
       working-directory: infra
     
     - name: Terraform Summary
+      if: steps.check-tf.outputs.exists == 'true'
       run: |
         echo "### 🏗️ Terraform Validation" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
