@@ -10,10 +10,10 @@ from app.api import auth
 @pytest.fixture(autouse=True)
 def reset_oauth_singletons():
     auth.oauth = None
-    auth.oidc = None
+    auth._providers = {}
     yield
     auth.oauth = None
-    auth.oidc = None
+    auth._providers = {}
 
 
 @pytest.fixture()
@@ -57,7 +57,8 @@ def client(app_with_auth):
 
 
 def test_callback_without_verifier_redirects_to_login(monkeypatch, client):
-    monkeypatch.setattr(auth, "get_oidc_client", lambda: None)
+    monkeypatch.setattr(auth, "get_oidc_client", lambda provider=None: None)
+    monkeypatch.setattr(auth, "get_current_provider", lambda: "keycloak")
 
     response = client.get("/callback", follow_redirects=False)
     assert response.status_code == 302
@@ -78,8 +79,9 @@ def test_callback_admin_redirect(monkeypatch, client):
         def get(self, url, token):
             return SimpleNamespace(json=lambda: {"email": "alice@example.com"})
 
-    monkeypatch.setattr(auth, "get_oidc_client", lambda: FakeClient())
-    monkeypatch.setattr("app.core.rbac.collect_roles", lambda *args, **kwargs: ["realm-admin"])
+    monkeypatch.setattr(auth, "get_oidc_client", lambda provider=None: FakeClient())
+    monkeypatch.setattr(auth, "get_current_provider", lambda: "keycloak")
+    monkeypatch.setattr(auth, "normalize_claims", lambda id_claims, userinfo, access_claims, provider: ["realm-admin"])
     monkeypatch.setattr("app.core.rbac.has_admin_role", lambda roles, realm, operator: True)
 
     with client.session_transaction() as sess:
@@ -108,8 +110,9 @@ def test_callback_non_admin_redirects_to_me(monkeypatch, client):
         def get(self, url, token):
             raise RuntimeError("userinfo unavailable")
 
-    monkeypatch.setattr(auth, "get_oidc_client", lambda: FakeClient())
-    monkeypatch.setattr("app.core.rbac.collect_roles", lambda *args, **kwargs: ["analyst"])
+    monkeypatch.setattr(auth, "get_oidc_client", lambda provider=None: FakeClient())
+    monkeypatch.setattr(auth, "get_current_provider", lambda: "keycloak")
+    monkeypatch.setattr(auth, "normalize_claims", lambda id_claims, userinfo, access_claims, provider: ["analyst"])
     monkeypatch.setattr("app.core.rbac.has_admin_role", lambda roles, realm, operator: False)
 
     with client.session_transaction() as sess:
@@ -205,7 +208,9 @@ def test_login_initiates_oidc_flow(monkeypatch, client):
             from flask import redirect
             return redirect("https://keycloak/authorize?code_challenge=" + code_challenge)
     
-    monkeypatch.setattr(auth, "get_oidc_client", lambda: FakeClient())
+    monkeypatch.setattr(auth, "get_oidc_client", lambda provider=None: FakeClient())
+    monkeypatch.setattr(auth, "get_current_provider", lambda: "keycloak")
+    monkeypatch.setattr(auth, "_is_provider_override_allowed", lambda: False)
     
     response = client.get("/login", follow_redirects=False)
     

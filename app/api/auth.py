@@ -1,7 +1,14 @@
-"""Authentication routes and OIDC helpers."""
+"""Authentication routes and OIDC helpers.
+
+Multi-IdP Support:
+- Default provider: OIDC_PROVIDER env var (keycloak|entra)
+- Runtime override: GET /login?provider=keycloak|entra (dev/demo only)
+- Claim normalization: realm_access.roles (Keycloak) → roles, roles (Entra) → roles
+"""
 from __future__ import annotations
 import hashlib
 import base64
+import os
 import secrets
 import string
 from urllib.parse import urlencode
@@ -13,15 +20,21 @@ bp = Blueprint("auth", __name__)
 
 # Module-level OAuth instance (will be initialized by create_app)
 oauth: OAuth = None
-oidc = None
+_providers: dict = {}  # Registered OIDC providers
+
+# Supported providers
+SUPPORTED_PROVIDERS = {"keycloak", "entra"}
 
 
 def init_oauth(app, cfg):
-    """Initialize OAuth client with app configuration."""
-    global oauth, oidc
+    """Initialize OAuth client with multi-IdP support."""
+    global oauth, _providers
     
     oauth = OAuth(app)
-    oidc = oauth.register(
+    _providers = {}
+    
+    # Register Keycloak (always available)
+    _providers["keycloak"] = oauth.register(
         name="keycloak",
         server_metadata_url=f"{cfg.keycloak_server_url}/.well-known/openid-configuration",
         client_id=cfg.oidc_client_id,
@@ -30,14 +43,102 @@ def init_oauth(app, cfg):
         fetch_token=lambda: session.get("token"),
     )
     
-    return oauth, oidc
+    # Register Entra ID (if configured)
+    entra_issuer = os.environ.get("ENTRA_ISSUER")
+    entra_client_id = os.environ.get("ENTRA_CLIENT_ID")
+    if entra_issuer and entra_client_id:
+        entra_client_secret = os.environ.get("ENTRA_CLIENT_SECRET") or None
+        _providers["entra"] = oauth.register(
+            name="entra",
+            server_metadata_url=f"{entra_issuer}/.well-known/openid-configuration",
+            client_id=entra_client_id,
+            client_secret=entra_client_secret,
+            client_kwargs={"scope": "openid profile email"},
+            fetch_token=lambda: session.get("token"),
+        )
+    
+    return oauth, _providers
 
 
-def get_oidc_client():
-    """Get the OIDC client instance."""
-    if oidc is None:
-        raise RuntimeError("OIDC client not initialized. Call init_oauth first.")
-    return oidc
+def get_current_provider() -> str:
+    """Get current OIDC provider name from session or env default."""
+    # Session override (set via /login?provider=)
+    session_provider = session.get("oidc_provider")
+    if session_provider and session_provider in _providers:
+        return session_provider
+    
+    # Environment default
+    default_provider = os.environ.get("OIDC_PROVIDER", "keycloak").lower()
+    if default_provider in _providers:
+        return default_provider
+    
+    return "keycloak"
+
+
+def get_oidc_client(provider: str = None):
+    """Get the OIDC client instance for specified or current provider."""
+    if not _providers:
+        raise RuntimeError("OIDC providers not initialized. Call init_oauth first.")
+    
+    provider = provider or get_current_provider()
+    client = _providers.get(provider)
+    
+    if client is None:
+        # Fallback to keycloak if requested provider not available
+        client = _providers.get("keycloak")
+    
+    if client is None:
+        raise RuntimeError(f"No OIDC provider available (requested: {provider})")
+    
+    return client
+
+
+def normalize_claims(id_claims: dict, userinfo: dict, access_claims: dict, provider: str) -> list[str]:
+    """
+    Normalize roles from different IdP claim formats to unified list.
+    
+    Keycloak: realm_access.roles, resource_access.*.roles
+    Entra ID: roles (top-level array)
+    """
+    roles = []
+    
+    # Collect from all sources
+    for source in (id_claims, userinfo, access_claims):
+        if not isinstance(source, dict):
+            continue
+        
+        # Keycloak: realm_access.roles
+        realm_access = source.get("realm_access")
+        if isinstance(realm_access, dict):
+            roles.extend(r for r in realm_access.get("roles", []) if r not in roles)
+        
+        # Keycloak: resource_access.*.roles
+        resource_access = source.get("resource_access")
+        if isinstance(resource_access, dict):
+            for client_access in resource_access.values():
+                if isinstance(client_access, dict):
+                    roles.extend(r for r in client_access.get("roles", []) if r not in roles)
+        
+        # Entra ID: roles (top-level)
+        entra_roles = source.get("roles")
+        if isinstance(entra_roles, list):
+            roles.extend(r for r in entra_roles if r not in roles)
+    
+    return roles
+
+
+def _is_provider_override_allowed() -> bool:
+    """Check if ?provider= query param override is allowed (dev/demo only)."""
+    # Allow in demo mode
+    if os.environ.get("DEMO_MODE", "false").lower() == "true":
+        return True
+    # Allow in debug mode
+    if os.environ.get("FLASK_DEBUG", "false").lower() in ("true", "1"):
+        return True
+    # Allow in development environment
+    if os.environ.get("FLASK_ENV", "").lower() == "development":
+        return True
+    return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,16 +161,42 @@ def _build_code_challenge(code_verifier: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 @bp.route("/login")
 def login():
-    """Initiate OIDC login flow with PKCE."""
+    """Initiate OIDC login flow with PKCE.
+    
+    Query params:
+        provider: Override IdP (keycloak|entra) - only in dev/demo mode
+    """
     cfg = current_app.config["APP_CONFIG"]
-    client = get_oidc_client()
+    
+    # Handle provider override (dev/demo only)
+    requested_provider = request.args.get("provider", "").lower()
+    if requested_provider and requested_provider in SUPPORTED_PROVIDERS:
+        if _is_provider_override_allowed():
+            session["oidc_provider"] = requested_provider
+        else:
+            current_app.logger.warning(
+                f"Provider override rejected (production mode): {requested_provider}"
+            )
+    
+    provider = get_current_provider()
+    client = get_oidc_client(provider)
+    
+    # Store provider in session for callback
+    session["oidc_provider"] = provider
     
     code_verifier = _generate_code_verifier()
     session["pkce_code_verifier"] = code_verifier
     code_challenge = _build_code_challenge(code_verifier)
     
+    # Determine redirect URI based on provider
+    redirect_uri = cfg.oidc_redirect_uri
+    if provider == "entra":
+        entra_redirect_uri = os.environ.get("ENTRA_REDIRECT_URI")
+        if entra_redirect_uri:
+            redirect_uri = entra_redirect_uri
+    
     return client.authorize_redirect(
-        redirect_uri=cfg.oidc_redirect_uri,
+        redirect_uri=redirect_uri,
         code_challenge=code_challenge,
         code_challenge_method="S256",
     )
@@ -79,7 +206,8 @@ def login():
 def callback():
     """Handle OIDC callback after successful authentication."""
     cfg = current_app.config["APP_CONFIG"]
-    client = get_oidc_client()
+    provider = get_current_provider()
+    client = get_oidc_client(provider)
     
     code_verifier = session.pop("pkce_code_verifier", None)
     if not code_verifier:
@@ -93,22 +221,34 @@ def callback():
     except Exception:
         session["id_claims"] = {}
     
+    # Store ID token claims for MFA guard
+    session["id_token_claims"] = session.get("id_claims", {})
+    
+    # Fetch userinfo
     try:
-        userinfo_url = f"{cfg.keycloak_server_url}/protocol/openid-connect/userinfo"
+        if provider == "entra":
+            # Entra uses Microsoft Graph for userinfo
+            userinfo_url = "https://graph.microsoft.com/oidc/userinfo"
+        else:
+            userinfo_url = f"{cfg.keycloak_server_url}/protocol/openid-connect/userinfo"
         session["userinfo"] = client.get(userinfo_url, token=token).json()
     except Exception:
         session["userinfo"] = {}
     
-    # Smart redirect based on user role
-    from app.core.rbac import collect_roles, has_admin_role, decode_access_token
+    # Normalize roles from provider-specific claims
+    from app.core.rbac import decode_access_token, has_admin_role
     
     id_claims = session.get("id_claims") or {}
     userinfo = session.get("userinfo") or {}
     access_token = token.get("access_token")
     
-    # Decode JWT access token to extract claims
-    access_claims = decode_access_token(access_token, cfg.keycloak_issuer)
-    roles = collect_roles(id_claims, userinfo, access_claims)
+    # Decode JWT access token
+    issuer = cfg.keycloak_issuer if provider == "keycloak" else os.environ.get("ENTRA_ISSUER", "")
+    access_claims = decode_access_token(access_token, issuer)
+    
+    # Normalize roles to unified format
+    roles = normalize_claims(id_claims, userinfo, access_claims, provider)
+    session["normalized_roles"] = roles
     
     if has_admin_role(roles, cfg.realm_admin_role, cfg.iam_operator_role):
         return redirect(url_for("admin.admin_dashboard"))
@@ -118,8 +258,9 @@ def callback():
 
 @bp.route("/logout", methods=["GET", "POST"])
 def logout():
-    """Logout user and redirect to Keycloak logout endpoint."""
+    """Logout user with provider-specific redirect."""
     cfg = current_app.config["APP_CONFIG"]
+    provider = get_current_provider()
     
     token = session.get("token") or {}
     id_token = token.get("id_token")
@@ -131,15 +272,20 @@ def logout():
     from flask import make_response
     session.clear()
     
-    # Keycloak logout endpoint
-    end_session_endpoint = f"{cfg.keycloak_public_issuer.rstrip('/')}/protocol/openid-connect/logout"
-    
-    # Always use the standard post_logout_redirect_uri (which is authorized)
-    params = {"post_logout_redirect_uri": cfg.post_logout_redirect_uri}
-    if id_token:
-        params["id_token_hint"] = id_token
+    # Provider-specific logout endpoints
+    if provider == "entra":
+        entra_issuer = os.environ.get("ENTRA_ISSUER", "")
+        entra_post_logout = os.environ.get("ENTRA_POST_LOGOUT_REDIRECT_URI", cfg.post_logout_redirect_uri)
+        end_session_endpoint = f"{entra_issuer}/oauth2/v2.0/logout"
+        params = {"post_logout_redirect_uri": entra_post_logout}
     else:
-        params["client_id"] = cfg.oidc_client_id
+        # Keycloak logout endpoint
+        end_session_endpoint = f"{cfg.keycloak_public_issuer.rstrip('/')}/protocol/openid-connect/logout"
+        params = {"post_logout_redirect_uri": cfg.post_logout_redirect_uri}
+        if id_token:
+            params["id_token_hint"] = id_token
+        else:
+            params["client_id"] = cfg.oidc_client_id
     
     logout_url = f"{end_session_endpoint}?{urlencode(params)}"
     

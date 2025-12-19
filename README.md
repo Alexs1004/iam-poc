@@ -168,7 +168,23 @@ make rotate-secret       # Azure Key Vault secret rotation
 
 ---
 
-## 📊 SCIM 2.0 Support Matrix
+## � Multi-IdP Support
+
+Switch between **Keycloak** and **Microsoft Entra ID** for authentication:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OIDC_PROVIDER` | `keycloak` | Default IdP (`keycloak` or `entra`) |
+| `ENTRA_ISSUER` | — | Entra tenant URL (e.g., `https://login.microsoftonline.com/{tenant}/v2.0`) |
+| `ENTRA_CLIENT_ID` | — | Entra App Registration client ID |
+| `ENTRA_CLIENT_SECRET` | — | Entra client secret (optional for public clients) |
+
+**Demo override**: `/login?provider=entra` switches IdP for current session.  
+⚠️ **Security**: Query param override only works when `DEMO_MODE=true` or `FLASK_DEBUG=true`.
+
+---
+
+## �📊 SCIM 2.0 Support Matrix
 
 | Method | Endpoint | Status | Description |
 |--------|----------|--------|-------------|

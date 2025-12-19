@@ -202,44 +202,49 @@ def test_jwt_wrong_algorithm_rejected(client, mock_jwks_endpoint):
 
 @pytest.mark.critical
 def test_pkce_valid_code_verifier_accepted(client, monkeypatch):
-    """Test that PKCE code exchange succeeds with correct code_verifier."""
+    """Test that PKCE code exchange succeeds with correct code_verifier.
     
-    # Mock Keycloak token endpoint
-    def mock_authorize_access_token(code_verifier=None):
-        if code_verifier == "correct-verifier-value":
-            return {
-                "access_token": "valid-token",
-                "id_token": "valid-id-token",
-                "token_type": "Bearer",
-            }
-        from requests import HTTPError
-        response = Mock(status_code=400)
-        raise HTTPError(response=response)
+    Note: This test validates the PKCE flow logic. In the real flow, Authlib
+    manages the OAuth state (CSRF) automatically. Here we mock the full flow.
+    """
+    from unittest.mock import MagicMock
+    from types import SimpleNamespace
     
-    # Mock ID token parsing
-    def mock_parse_id_token(token):
-        return {"sub": "user-123", "preferred_username": "alice"}
+    # Mock token response
+    mock_token = {
+        "access_token": "valid-token",
+        "id_token": "valid-id-token",
+        "token_type": "Bearer",
+    }
     
-    # Mock userinfo
-    def mock_userinfo(token):
-        return {"preferred_username": "alice", "email": "alice@example.com"}
+    # Create mock OIDC client
+    mock_client = MagicMock()
+    mock_client.authorize_access_token = MagicMock(return_value=mock_token)
+    mock_client.parse_id_token = MagicMock(return_value={"sub": "user-123", "preferred_username": "alice"})
+    mock_client.get = MagicMock(return_value=SimpleNamespace(json=lambda: {"email": "alice@example.com"}))
     
-    # Patch OIDC client
+    # Patch the auth module
     from app.api import auth
-    if hasattr(auth, 'oidc') and auth.oidc:
-        monkeypatch.setattr(auth.oidc, "authorize_access_token", mock_authorize_access_token)
-        monkeypatch.setattr(auth.oidc, "parse_id_token", mock_parse_id_token)
-        monkeypatch.setattr(auth.oidc, "userinfo", mock_userinfo)
+    monkeypatch.setattr(auth, "get_oidc_client", lambda provider=None: mock_client)
+    monkeypatch.setattr(auth, "get_current_provider", lambda: "keycloak")
+    monkeypatch.setattr(auth, "normalize_claims", lambda id_claims, userinfo, access_claims, provider: ["analyst"])
+    monkeypatch.setattr("app.core.rbac.has_admin_role", lambda roles, r1, r2: False)
     
     # Simulate callback with correct verifier
     with client.session_transaction() as session:
         session["pkce_code_verifier"] = "correct-verifier-value"
+        session["oidc_provider"] = "keycloak"
     
-    # Attempt callback
-    response = client.get("/callback?code=auth-code&state=valid-state", follow_redirects=False)
+    # Attempt callback (without state param to avoid Authlib state check)
+    response = client.get("/callback", follow_redirects=False)
     
-    # Should succeed (redirect to home or complete flow)
-    assert response.status_code in [200, 302], "PKCE with correct verifier should succeed"
+    # Should succeed (redirect to /admin/me for non-admin user)
+    assert response.status_code in [200, 302], f"PKCE with correct verifier should succeed, got {response.status_code}"
+    
+    # Verify authorize_access_token was called with correct verifier
+    mock_client.authorize_access_token.assert_called_once()
+    call_kwargs = mock_client.authorize_access_token.call_args
+    assert call_kwargs.kwargs.get("code_verifier") == "correct-verifier-value"
 
 
 # REMOVED: test_jwks_rotation_new_kid_accepted

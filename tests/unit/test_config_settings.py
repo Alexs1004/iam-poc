@@ -65,7 +65,18 @@ def test_service_client_secret_reads_from_run_secrets(monkeypatch, tmp_path):
     assert cfg.service_client_secret_resolved == "file-secret"
 
 
-def test_service_client_secret_falls_back_to_env(monkeypatch):
+def test_service_client_secret_falls_back_to_env(monkeypatch, tmp_path):
+    """Test that service client secret falls back to env when /run/secrets is empty."""
+    from app.config import settings
+    real_path = settings.Path
+
+    # Mock /run/secrets to an empty temp directory
+    def fake_path(target):
+        if str(target) == "/run/secrets":
+            return tmp_path
+        return real_path(target)
+
+    monkeypatch.setattr(settings, "Path", fake_path)
     monkeypatch.setenv("KEYCLOAK_SERVICE_CLIENT_SECRET", "env-secret")
     cfg = make_config()
     try:
