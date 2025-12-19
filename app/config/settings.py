@@ -251,6 +251,12 @@ def load_settings() -> AppConfig:
     if scim_static_token:
         os.environ["SCIM_STATIC_TOKEN"] = scim_static_token
     
+    # Entra ID client secret (optional, for Multi-IdP)
+    entra_client_secret = _load_secret_from_file("entra_client_secret", "ENTRA_CLIENT_SECRET")
+    if entra_client_secret:
+        os.environ["ENTRA_CLIENT_SECRET"] = entra_client_secret
+        print("[settings] ✓ Loaded ENTRA_CLIENT_SECRET from /run/secrets")
+    
     # User temporary passwords (optional)
     for user in ["alice", "bob", "carol", "joe"]:
         secret_name = f"{user}_temp_password"

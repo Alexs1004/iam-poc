@@ -132,6 +132,9 @@ write_secret_file "smtp-password" "smtp_password" "false"
 # SCIM Static Token for Entra ID provisioning (optional, for demo/dev)
 write_secret_file "scim-static-token" "scim_static_token" "false"
 
+# Entra ID client secret for Multi-IdP (optional, only if using Entra)
+write_secret_file "entra-client-secret" "entra_client_secret" "false"
+
 # Terraform Service Principal secret (optional, for CI/CD)
 write_secret_file "arm-client-secret" "arm_client_secret" "false"
 
