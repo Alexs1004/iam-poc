@@ -361,6 +361,22 @@ fresh-demo-keep-audit: validate-env ## Reset but preserve audit logs
 	@$(MAKE) clean-secrets
 	@$(MAKE) quickstart
 
+# ============================================================================
+# Entra ID User Provisioning (Azure AD)
+# ============================================================================
+
+.PHONY: demo-entra
+demo-entra: ## Provision demo users in Entra ID (requires ENTRA_DOMAIN)
+	@./scripts/demo_entra.sh
+
+.PHONY: demo-entra-cleanup
+demo-entra-cleanup: ## Disable demo users in Entra ID (soft delete)
+	@./scripts/demo_entra.sh --cleanup
+
+.PHONY: demo-entra-delete
+demo-entra-delete: ## Permanently delete demo users in Entra ID
+	@./scripts/demo_entra.sh --hard-cleanup
+
 .PHONY: up
 up: ## Start services (requires run_https.sh for cert/secrets)
 	@set -a; source .env 2>/dev/null || true; set +a; \

@@ -117,11 +117,15 @@ make verify-audit  # Verify HMAC signatures
 ## 🔧 Essential Commands
 
 ```bash
-# Application
+# Application (Keycloak local)
 make quickstart          # Zero-config: .env + stack + JML demo
 make fresh-demo          # Complete reset: volumes + secrets + audit
 make up                  # Start services
 make logs                # View logs
+
+# Entra ID (Azure AD)
+make demo-entra          # Provision demo users in Entra ID
+make demo-entra-cleanup  # Disable demo users (soft delete)
 
 # Infrastructure
 make infra/init          # Initialize Terraform
@@ -247,21 +251,20 @@ When enabled, the app validates the `amr` (Authentication Methods References) cl
 
 ## 🚀 Azure-Native Roadmap
 
-### ✅ Phase C1-C2: Foundation (Completed)
+### ✅ Phase C: Azure Infrastructure (Completed)
 - [x] Terraform skeleton with Azure backend
-- [x] Resource Group + Log Analytics Workspace
-- [x] Service Principal authentication
+- [x] Resource Group + Log Analytics Workspace (30-day retention)
+- [x] VNet + Subnets for Private Endpoints & App Service
+- [x] Key Vault with Private Endpoint (zero public access)
+- [x] App Service + Managed Identity + RBAC to Key Vault
+- [x] Diagnostic settings → Log Analytics (audit trail)
 - [x] Infrastructure automation (`make infra/*`)
 
-### 🔄 Phase C3-C6: Network & Isolation (In Progress)
-- [ ] VNet + Subnet for Private Endpoints
-- [ ] Azure Key Vault with network isolation
-- [ ] App Service + Managed Identity
-- [ ] Diagnostic settings to Log Analytics
-
-### 📋 Phase Z1: Entra ID Migration (Planned)
-- [x] SCIM 2.0 provisioning API (completed)
-- [ ] Replace Keycloak with Azure AD B2C
+### ✅ Phase Z: Entra ID Integration (Completed)
+- [x] SCIM 2.0 provisioning API (RFC 7644)
+- [x] Entra ID user provisioning script (`make demo-entra`)
+- [x] JML automation (Joiner/Mover/Leaver) for Entra
+- [ ] Replace Keycloak with Azure AD B2C (optional)
 - [ ] Conditional Access Policies (MFA, device compliance)
 
 ---
