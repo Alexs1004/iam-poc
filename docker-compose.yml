@@ -130,13 +130,16 @@ services:
     working_dir: /workspace/infra
     volumes:
       - ./infra:/workspace/infra
-      - ~/.azure:/root/.azure:ro
+      # Mount Azure CLI config read-write (Azure CLI needs to write session files)
+      # Security: This allows the container to update auth tokens but not modify your local system
+      - ~/.azure:/root/.azure
       - ./.runtime/secrets:/run/secrets:ro
     environment:
-      ARM_USE_CLI: "false"
-      ARM_TENANT_ID: ${ARM_TENANT_ID}
-      ARM_SUBSCRIPTION_ID: ${ARM_SUBSCRIPTION_ID}
-      ARM_CLIENT_ID: ${ARM_CLIENT_ID}
+      # Use Azure CLI auth from mounted ~/.azure (run 'az login' first)
+      ARM_USE_CLI: "true"
+      ARM_TENANT_ID: ${ARM_TENANT_ID:-}
+      ARM_SUBSCRIPTION_ID: ${ARM_SUBSCRIPTION_ID:-}
+      ARM_CLIENT_ID: ${ARM_CLIENT_ID:-}
     profiles:
       - tools
 

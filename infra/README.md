@@ -24,19 +24,22 @@ make infra/apply
 
 ## 📋 Prérequis
 
+### Docker (requis)
+```bash
+docker --version       # Docker Desktop ou Docker Engine
+docker compose version # Docker Compose v2
+```
+
 ### Azure CLI (requis)
 ```bash
 az login
 az account show  # Vérifier la souscription active
 ```
 
-### Terraform (optionnel - Docker recommandé)
-**Option 1: Docker (recommandé)**
-```bash
-docker compose run --rm terraform version
-```
+> **Note**: Terraform s'exécute via Docker pour garantir la reproductibilité.
+> Vos credentials Azure (`~/.azure`) sont montées automatiquement.
 
-**Option 2: Installation locale**
+### Terraform local (optionnel - fallback)
 ```bash
 wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list

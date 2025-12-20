@@ -23,13 +23,22 @@ def run_command(cmd: str, cwd: str) -> tuple[int, str, str]:
     return result.returncode, result.stdout, result.stderr
 
 
+def setup_makefile_env(tmpdir: str) -> None:
+    """Copy Makefile and mk/ directory to temp directory."""
+    shutil.copy("Makefile", tmpdir)
+    # Also copy mk/ directory for modular Makefile includes
+    mk_src = Path("mk")
+    if mk_src.exists():
+        shutil.copytree(mk_src, Path(tmpdir) / "mk")
+
+
 def test_ensure_secrets_demo_mode():
     """Test that ensure-secrets generates secrets in demo mode."""
     print("\n🧪 Test 1: Demo mode with empty secrets")
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Copy Makefile to temp dir
-        shutil.copy("Makefile", tmpdir)
+        # Copy Makefile and mk/ to temp dir
+        setup_makefile_env(tmpdir)
         
         # Create .env with demo mode and empty secrets
         env_content = """DEMO_MODE=true
@@ -62,8 +71,8 @@ def test_ensure_secrets_production_with_keyvault():
     print("\n🧪 Test 2: Production mode with Azure Key Vault")
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Copy Makefile to temp dir
-        shutil.copy("Makefile", tmpdir)
+        # Copy Makefile and mk/ to temp dir
+        setup_makefile_env(tmpdir)
         
         # Create .env with production mode, Key Vault, and existing secrets
         env_content = """DEMO_MODE=false
@@ -106,8 +115,8 @@ def test_ensure_secrets_production_without_keyvault():
     print("\n🧪 Test 3: Production mode without Azure Key Vault")
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Copy Makefile to temp dir
-        shutil.copy("Makefile", tmpdir)
+        # Copy Makefile and mk/ to temp dir
+        setup_makefile_env(tmpdir)
         
         # Create .env with production mode but no Key Vault
         env_content = """DEMO_MODE=false
@@ -140,8 +149,8 @@ def test_ensure_secrets_idempotent():
     print("\n🧪 Test 4: Idempotent behavior in demo mode")
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Copy Makefile to temp dir
-        shutil.copy("Makefile", tmpdir)
+        # Copy Makefile and mk/ to temp dir
+        setup_makefile_env(tmpdir)
         
         # Create .env with demo mode and empty secrets
         env_content = """DEMO_MODE=true

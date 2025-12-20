@@ -57,6 +57,9 @@ open https://localhost   # Interactive verification page
 
 ### Quick Commands
 ```bash
+# Build Terraform container (first time)
+make infra/build
+
 # Initialize Terraform with Azure backend
 make infra/init
 
@@ -69,6 +72,8 @@ make infra/apply
 # Destroy resources
 make infra/destroy
 ```
+
+> **Reproductibilité**: Terraform s'exécute via Docker (même version en local et CI/CD).
 
 ### Current Infrastructure (Phase C2)
 - ✅ **Resource Group** (`rg-iam-demo`)

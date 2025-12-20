@@ -1,14 +1,47 @@
 FROM hashicorp/terraform:1.9.8
 
-RUN apk add --no-cache bash ca-certificates
+# =============================================================================
+# Terraform container with Azure CLI for authenticated operations
+# =============================================================================
+# Why Docker instead of local Terraform?
+# - Reproducibility: Same version everywhere (dev, CI, team members)
+# - No local dependencies: Just need Docker
+# - CI/CD ready: Same container runs in GitHub Actions
+# - Security: Credentials mounted at runtime, never baked in
+# =============================================================================
+
+# Install Azure CLI for authentication
+# Using pip instead of apk because Alpine's az package is outdated
+# Note: gcc/musl-dev required for psutil compilation (Azure CLI dependency)
+RUN apk add --no-cache \
+    bash \
+    ca-certificates \
+    curl \
+    python3 \
+    py3-pip \
+    gcc \
+    musl-dev \
+    python3-dev \
+    linux-headers \
+    libffi-dev \
+    && pip3 install --break-system-packages --no-cache-dir azure-cli \
+    && apk del gcc musl-dev python3-dev linux-headers libffi-dev
 
 WORKDIR /workspace
 
+# Wrapper script to load secrets from mounted files
 COPY --chmod=755 <<'EOF' /usr/local/bin/terraform-wrapper
 #!/bin/bash
+set -euo pipefail
+
+# Load ARM_CLIENT_SECRET from mounted secret file if available
 if [ -f /run/secrets/arm_client_secret ]; then
     export ARM_CLIENT_SECRET=$(cat /run/secrets/arm_client_secret)
 fi
+
+# If ~/.azure is mounted, Azure CLI auth will work automatically
+# Otherwise, Service Principal auth via ARM_* env vars is used
+
 exec terraform "$@"
 EOF
 
