@@ -244,9 +244,12 @@ Disponibles dans `scripts/infra/`:
 
 ## 📘 Documentation Complémentaire
 
-- **[Main README](../README.md)**: Vue d'ensemble du projet
 - **[Deployment Guide](../docs/DEPLOYMENT_GUIDE.md)**: Déploiement Azure App Service
 - **[Security Design](../docs/SECURITY_DESIGN.md)**: Architecture de sécurité
+
+---
+
+**[↩ Back to Project Root](../README.md)**
 
 ---
 

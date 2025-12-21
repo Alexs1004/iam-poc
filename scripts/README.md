@@ -241,6 +241,10 @@ Scripts manage the `.runtime/` directory for secrets, audit logs, and Azure cach
 
 ---
 
+**[↩ Back to Project Root](../README.md)**
+
+---
+
 **Last Updated**: November 2025  
 **Maintainer**: Alex  
 **Project**: IAM PoC (Keycloak + Flask + SCIM 2.0 + Azure Key Vault)

@@ -97,18 +97,8 @@ verify-audit: ## Verify integrity of audit log signatures
 		$(WITH_ENV) $(PYTHON) scripts/audit.py; \
 	fi
 
-doctor: ## Check az login, Key Vault access and docker compose version
-	@$(WITH_ENV)
-	@az account show >/dev/null || (echo "[doctor] Run 'az login' first." >&2; exit 1)
-	@vault="$${AZURE_KEY_VAULT_NAME:-}"; \
-	if [ -z "$$vault" ]; then \
-		echo "[doctor] Set AZURE_KEY_VAULT_NAME in .env before running doctor."; \
-		exit 1; \
-	fi; \
-	az keyvault secret list --vault-name "$$vault" >/dev/null || (echo "[doctor] Cannot list secrets; check Key Vault permissions." >&2; exit 1)
-	@docker compose version >/dev/null || (echo "[doctor] docker compose not available." >&2; exit 1)
-	@echo "[doctor] Environment looks good."
-	@$(MAKE) --no-print-directory doctor-secrets || true
+doctor: ## Check environment health (Visual Report)
+	@./scripts/doctor.sh
 
 doctor-secrets: ## Compare KV vs local vs Keycloak (hash only) and fail on drift
 	@set -e; \

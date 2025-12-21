@@ -13,15 +13,22 @@ Authoritative description of the `/scim/v2` surface exposed by `app/api/scim.py`
 ## Base URLs
 - Reverse proxy (default demo stack): `https://localhost/scim/v2`
 - Direct Flask access (bypass nginx): `http://localhost:8000/scim/v2`
+- Health Checks:
+  - `https://localhost/health` (Application Liveness)
+  - `https://localhost/ready` (Dependency Readiness)
+  - `https://localhost/verification` (Interactive SCIM Tests)
 
-## Authentication & headers
-- **Authorization**: `Bearer <token>` issued by Keycloak (`automation-cli` client in demo).
-- **Scopes**:
-  - `scim:read` for `GET`
-  - `scim:write` for `POST`, `PATCH`, `DELETE` (and `POST /Users/.search`)
-- **Content-Type**: `application/scim+json` mandatory for `POST`, `PATCH`, `PUT` (non-compliant content types → `415 invalidSyntax`).
-- Discovery endpoints (`/ServiceProviderConfig`, `/Schemas`, `/ResourceTypes`) are public; every other path enforces OAuth.
-- Service account `automation-cli` is allowed without explicit scopes (temporary bypass noted in code).
+## Authentication & Headers
+- **Standard Authorization**: `Bearer <token>` issued by Keycloak (`automation-cli` client).
+  - Used in Production (`DEMO_MODE=false`).
+  - Scopes: `scim:read`, `scim:write`.
+- **Static Token (Alternative)**: `Bearer <static-token>`
+  - **Purpose**: "Emergency / Break-glass Access" mechanism or legacy integration (e.g. Entra ID).
+  - **Security**: Validated via **constant-time comparison** to prevent timing attacks.
+  - Source: Loaded from `SCIM_STATIC_TOKEN` (env) or Azure Key Vault secret.
+  - **Warning**: Use with caution; rotation requires infrastructure update.
+- **Content-Type**: `application/scim+json` mandatory for `POST`, `PATCH`, `PUT`.
+- **Public Endpoints**: `/ServiceProviderConfig`, `/Schemas`, `/ResourceTypes` do not require authentication.
 
 **🔐 Service Secrets**: The service client secret is generated at runtime and stored under `.runtime/secrets/` locally, or retrieved from Azure Key Vault in production.
 

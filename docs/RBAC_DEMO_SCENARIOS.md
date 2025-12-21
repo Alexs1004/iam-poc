@@ -145,6 +145,33 @@ open https://localhost/admin/audit
 
 ---
 
+### Service Account: iam-verifier (Automated Testing)
+
+**Scenario**: Internal automated tool validation (Dogfooding / End-to-End Tests)
+
+| Attribute | Value |
+|----------|--------|
+| **Role Identifier** | **`iam-verifier`** |
+| **Purpose** | Run SCIM compliance tests via `/verification` endpoint |
+| **Capabilities** | - Can execute full CRUD verification suite<br>- Can "hard delete" test users (`verifier-*`) to keep system clean |
+| **Restrictions** | Cannot access Admin UI dashboard or human workflows |
+
+---
+
+### Entra ID Role Mapping (Production)
+
+When integrating with Microsoft Entra ID (Azure AD), roles are mapped as follows:
+
+| Entra ID App Role (Manifest) | Internal RBAC Role | Description |
+|------------------------------|--------------------|-------------|
+| **`Admin`** | **`realm-admin`** | Maps "App Administrator" to full system control |
+| **`Operator`** | **`iam-operator`** | JML Operations access |
+| **`Reader`** | **`manager`** | Read-only visibility |
+
+> **Note**: This mapping logic is enforced in `app/core/rbac.py`.
+
+---
+
 ### joe — IAM Operator + Realm Admin (Full Access)
 
 **Scenario**: Complete IAM administrator (dual role)

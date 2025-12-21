@@ -1,317 +1,153 @@
-# IAM Security PoC — Azure-Native Architecture
-### SCIM 2.0 · OIDC/MFA · Azure Key Vault · Terraform IaC · Cryptographic Audit
+# IAM Security Blueprint — Azure-Native Zero Trust Architecture
+### Cloud Security · SCIM 2.0 · Terraform IaC · Cryptographic Non-Repudiation
 
 [![CI](https://github.com/Alexs1004/iam-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/Alexs1004/iam-poc/actions/workflows/ci.yml)
-[![Security Scans](https://github.com/Alexs1004/iam-poc/actions/workflows/security-scans.yml/badge.svg)](https://github.com/Alexs1004/iam-poc/actions/workflows/security-scans.yml)
-[![codecov](https://codecov.io/gh/Alexs1004/iam-poc/graph/badge.svg)](https://codecov.io/gh/Alexs1004/iam-poc)
-[![GHCR](https://img.shields.io/badge/GHCR-Image%20Published-blue?logo=github)](https://ghcr.io/alexs1004/iam-poc)
-![Azure](https://img.shields.io/badge/Azure-Key%20Vault%20%7C%20Entra%20ID%20%7C%20Terraform-0078D4?logo=microsoft-azure&logoColor=white)
-![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Security](https://img.shields.io/badge/Security-OWASP%20ASVS%20L2-blue?logo=owasp)
-![Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20RGPD%20%7C%20FINMA-red)
+![Compliance](https://img.shields.io/badge/Compliance-nLPD%20%7C%20FINMA%20%7C%20NIST-red)
+![IaC](https://img.shields.io/badge/IaC-Terraform%20%7C%20Azure-purple?logo=terraform)
 
-> **🎯 Production-ready IAM platform · Infrastructure as Code · Swiss compliance by design**
-
----
-
-## 🎯 What This Demonstrates
-
-**Azure Cloud Infrastructure**
-- **Terraform IaC**: Resource Group, Log Analytics, automated backend setup
-- **Azure Key Vault**: Centralized secrets management with rotation
-- **Infrastructure automation**: `make infra/init`, `infra/plan`, `infra/apply`
-- **Secure state management**: Azure Storage backend with encryption
-
-**Identity & Access Management**
-- **SCIM 2.0 RFC 7644**: Entra ID provisioning-ready API
-- **OIDC/OAuth 2.0**: Federated authentication with MFA enforcement
-- **RBAC**: Role-based access control (admin, operator, verifier)
-- **JML automation**: Joiner/Mover/Leaver lifecycle management
-
-**Security & Compliance**
-- **Cryptographic audit**: HMAC-SHA256 signatures, non-repudiation
-- **Security scans**: Gitleaks (secrets), Trivy (CVE), SBOM generation
-- **Swiss compliance**: nLPD/FINMA-compliant architecture
-- **Production-grade**: 91% test coverage, CI/CD automation
+> **Architectural Portfolio for Cloud Security Engineering roles.**
+> This project is not just an application; it is a reference architecture demonstrates how to enforce **Identity as the Perimeter** in a regulated environment (Swiss FINMA/nLPD). It bridges the gap between Identity Providers (Entra ID) and secure internal applications using modern standards.
 
 ---
 
-## ⚡ Quick Start (2 minutes)
+## 🎯 Executive Summary (The "Why")
 
-```bash
-git clone https://github.com/Alexs1004/iam-poc.git
-cd iam-poc
-make quickstart          # Auto-setup + demo
-open https://localhost   # Interactive verification page
+Identity events (Joiner, Mover, Leaver) are the most critical attack vector in modern enterprises. This solution provides a **secure, auditable, and automated** foundation for identity management.
+
+*   **Zero Trust**: No implicit trust. Authentication (OIDC) and Provisioning (SCIM) are strictly decoupled and validated.
+*   **Non-Repudiation**: Every administrative action creates a cryptographically signed (HMAC-SHA256) audit trail, preventing log tampering.
+*   **Defense in Depth**: Security controls are applied at the Network (Nginx/TLS), Identity (MFA), and Application (RBAC) layers.
+
+---
+
+## 🏗️ Security Architecture
+
+The system acts as a secure bridge between the Corporate IdP and sensitive downstream resources.
+
+```mermaid
+graph LR
+    subgraph "Trusted Identity Provider"
+        Entra[Microsoft Entra ID]
+    end
+
+    subgraph "Secure Perimeter (Zero Trust)"
+        Nginx[Nginx Reverse Proxy \n(TLS 1.3)]
+        
+        subgraph "Application Core"
+            App[IAM-POC App]
+            RBAC[RBAC Engine]
+        end
+        
+        subgraph "Data & Audit Plane"
+            KV[Azure Key Vault]
+            Audit[Audit Log \n(HMAC-SHA256)]
+        end
+    end
+
+    Entra -->|SCIM 2.0 / OIDC| Nginx
+    Nginx -->|Secure Headers| App
+    App -->|Authorize| RBAC
+    App -->|Fetch Secrets| KV
+    App -->|Sign Events| Audit
+
+    style Audit fill:#f9f,stroke:#333
+    style KV fill:#bbf,stroke:#333
 ```
 
-**What you'll see**:
-- OIDC login with MFA (TOTP)
-- SCIM 2.0 API ([ReDoc docs](https://localhost/scim/docs))
-- Admin dashboard with audit trail
-- Automated security validation
-
 ---
 
-## 🏗️ Infrastructure as Code (Terraform)
+## 🚀 Operations & Usage
 
-### Quick Commands
+Select your user journey to verify the platform capabilities.
+
+### 👔 The Recruiter Path (2-min demo)
+See the project in action immediately using the automated demo script.
+
 ```bash
-# Build Terraform container (first time)
-make infra/build
+# 1. Start the stack & Provision demo users (Zero Config)
+make quickstart
 
-# Initialize Terraform with Azure backend
-make infra/init
+# 2. Access the secure dashboard
+# ⮕ https://localhost (Accept self-signed cert)
+# Login: joe / Temp123!
+```
 
-# Preview infrastructure changes
+### 🕵️ The Security Auditor Path
+Verify the cryptographic controls and secure implementation.
+
+```bash
+# Verify Non-Repudiation (HMAC-SHA256 Check)
+make verify-audit
+# > Output: ✓ All 22 events have valid HMAC-SHA256 signatures
+
+# Run SAST & Secret Detection (Gitleaks/Trivy)
+make security-check
+
+# Generate Software Bill of Materials (Supply Chain Security)
+make sbom
+```
+
+### 👷 The DevOps Path
+Maintain and diagnose the infrastructure reliability.
+
+```bash
+# Run Health Checks (Containers, Secrets, HTTPS)
+make doctor
+# > Output: 🩺 IAM-POC Doctor - environment health check
+
+# Preview Infrastructure Changes (Terraform)
 make infra/plan
-
-# Deploy to Azure
-make infra/apply
-
-# Destroy resources
-make infra/destroy
-```
-
-> **Reproductibilité**: Terraform s'exécute via Docker (même version en local et CI/CD).
-
-### Current Infrastructure (Phase C2)
-- ✅ **Resource Group** (`rg-iam-demo`)
-- ✅ **Log Analytics Workspace** (30-day retention, PerGB2018 SKU)
-- ✅ **Azure Storage backend** (encrypted state with versioning)
-- ✅ **Service Principal auth** (auto-detected tenant_id)
-
-**Location**: Switzerland North (LPD/FINMA compliance)  
-**Tags**: `Compliance=LPD-FINMA`, `ManagedBy=Terraform`
-
-### Roadmap
-- 🔄 **Phase C3**: VNet + Private Endpoints
-- 📋 **Phase C4**: Azure Key Vault with network isolation
-- 📋 **Phase C5**: App Service + Managed Identity
-- 📋 **Phase C6**: Diagnostic settings to Log Analytics
-
-📘 **Full documentation**: [`infra/README.md`](infra/README.md)
-
----
-
-## 👥 Demo Users & RBAC
-
-| User | Role | Password | Access | Scenario |
-|------|------|----------|--------|----------|
-| **joe** | `iam-operator` + `realm-admin` | `Temp123!` | Full admin + JML operations | Stable operator |
-| **alice** | `analyst` → **`iam-operator`** | `Temp123!` | Promoted to admin | **Mover** (promotion) |
-| **bob** | `analyst` → ~~disabled~~ | `Temp123!` | Account disabled | **Leaver** (soft-delete) |
-| **carol** | `manager` | `Temp123!` | Read-only dashboard | Stable manager |
-
-**Test workflow**:
-```bash
-# 1. Login as joe (full admin)
-open https://localhost
-# Username: joe | Password: Temp123!
-
-# 2. Access admin dashboard
-open https://localhost/admin
-
-# 3. Check audit trail
-open https://localhost/admin/audit
-make verify-audit  # Verify HMAC signatures
 ```
 
 ---
 
-## 🔧 Essential Commands
+## ☁️ Infrastructure as Code (Azure Terraform)
 
-```bash
-# Application (Keycloak local)
-make quickstart          # Zero-config: .env + stack + JML demo
-make fresh-demo          # Complete reset: volumes + secrets + audit
-make up                  # Start services
-make logs                # View logs
+Infrastructure is treated as ephemeral software, deployed via Terraform with strict state security.
 
-# Entra ID (Azure AD)
-make demo-entra          # Provision demo users in Entra ID
-make demo-entra-cleanup  # Disable demo users (soft delete)
+*   **Codebase**: [`/infra`](infra/README.md)
+*   **State Management**: Azure Storage Backend with Server-Side Encryption (AES-256) and Versioning (Rollback capability).
+*   **Networking**: Prepared for Private Link integration (Switzerland North region).
+*   **Compliance**: Resources tagged for data sovereignty and lifecycle checking.
 
-# Infrastructure
-make infra/init          # Initialize Terraform
-make infra/plan          # Preview changes
-make infra/apply         # Deploy to Azure
-make infra/destroy       # Destroy resources
-
-# Tests & Quality
-make test                # Unit tests (346 tests, 91% coverage)
-make test-e2e            # Integration tests (requires stack)
-make test-coverage       # Tests with HTML coverage report
-
-# Security
-make security-check      # Run all scans (secrets, CVE, SBOM)
-make scan-secrets        # Gitleaks (exposed secrets)
-make scan-vulns          # Trivy (CVE vulnerabilities)
-make verify-audit        # Verify HMAC signatures
-make rotate-secret       # Azure Key Vault secret rotation
-```
-
-📘 **Full reference**: `make help-all` (40+ commands)
+> **Key Takeaway**: The infrastructure supports **immutable deployments** where no manual interaction with the cloud console is required.
 
 ---
 
-## 📋 Documentation
+## 🔐 Core Security Concepts Demonstrated
 
-### 🎯 For Recruiters
-- **[Hiring Pack](docs/Hiring_Pack.md)** — Resume ↔ Repo mapping, keywords
-- **[RBAC Demo](docs/RBAC_DEMO_SCENARIOS.md)** — Joiner/Mover/Leaver workflows
+### 1. Advanced RBAC & Least Privilege
+We implement a granular permission model beyond simple "Admin vs User":
+*   **`Analyst`**: Read-only visibility on identities.
+*   **`IAM Operator`**: Functional access (JML workflows) but cannot escalate privileges.
+*   **`Realm Admin`**: Break-glass/Root access, strictly monitored.
+*   **`Automation`**: Service accounts constrained by SCIM scopes (`scim:write`).
 
-### 🔐 For Security Engineers
-- **[Security Design](docs/SECURITY_DESIGN.md)** — OWASP ASVS L2, JWT validation
-- **[Threat Model](docs/THREAT_MODEL.md)** — STRIDE analysis, non-repudiation
-- **[Security Scanning](docs/SECURITY_SCANNING.md)** — Gitleaks, Trivy, SBOM
-- **[SecOps & MFA](docs/SECOPS.md)** — Conditional Access, MFA enforcement
+### 2. The JML Lifecycle (Automated)
+*   **Joiner**: Automated provisioning via SCIM 2.0 (RFC 7644).
+*   **Mover**: Role transition with immediate session revocation (token invalidation).
+*   **Leaver**: GDPR-compliant soft-delete capability.
 
-### 🛠️ For DevOps
-- **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** — Azure App Service, CI/CD
-- **[Testing Strategy](docs/TESTING.md)** — 91% coverage, pytest config
-- **[API Reference](docs/API_REFERENCE.md)** — SCIM 2.0 endpoints, curl examples
-
-### 🏗️ For Infrastructure
-- **[Terraform Guide](infra/README.md)** — IaC setup, backend configuration
-- **[Entra ID SCIM](docs/ENTRA_SCIM_HOWTO.md)** — Microsoft provisioning setup
-
-**📂 Documentation hub**: [docs/README.md](docs/README.md)
+### 3. Cryptographic Audit Trail
+To satisfy **FINMA** (Swiss Financial Market Supervisory Authority) requirements, standard text logs are insufficient.
+*   **Mechanism**: Each log entry is hashed using an HMAC secret stored in Key Vault.
+*   **Validation**: `make verify-audit` recomputes the chain to detect any tampering or deletion.
 
 ---
 
-## 🔀 Multi-IdP Support
+## 📚 Deep Dive Documentation (Index)
 
-Switch between **Keycloak** and **Microsoft Entra ID** for authentication:
+I have organized the documentation to facilitate deep-dives into specific domains:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OIDC_PROVIDER` | `keycloak` | Default IdP (`keycloak` or `entra`) |
-| `ENTRA_ISSUER` | — | Entra tenant URL (e.g., `https://login.microsoftonline.com/{tenant}/v2.0`) |
-| `ENTRA_CLIENT_ID` | — | Entra App Registration client ID |
-| `ENTRA_CLIENT_SECRET` | — | Stored in Key Vault (never in `.env`) |
+| Domain | Document | Target Audience |
+|--------|----------|-----------------|
+| **Recruitment** | 👉 **[Hiring Pack / Skills Matrix](docs/Hiring_Pack.md)** | **Recruiters & Hiring Managers** |
+| **Risk** | [Threat Model (STRIDE/MITRE)](docs/THREAT_MODEL.md) | Security Architects |
+| **Architecture** | [Security Design (OWASP/NIST)](docs/SECURITY_DESIGN.md) | Lead Engineers |
+| **Operations** | [JML Demo Scenarios](docs/RBAC_DEMO_SCENARIOS.md) | SOC / IAM Ops |
+| **DevOps** | [Infrastructure (Terraform)](infra/README.md) | Cloud Engineers |
+| **Azure AD** | [Entra ID Integration](docs/ENTRA_SCIM_HOWTO.md) | IAM Engineers |
+| **Production** | [Deployment Guide](docs/DEPLOYMENT_GUIDE.md) | SRE / DevOps |
+| **Integration** | [API Reference](docs/API_REFERENCE.md) | Developers |
 
-**Demo override**: `/login?provider=entra` switches IdP for current session.  
-⚠️ **Security**: Query param override disabled when `DEMO_MODE=false`.
-
-📘 **Setup guide**: [docs/ENTRA_OIDC_APPREG.md](docs/ENTRA_OIDC_APPREG.md)
-
-### MFA Conditional Access (Zero Trust)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REQUIRE_MFA` | `false` | Enforce MFA on `/admin/*` routes |
-
-When enabled, the app validates the `amr` (Authentication Methods References) claim in the ID token. Access is denied if the user didn't authenticate with MFA.
-
-📘 **Configuration**: [docs/SECOPS.md](docs/SECOPS.md)
-
----
-
-## 📊 SCIM 2.0 Support Matrix
-
-| Method | Endpoint | Status | Description |
-|--------|----------|--------|-------------|
-| **GET** | `/scim/v2/Users` | ✅ | List users (pagination) |
-| **POST** | `/scim/v2/Users` | ✅ | Create user + audit |
-| **GET** | `/scim/v2/Users/{id}` | ✅ | Retrieve by ID |
-| **PATCH** | `/scim/v2/Users/{id}` | ✅ | Update (multi-operation) |
-| **DELETE** | `/scim/v2/Users/{id}` | ✅ | Soft-delete (idempotent) |
-| **PUT** | `/scim/v2/Users/{id}` | ⚠️ 501 | Not supported (use PATCH) |
-
-**Interactive validation**: https://localhost/verification  
-**OpenAPI docs**: https://localhost/scim/docs
-
----
-
-## 🛡️ Security & Rate Limiting
-
-### DoS Protection (Nginx)
-| Endpoint | Limit | Burst | Purpose |
-|----------|-------|-------|---------|
-| `/verification` | 10 req/min | +5 | Testing endpoint |
-| `/scim/v2/*` | 60 req/min | +10 | Provisioning API |
-| `/admin/*` | 30 req/min | +8 | Admin interface |
-
-**Test**: `./scripts/test_rate_limiting.sh`
-
-### Security Standards
-- **OWASP ASVS Level 2**: A01-A08 protection
-- **RFC 7636 (PKCE)**: Authorization code flow
-- **RFC 7644 (SCIM 2.0)**: Strict schema validation
-- **NIST 800-63B**: MFA for privileged accounts
-- **nLPD/FINMA**: Cryptographic audit trail
-
-### Password Management
-**Production** (SMTP-based):
-- ✅ Secure reset email with one-time token (256-bit, 5-minute expiration)
-- ✅ User sets own password (zero knowledge)
-- ✅ RFC 7644 § 7.7: Password never returned in responses
-
-**Demo Mode** (local testing):
-- ⚠️ `DEMO_MODE=true`: Password visible in flash message (red warning)
-- ⚠️ Disabled in production (`.env.production` has `DEMO_MODE=false`)
-
----
-
-## 🚀 Azure-Native Roadmap
-
-### ✅ Phase C: Azure Infrastructure (Completed)
-- [x] Terraform skeleton with Azure backend
-- [x] Resource Group + Log Analytics Workspace (30-day retention)
-- [x] VNet + Subnets for Private Endpoints & App Service
-- [x] Key Vault with Private Endpoint (zero public access)
-- [x] App Service + Managed Identity + RBAC to Key Vault
-- [x] Diagnostic settings → Log Analytics (audit trail)
-- [x] Infrastructure automation (`make infra/*`)
-
-### ✅ Phase Z: Entra ID Integration (Completed)
-- [x] SCIM 2.0 provisioning API (RFC 7644)
-- [x] Entra ID user provisioning script (`make demo-entra`)
-- [x] JML automation (Joiner/Mover/Leaver) for Entra
-- [ ] Replace Keycloak with Azure AD B2C (optional)
-- [ ] Conditional Access Policies (MFA, device compliance)
-
----
-
-## 📈 Skills Demonstrated
-
-| Resume Skill | Evidence | File/Command |
-|--------------|----------|--------------|
-| **Azure Terraform** | IaC with encrypted backend | `make infra/plan`, `infra/*.tf` |
-| **Azure Key Vault** | Secrets + rotation | `make rotate-secret`, `scripts/load_secrets_from_keyvault.sh` |
-| **SCIM 2.0** | RFC 7644 API | `app/api/scim.py`, `tests/test_api_scim.py` |
-| **OIDC/OAuth 2.0** | PKCE, MFA, JWT | `app/api/auth.py`, `app/api/decorators.py` |
-| **RBAC** | 3 roles (admin/operator/verifier) | `app/core/rbac.py` |
-| **Cryptographic Audit** | HMAC-SHA256, non-repudiation | `scripts/audit.py`, `make verify-audit` |
-| **DevSecOps** | CI/CD (5 security jobs), 91% tests | `.github/workflows/security-scans.yml` |
-| **Security Scanning** | Gitleaks, Trivy, SBOM | `make security-check` |
-| **Python 3.12** | Flask, pytest, type hints | All `.py` files |
-| **Docker** | Multi-service Compose, GHCR publishing | `docker-compose.yml`, `.github/workflows/ci.yml` |
-| **Nginx** | TLS, rate limiting, headers | `proxy/nginx.conf` |
-
----
-
-## 🎓 Target Roles (Romandy)
-
-- **Cloud Security Engineer (Azure)**: Infrastructure security, compliance
-- **IAM Engineer**: Entra ID provisioning, SCIM, SSO
-- **DevSecOps Cloud**: Secure pipelines, IaC, monitoring
-- **Identity & Access Management Specialist**: RBAC, MFA policies, audit
-
-**Regulatory Context**: nLPD (Swiss Data Protection Act), FINMA (financial sector)
-
----
-
-## 📜 Current Limitations
-
-- **SCIM Filtering**: Only `userName eq "value"` supported (extensible)
-- **PATCH**: Multi-operation support (add/replace on emails, phones, name, active)
-- **PUT**: Intentionally 501 (RFC compliance: use PATCH/DELETE)
-- **Content-Type**: `application/scim+json` mandatory (RFC 7644)
-
----
-
-## 📄 License
-
-MIT License — See [LICENSE](LICENSE) for details.

@@ -107,8 +107,8 @@ make scan-vulns              # Scan HIGH/CRITICAL CVE (Trivy)
 | Security headers enforced | `/verification` → **Check Security Headers** |
 
 ## Navigation
-- [Documentation Hub (this page)](README.md)
-- [Main README](../README.md)
+- **[↩ Back to Project Root](../README.md)**
+
 
 ## 📖 Glossary
 

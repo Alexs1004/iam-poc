@@ -13,15 +13,21 @@ Authoritative description of the `/scim/v2` surface exposed by `app/api/scim.py`
 ## Base URLs
 - Reverse proxy (default demo stack): `https://localhost/scim/v2`
 - Direct Flask access (bypass nginx): `http://localhost:8000/scim/v2`
+- Health Checks:
+  - `https://localhost/health` (Application Liveness)
+  - `https://localhost/ready` (Dependency Readiness)
+  - `https://localhost/verification` (Interactive SCIM Tests)
 
-## Authentication & headers
-- **Authorization**: `Bearer <token>` issued by Keycloak (`automation-cli` client in demo).
-- **Scopes**:
-  - `scim:read` for `GET`
-  - `scim:write` for `POST`, `PATCH`, `DELETE` (and `POST /Users/.search`)
-- **Content-Type**: `application/scim+json` mandatory for `POST`, `PATCH`, `PUT` (non-compliant content types → `415 invalidSyntax`).
-- Discovery endpoints (`/ServiceProviderConfig`, `/Schemas`, `/ResourceTypes`) are public; every other path enforces OAuth.
-- Service account `automation-cli` is allowed without explicit scopes (temporary bypass noted in code).
+## Authentication & Headers
+- **Standard Authorization**: `Bearer <token>` issued by Keycloak (`automation-cli` client).
+  - Used in Production (`DEMO_MODE=false`).
+  - Scopes: `scim:read`, `scim:write`.
+- **Static Token (Alternative)**: `Bearer <static-token>`
+  - Supported for specific scenarios (e.g., Entra ID Provisioning without OAuth client credentials flow).
+  - Source: Loaded from `SCIM_STATIC_TOKEN` (env) or Azure Key Vault secret.
+  - **Security Warning**: Use with caution; rotation requires infrastructure update.
+- **Content-Type**: `application/scim+json` mandatory for `POST`, `PATCH`, `PUT`.
+- **Public Endpoints**: `/ServiceProviderConfig`, `/Schemas`, `/ResourceTypes` do not require authentication.
 
 **🔐 Service Secrets**: The service client secret is generated at runtime and stored under `.runtime/secrets/` locally, or retrieved from Azure Key Vault in production.
 
@@ -1584,6 +1590,33 @@ open https://localhost/admin/audit
 
 ---
 
+### Service Account: iam-verifier (Automated Testing)
+
+**Scenario**: Internal automated tool validation (Dogfooding / End-to-End Tests)
+
+| Attribute | Value |
+|----------|--------|
+| **Role Identifier** | **`iam-verifier`** |
+| **Purpose** | Run SCIM compliance tests via `/verification` endpoint |
+| **Capabilities** | - Can execute full CRUD verification suite<br>- Can "hard delete" test users (`verifier-*`) to keep system clean |
+| **Restrictions** | Cannot access Admin UI dashboard or human workflows |
+
+---
+
+### Entra ID Role Mapping (Production)
+
+When integrating with Microsoft Entra ID (Azure AD), roles are mapped as follows:
+
+| Entra ID App Role (Manifest) | Internal RBAC Role | Description |
+|------------------------------|--------------------|-------------|
+| **`Admin`** | **`realm-admin`** | Maps "App Administrator" to full system control |
+| **`Operator`** | **`iam-operator`** | JML Operations access |
+| **`Reader`** | **`manager`** | Read-only visibility |
+
+> **Note**: This mapping logic is enforced in `app/core/rbac.py`.
+
+---
+
 ### joe — IAM Operator + Realm Admin (Full Access)
 
 **Scenario**: Complete IAM administrator (dual role)
@@ -2220,8 +2253,10 @@ Authoritative view of the security controls implemented in this SCIM PoC. Derive
 
 ## Guiding principles
 - Secrets never live in the repo (`/run/secrets`, Azure Key Vault in production).
-- Every SCIM call must authenticate (OAuth bearer token).
-- Audit trail must be tamper-evident (HMAC-SHA256 per event).
+- **Authentication**: OAuth 2.0 Bearer tokens preferred; Static Tokens allowed for legacy/specific IdP integrations (Entra ID) where client credentials flow is limited.
+- **Audit Hardening**:
+  - HMAC-SHA256 signatures for tamper-evidence.
+  - File permissions set to `0600` (read/write owner only) to prevent unauthorized local access.
 - HTTP surface hardened with TLS 1.2+, HSTS, CSP, and secure cookies.
 - Minimal scope exposure: `scim:read` vs `scim:write` enforced per verb.
 

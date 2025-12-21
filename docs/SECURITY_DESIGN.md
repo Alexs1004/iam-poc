@@ -34,12 +34,21 @@ Authoritative view of the security controls implemented in this SCIM PoC. Derive
 
 ## Guiding principles
 - Secrets never live in the repo (`/run/secrets`, Azure Key Vault in production).
-- Every SCIM call must authenticate (OAuth bearer token).
-- Audit trail must be tamper-evident (HMAC-SHA256 per event).
+- **Authentication**: OAuth 2.0 Bearer tokens preferred; Static Tokens allowed for legacy/specific IdP integrations (Entra ID) where client credentials flow is limited.
+- **Audit Hardening**:
+  - HMAC-SHA256 signatures for tamper-evidence.
+  - File permissions set to `0600` (read/write owner only) to prevent unauthorized local access.
 - HTTP surface hardened with TLS 1.2+, HSTS, CSP, and secure cookies.
 - Minimal scope exposure: `scim:read` vs `scim:write` enforced per verb.
 
-## Implemented controls
+## Implemented controls: Multi-Layer Security Posture
+
+We enforce a **Defense in Depth** strategy where every layer assumes the outer layer has been breached.
+1.  **Network**: TLS 1.3, CSP, HSTS.
+2.  **Identity**: Strong OAuth 2.0 with scope validation.
+3.  **Application**: Granular RBAC and input validation.
+4.  **Data**: Encryption at rest (Key Vault) and Integrity checks (Audit logs).
+
 | Category | Control | Evidence |
 |----------|---------|----------|
 | Transport | TLS 1.2/1.3, HSTS (1y), CSP deny-all | `proxy/nginx.conf` |
