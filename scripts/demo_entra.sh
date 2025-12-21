@@ -256,6 +256,249 @@ remove_from_group() {
   echo "[AUDIT] Group removed | UPN=$upn | Group=$group_name"
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# App Roles Configuration (Production-grade)
+# ─────────────────────────────────────────────────────────────────────────────
+# Why: App Roles provide fine-grained access control at the application level.
+# When "User assignment required" is enabled (security best practice),
+# users must be assigned to an App Role to access the application.
+#
+# Security benefits (OWASP/NIST aligned):
+# - Principle of Least Privilege: Only assigned users/groups can access
+# - Defense in Depth: Groups + App Roles = double layer of authorization
+# - Auditability: Clear record of who has access to what
+# - AADSTS50105 error prevents unauthorized access attempts
+#
+# App Roles defined:
+# - iam-operator: Can perform JML operations
+# - manager: Can view dashboard and reports
+# - analyst: Read-only access to security data
+# - admin: Full administrative access (equivalent to realm-admin)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# App Role definitions (same as Keycloak roles)
+# UUIDs are stable identifiers for each role
+declare -A APP_ROLE_IDS=(
+  ["iam-operator"]="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+  ["manager"]="b2c3d4e5-f6a7-8901-bcde-f12345678901"
+  ["analyst"]="c3d4e5f6-a7b8-9012-cdef-123456789012"
+  ["admin"]="d4e5f6a7-b8c9-0123-defa-234567890123"
+)
+
+# Group → App Role mapping
+declare -A GROUP_TO_ROLE=(
+  ["IAM-Operators"]="iam-operator"
+  ["Security-Managers"]="manager"
+  ["Security-Analysts"]="analyst"
+  ["Administrators"]="admin"
+)
+
+create_app_roles() {
+  local app_client_id="${1:-${ENTRA_APP_CLIENT_ID:-${ENTRA_CLIENT_ID:-}}}"
+  
+  if [[ -z "$app_client_id" ]]; then
+    echo -e "${YELLOW}⚠ No ENTRA_APP_CLIENT_ID configured, skipping App Roles creation${RESET}"
+    return 0
+  fi
+  
+  echo -e "${PURPLE}=== Creating App Roles in App Registration ===${RESET}"
+  
+  # Get current app roles to preserve existing ones
+  local current_roles
+  current_roles=$(az ad app show --id "$app_client_id" --query "appRoles" -o json 2>/dev/null || echo "[]")
+  
+  # Check if our custom roles already exist (check for iam-operator role)
+  local has_custom_roles
+  has_custom_roles=$(echo "$current_roles" | jq 'map(select(.value == "iam-operator")) | length')
+  
+  if [[ "$has_custom_roles" -ge 1 ]]; then
+    echo -e "${BLUE}ℹ App Roles already configured${RESET}"
+    return 0
+  fi
+  
+  # Build new App Roles array by merging existing roles with our custom roles
+  # This preserves Azure's default roles (User, msiam_access) while adding ours
+  local merged_roles
+  merged_roles=$(echo "$current_roles" | jq '. + [
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "IAM Operators can perform Joiner/Mover/Leaver operations",
+      "displayName": "IAM Operator",
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "isEnabled": true,
+      "value": "iam-operator"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Security Managers can view dashboard and manage team access",
+      "displayName": "Security Manager",
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "isEnabled": true,
+      "value": "manager"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Security Analysts have read-only access to security data",
+      "displayName": "Security Analyst",
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "isEnabled": true,
+      "value": "analyst"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Administrators have full access (equivalent to realm-admin)",
+      "displayName": "Administrator",
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "isEnabled": true,
+      "value": "admin"
+    }
+  ]')
+  
+  # Update App Registration with merged App Roles
+  if az ad app update --id "$app_client_id" --app-roles "$merged_roles" 2>/dev/null; then
+    echo -e "${GREEN}✓ App Roles created successfully${RESET}"
+    echo "  - iam-operator: JML operations"
+    echo "  - manager: Dashboard access"
+    echo "  - analyst: Read-only access"
+    echo "  - admin: Full administrative access"
+  else
+    echo -e "${RED}✗ Failed to create App Roles${RESET}"
+    echo -e "${YELLOW}  Hint: Ensure you have Application.ReadWrite.All permission${RESET}"
+    return 1
+  fi
+  
+  echo "[AUDIT] App Roles created | AppId=$app_client_id"
+}
+
+enable_user_assignment_required() {
+  local app_client_id="${1:-${ENTRA_APP_CLIENT_ID:-${ENTRA_CLIENT_ID:-}}}"
+  
+  if [[ -z "$app_client_id" ]]; then
+    return 0
+  fi
+  
+  echo -e "${PURPLE}=== Enabling 'User assignment required' (security best practice) ===${RESET}"
+  
+  if az ad sp update --id "$app_client_id" --set appRoleAssignmentRequired=true 2>/dev/null; then
+    echo -e "${GREEN}✓ User assignment required enabled${RESET}"
+    echo -e "${BLUE}  ℹ Only users/groups assigned to App Roles can access the app${RESET}"
+  else
+    echo -e "${YELLOW}⚠ Could not enable user assignment requirement${RESET}"
+  fi
+  
+  echo "[AUDIT] appRoleAssignmentRequired=true | AppId=$app_client_id"
+}
+
+assign_group_to_app_role() {
+  local group_name="$1"
+  local role_value="$2"
+  local app_client_id="${3:-${ENTRA_APP_CLIENT_ID:-${ENTRA_CLIENT_ID:-}}}"
+  
+  if [[ -z "$app_client_id" ]]; then
+    echo -e "${YELLOW}⚠ No ENTRA_APP_CLIENT_ID configured${RESET}"
+    return 0
+  fi
+  
+  echo -e "${PURPLE}=== Assigning group '$group_name' to role '$role_value' ===${RESET}"
+  
+  # Get Service Principal (Enterprise Application) object ID
+  local sp_object_id
+  sp_object_id=$(az ad sp show --id "$app_client_id" --query id -o tsv 2>/dev/null || echo "")
+  
+  if [[ -z "$sp_object_id" ]]; then
+    echo -e "${RED}✗ Service Principal not found for app '$app_client_id'${RESET}"
+    return 1
+  fi
+  
+  # Get group object ID
+  local group_id
+  group_id=$(az ad group show --group "$group_name" --query id -o tsv 2>/dev/null || echo "")
+  
+  if [[ -z "$group_id" ]]; then
+    echo -e "${RED}✗ Group '$group_name' not found${RESET}"
+    return 1
+  fi
+  
+  # Get App Role ID from our mapping
+  local role_id="${APP_ROLE_IDS[$role_value]}"
+  
+  if [[ -z "$role_id" ]]; then
+    echo -e "${RED}✗ Unknown role '$role_value'${RESET}"
+    return 1
+  fi
+  
+  # Check if assignment already exists
+  local existing
+  existing=$(az rest --method GET \
+    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${sp_object_id}/appRoleAssignedTo" \
+    --query "value[?principalId=='${group_id}' && appRoleId=='${role_id}'].id" -o tsv 2>/dev/null || echo "")
+  
+  if [[ -n "$existing" ]]; then
+    echo -e "${BLUE}ℹ Group already assigned to role${RESET}"
+    return 0
+  fi
+  
+  # Create the assignment via Microsoft Graph API
+  local payload
+  payload=$(cat <<EOF
+{
+  "principalId": "${group_id}",
+  "resourceId": "${sp_object_id}",
+  "appRoleId": "${role_id}"
+}
+EOF
+)
+  
+  if az rest --method POST \
+    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/${sp_object_id}/appRoleAssignedTo" \
+    --headers "Content-Type=application/json" \
+    --body "$payload" >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ Group assigned to App Role${RESET}"
+  else
+    echo -e "${RED}✗ Failed to assign group to App Role${RESET}"
+    echo -e "${YELLOW}  Hint: Ensure you have Application.ReadWrite.All or AppRoleAssignment.ReadWrite.All permission${RESET}"
+    return 1
+  fi
+  
+  echo "[AUDIT] Group assigned to App Role | Group=$group_name | Role=$role_value | AppId=$app_client_id"
+}
+
+configure_app_access() {
+  local app_client_id="${1:-${ENTRA_APP_CLIENT_ID:-${ENTRA_CLIENT_ID:-}}}"
+  
+  if [[ -z "$app_client_id" ]]; then
+    echo -e "${YELLOW}⚠ No ENTRA_APP_CLIENT_ID configured, skipping app configuration${RESET}"
+    return 0
+  fi
+  
+  echo ""
+  echo -e "${BLUE}════════════════════════════════════════════════════════════${RESET}"
+  echo -e "${BLUE}  Configuring Enterprise Application (Production Setup)      ${RESET}"
+  echo -e "${BLUE}════════════════════════════════════════════════════════════${RESET}"
+  
+  # Step 1: Create App Roles in App Registration
+  create_app_roles "$app_client_id"
+  
+  # Step 2: Enable "User assignment required" (security best practice)
+  enable_user_assignment_required "$app_client_id"
+  
+  # Step 3: Assign groups to their corresponding App Roles
+  echo ""
+  echo -e "${PURPLE}=== Assigning groups to App Roles ===${RESET}"
+  for group_name in "${!GROUP_TO_ROLE[@]}"; do
+    local role_value="${GROUP_TO_ROLE[$group_name]}"
+    assign_group_to_app_role "$group_name" "$role_value" "$app_client_id"
+  done
+  
+  echo ""
+  echo -e "${GREEN}✓ Enterprise Application configured with production-grade security${RESET}"
+  echo "  - App Roles defined for fine-grained access control"
+  echo "  - User assignment required (principle of least privilege)"
+  echo "  - Groups assigned to appropriate App Roles"
+  
+  echo "[AUDIT] App access fully configured | AppId=$app_client_id | Mode=production"
+}
+
 disable_user() {
   local nickname="$1"
   local upn="${nickname}@${ENTRA_DOMAIN}"
@@ -308,13 +551,28 @@ provision_demo_users() {
   create_user "Carol Demo" "carol" "$CAROL_PASSWORD" "Security Manager"
   create_user "Joe Demo (IAM Operator)" "joe" "$JOE_PASSWORD" "IAM Operator"
   
-  # Assign initial groups/roles
+  # Assign initial groups/roles (same structure as Keycloak demo_jml.sh)
+  # Keycloak roles → Entra groups mapping:
+  # - analyst → Security-Analysts
+  # - manager → Security-Managers  
+  # - iam-operator → IAM-Operators
+  # - realm-admin → Administrators (admin equivalent)
   assign_group "alice" "Security-Analysts"
   assign_group "bob" "Security-Analysts"
   assign_group "carol" "Security-Managers"
   assign_group "joe" "IAM-Operators"
+  assign_group "joe" "Administrators"  # Equivalent to realm-admin in Keycloak
   
-  # Mover: Promote alice from analyst to operator
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Configure Enterprise Application access
+  # ─────────────────────────────────────────────────────────────────────────────
+  # For POC: Disable "User assignment required" to allow all tenant users
+  # In production: Enable assignment and use App Roles for fine-grained access
+  # ─────────────────────────────────────────────────────────────────────────────
+  echo ""
+  configure_app_access
+  
+  # Mover: Promote alice from analyst to iam-operator (same as demo_jml.sh)
   echo -e "${PURPLE}=== Promotion d'alice vers IAM-Operators (Mover) ===${RESET}"
   remove_from_group "alice" "Security-Analysts"
   assign_group "alice" "IAM-Operators"
@@ -327,11 +585,17 @@ provision_demo_users() {
   echo -e "${GREEN}  ✓ Provisioning Entra ID terminé                           ${RESET}"
   echo -e "${GREEN}════════════════════════════════════════════════════════════${RESET}"
   echo ""
-  echo "Users created:"
-  echo "  - alice@${ENTRA_DOMAIN} (promoted to IAM-Operators)"
+  echo "Users created (same as demo_jml.sh for Keycloak):"
+  echo "  - alice@${ENTRA_DOMAIN} (IAM-Operators - promoted from analyst)"
   echo "  - bob@${ENTRA_DOMAIN} (disabled - leaver)"
   echo "  - carol@${ENTRA_DOMAIN} (Security-Managers)"
-  echo "  - joe@${ENTRA_DOMAIN} (IAM-Operators)"
+  echo "  - joe@${ENTRA_DOMAIN} (IAM-Operators + Administrators = full admin)"
+  echo ""
+  echo "Group → Role mapping:"
+  echo "  - IAM-Operators → iam-operator"
+  echo "  - Security-Managers → manager"
+  echo "  - Security-Analysts → analyst"
+  echo "  - Administrators → admin (realm-admin equivalent)"
 }
 
 cleanup_demo_users() {

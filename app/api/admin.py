@@ -120,8 +120,8 @@ def require_admin_view(fn):
                     f"required one of {allowed_roles}"
                 )
                 
-                # Use abort(403) to trigger centralized error handler
-                abort(403)
+                # Pass required roles to error handler for display
+                abort(403, description=f"Required role: {', '.join(allowed_roles)}")
             
             return fn(*args, **kwargs)
         
@@ -133,8 +133,8 @@ def require_admin_view(fn):
                 exc_info=True
             )
             
-            # Use abort(403) to trigger centralized error handler
-            abort(403)
+            # Pass required roles to error handler
+            abort(403, description="Required role: manager, admin, iam-operator")
     
     return wrapper
 

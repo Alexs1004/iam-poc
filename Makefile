@@ -77,7 +77,7 @@ help: ## Show common commands
 	printf '\n'; \
 	printf '  ╔══════════════════════════════════════════════════════════════╗\n'; \
 	printf '  ║  \033[1mIAM-POC Makefile\033[0m                                            ║\n'; \
-	printf '  ║  Mode: DEMO=\033[1m%-5s\033[0m | KEYVAULT=\033[1m%-5s\033[0m                       ║\n' "$${DEMO_MODE:-?}" "$${AZURE_USE_KEYVAULT:-?}"; \
+	printf '  ║  Mode: DEMO=\033[1m%-5s\033[0m | KEYVAULT=\033[1m%-5s\033[0m                     	 ║\n' "$${DEMO_MODE:-?}" "$${AZURE_USE_KEYVAULT:-?}"; \
 	printf '  ╚══════════════════════════════════════════════════════════════╝\n'; \
 	printf '\n'
 	@printf '  \033[1;34m🚀 Getting Started\033[0m\n'

@@ -53,7 +53,12 @@ def init_oauth(app, cfg):
             server_metadata_url=f"{entra_issuer}/.well-known/openid-configuration",
             client_id=entra_client_id,
             client_secret=entra_client_secret,
-            client_kwargs={"scope": "openid profile email"},
+            # response_mode=query required for authorization code flow with Entra ID
+            # Without it, Entra may try form_post which causes AADSTS900561
+            client_kwargs={
+                "scope": "openid profile email",
+                "response_mode": "query",
+            },
             fetch_token=lambda: session.get("token"),
         )
     
@@ -98,9 +103,30 @@ def normalize_claims(id_claims: dict, userinfo: dict, access_claims: dict, provi
     Normalize roles from different IdP claim formats to unified list.
     
     Keycloak: realm_access.roles, resource_access.*.roles
-    Entra ID: roles (top-level array)
+    Entra ID: roles (top-level array), groups (mapped to app roles)
+    
+    Entra ID Group → App Role Mapping:
+    - IAM-Operators → iam-operator
+    - Security-Managers → manager
+    - Security-Analysts → analyst
+    - Administrators → admin (equivalent to realm-admin)
     """
     roles = []
+    
+    # Entra ID group name/ID → app role mapping
+    # Groups can appear as names or GUIDs in the token depending on config
+    ENTRA_GROUP_TO_ROLE = {
+        # By name (lowercase)
+        "iam-operators": "iam-operator",
+        "security-managers": "manager",
+        "security-analysts": "analyst",
+        "administrators": "admin",  # Equivalent to realm-admin
+        # By GUID (for when groupMembershipClaims returns IDs)
+        "5f3494a3-1246-4df1-b754-535ee1d017ae": "iam-operator",  # IAM-Operators
+        "1bd4a7d1-e1bf-4d18-96af-159728b6fa6d": "manager",        # Security-Managers
+        "bbbd2841-f1e1-42f3-b142-7c206b7949ee": "analyst",        # Security-Analysts
+        "2c9c17ee-e8ec-4d24-bb42-7d1d343a9d88": "admin",          # Administrators
+    }
     
     # Collect from all sources
     for source in (id_claims, userinfo, access_claims):
@@ -119,10 +145,20 @@ def normalize_claims(id_claims: dict, userinfo: dict, access_claims: dict, provi
                 if isinstance(client_access, dict):
                     roles.extend(r for r in client_access.get("roles", []) if r not in roles)
         
-        # Entra ID: roles (top-level)
+        # Entra ID: roles (top-level App Roles)
         entra_roles = source.get("roles")
         if isinstance(entra_roles, list):
             roles.extend(r for r in entra_roles if r not in roles)
+        
+        # Entra ID: groups claim (if configured in App Registration)
+        # Map group names/IDs to app roles
+        groups = source.get("groups")
+        if isinstance(groups, list) and provider == "entra":
+            for group in groups:
+                group_lower = str(group).lower()
+                mapped_role = ENTRA_GROUP_TO_ROLE.get(group_lower)
+                if mapped_role and mapped_role not in roles:
+                    roles.append(mapped_role)
     
     return roles
 
@@ -195,11 +231,18 @@ def login():
         if entra_redirect_uri:
             redirect_uri = entra_redirect_uri
     
-    return client.authorize_redirect(
-        redirect_uri=redirect_uri,
-        code_challenge=code_challenge,
-        code_challenge_method="S256",
-    )
+    # Build authorization parameters
+    auth_params = {
+        "redirect_uri": redirect_uri,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    
+    # Force account selection for Entra ID (prevents SSO auto-login)
+    if provider == "entra":
+        auth_params["prompt"] = "select_account"
+    
+    return client.authorize_redirect(**auth_params)
 
 
 @bp.route("/callback")
@@ -246,9 +289,18 @@ def callback():
     issuer = cfg.keycloak_issuer if provider == "keycloak" else os.environ.get("ENTRA_ISSUER", "")
     access_claims = decode_access_token(access_token, issuer)
     
+    # Debug logging for Entra ID claims
+    if provider == "entra":
+        current_app.logger.info(f"[Entra] id_claims groups: {id_claims.get('groups')}")
+        current_app.logger.info(f"[Entra] id_claims roles: {id_claims.get('roles')}")
+        current_app.logger.info(f"[Entra] userinfo groups: {userinfo.get('groups')}")
+        current_app.logger.info(f"[Entra] access_claims groups: {access_claims.get('groups')}")
+    
     # Normalize roles to unified format
     roles = normalize_claims(id_claims, userinfo, access_claims, provider)
     session["normalized_roles"] = roles
+    
+    current_app.logger.info(f"[Auth] Provider: {provider}, Normalized roles: {roles}")
     
     if has_admin_role(roles, cfg.realm_admin_role, cfg.iam_operator_role):
         return redirect(url_for("admin.admin_dashboard"))
@@ -276,7 +328,10 @@ def logout():
     if provider == "entra":
         entra_issuer = os.environ.get("ENTRA_ISSUER", "")
         entra_post_logout = os.environ.get("ENTRA_POST_LOGOUT_REDIRECT_URI", cfg.post_logout_redirect_uri)
-        end_session_endpoint = f"{entra_issuer}/oauth2/v2.0/logout"
+        # ENTRA_ISSUER ends with /v2.0, but logout endpoint is /oauth2/v2.0/logout
+        # We need to strip /v2.0 to avoid duplication
+        base_url = entra_issuer.rstrip("/").removesuffix("/v2.0")
+        end_session_endpoint = f"{base_url}/oauth2/v2.0/logout"
         params = {"post_logout_redirect_uri": entra_post_logout}
     else:
         # Keycloak logout endpoint

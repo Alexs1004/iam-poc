@@ -29,12 +29,22 @@ def register_error_handlers(app):
     @app.errorhandler(403)
     def forbidden(error):
         """Handle 403 Forbidden errors."""
+        # Extract required role from error description if provided
+        # Format: "Required role: role1, role2" or just use default
+        required_role = "appropriate permissions"
+        if hasattr(error, 'description') and error.description:
+            desc = str(error.description)
+            if desc.startswith("Required role:"):
+                required_role = desc.replace("Required role:", "").strip()
+            elif desc != "You don't have the permission to access the requested resource. It is either read-protected or not readable by the server.":
+                required_role = desc
+        
         if _wants_json():
-            return jsonify({"error": "Forbidden", "message": "Insufficient permissions"}), 403
+            return jsonify({"error": "Forbidden", "message": f"Required role: {required_role}"}), 403
         return render_template(
             "errors/403.html",
             title="Forbidden",
-            required_role="appropriate permissions",
+            required_role=required_role,
         ), 403
     
     @app.errorhandler(404)

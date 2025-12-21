@@ -41,3 +41,8 @@ copilot_context.md
 .runtime/sbom/
 .github/instructions/
 infra/.terraform/
+
+
+# test output
+allreadme.md
+docall.md
