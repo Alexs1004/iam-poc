@@ -32,7 +32,7 @@ graph LR
     end
 
     subgraph "Secure Perimeter (Zero Trust)"
-        Nginx[Nginx Reverse Proxy \n(TLS 1.3)]
+        Nginx[Nginx Reverse Proxy <br> TLS 1.3]
         
         subgraph "Application Core"
             App[IAM-POC App]
@@ -41,7 +41,7 @@ graph LR
         
         subgraph "Data & Audit Plane"
             KV[Azure Key Vault]
-            Audit[Audit Log \n(HMAC-SHA256)]
+            Audit[Audit Log <br> HMAC-SHA256]
         end
     end
 
