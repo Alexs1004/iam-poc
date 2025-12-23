@@ -56,7 +56,7 @@ graph LR
     style App fill:#5c2d91,stroke:#3b1d5e,color:#fff
     style RBAC fill:#107c10,stroke:#0b5c0b,color:#fff
     style KV fill:#0078d4,stroke:#005a9e,color:#fff
-    style Audit fill:#ff8c00,stroke:#cc7000,color:#000
+    style Audit fill:#ff8c00,stroke:#cc7000,color:#fff
 ```
 
 ---
