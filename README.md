@@ -51,8 +51,12 @@ graph LR
     App -->|Fetch Secrets| KV
     App -->|Sign Events| Audit
 
-    style Audit fill:#f9f,stroke:#333
-    style KV fill:#bbf,stroke:#333
+    style Entra fill:#0078d4,stroke:#005a9e,color:#fff
+    style Nginx fill:#009639,stroke:#006b2b,color:#fff
+    style App fill:#5c2d91,stroke:#3b1d5e,color:#fff
+    style RBAC fill:#107c10,stroke:#0b5c0b,color:#fff
+    style KV fill:#0078d4,stroke:#005a9e,color:#fff
+    style Audit fill:#ff8c00,stroke:#cc7000,color:#000
 ```
 
 ---
