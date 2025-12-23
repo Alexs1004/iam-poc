@@ -74,8 +74,16 @@ make quickstart
 
 # 2. Access the secure dashboard
 # ⮕ https://localhost (Accept self-signed cert)
-# Login: joe / Temp123!
 ```
+
+**Demo Credentials** (defined in `.env.demo`):
+
+| User | Password | Role | Purpose |
+|------|----------|------|---------|
+| `joe` | `Temp123!` | IAM Operator | Privileged access, can manage users |
+| `alice` | `Temp123!` | Analyst → Manager | Demonstrates Joiner → Mover flow |
+| `bob` | `Temp123!` | Analyst (disabled) | Demonstrates Joiner → Leaver flow |
+| `carol` | `Temp123!` | Manager | Standard manager access |
 
 ### 🕵️ The Security Auditor Path
 Verify the cryptographic controls and secure implementation.
