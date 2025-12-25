@@ -342,15 +342,21 @@ class TestVerificationPageIntegration:
     def test_verification_page_cleanup_integration(self, monkeypatch):
         """Test cleanup action integration."""
         from app.config import settings as settings_module
+        from app.api import verification as verification_module
+        
         monkeypatch.setattr(settings_module.settings, 'verify_page_enabled', True)
         monkeypatch.setattr(settings_module.settings, 'demo_mode', True)
         
-        with patch('app.api.verification.cleanup_verifier_users') as mock_cleanup:
-            mock_cleanup.return_value = 3
-            
-            response = self.client.post('/verification', data={'action': 'cleanup'})
-            assert response.status_code == 200
-            mock_cleanup.assert_called_once()
+        # Use monkeypatch instead of patch to avoid async mock warnings
+        cleanup_called = []
+        def mock_cleanup():
+            cleanup_called.append(True)
+            return 3
+        monkeypatch.setattr(verification_module, 'cleanup_verifier_users', mock_cleanup)
+        
+        response = self.client.post('/verification', data={'action': 'cleanup'})
+        assert response.status_code == 200
+        assert len(cleanup_called) == 1
 
     def test_verification_page_run_integration(self, monkeypatch):
         """Test run action integration."""

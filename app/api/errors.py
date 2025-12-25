@@ -40,7 +40,12 @@ def register_error_handlers(app):
                 required_role = desc
         
         if _wants_json():
-            return jsonify({"error": "Forbidden", "message": f"Required role: {required_role}"}), 403
+            # Use generic message for default case, specific message when role is provided
+            if required_role == "appropriate permissions":
+                message = "Insufficient permissions"
+            else:
+                message = f"Required role: {required_role}"
+            return jsonify({"error": "Forbidden", "message": message}), 403
         return render_template(
             "errors/403.html",
             title="Forbidden",

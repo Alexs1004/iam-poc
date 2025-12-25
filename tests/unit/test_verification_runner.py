@@ -677,22 +677,26 @@ class TestCleanupVerifierUsers:
         
         assert result == 0
 
-    @patch('app.api.verification.provisioning_service.get_service_token')
-    @patch('app.api.verification.requests.get')
-    @patch('app.api.verification.requests.delete')
-    def test_cleanup_delete_failure(self, mock_delete, mock_get, mock_get_token):
+    def test_cleanup_delete_failure(self, monkeypatch):
         """Test cleanup handles delete failures gracefully."""
-        mock_get_token.return_value = "service-token"
+        from app.api import verification as verification_module
+        from app.core import provisioning_service as prov_module
         
-        mock_get_response = Mock()
-        mock_get_response.status_code = 200
-        mock_get_response.json.return_value = {
-            "Resources": [{"id": "1", "userName": "verifier-test1"}]
-        }
-        mock_get.return_value = mock_get_response
+        # Mock get_service_token
+        monkeypatch.setattr(prov_module, 'get_service_token', lambda: "service-token")
         
-        # First delete fails, but should continue
-        mock_delete.side_effect = Exception("Delete error")
+        # Mock hard_delete_user to raise exception
+        def mock_hard_delete(user_id, correlation_id=None):
+            raise Exception("Delete error")
+        monkeypatch.setattr(prov_module, 'hard_delete_user', mock_hard_delete)
+        
+        # Mock requests.get
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {"id": "1", "username": "verifier-test1"}
+        ]
+        monkeypatch.setattr(verification_module.requests, 'get', lambda *args, **kwargs: mock_response)
         
         result = cleanup_verifier_users()
         
