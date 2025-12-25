@@ -63,6 +63,8 @@ graph LR
 
 ## 🚀 Operations & Usage
 
+> **Requirements**: Docker 24+ · Python 3.12+ (for local development)
+
 Select your user journey to verify the platform capabilities.
 
 ### 👔 The Recruiter Path (2-min demo)
