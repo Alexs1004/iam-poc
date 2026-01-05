@@ -227,7 +227,7 @@ Key files to examine (15 min):
 
 **Candidate**: Alex (Romandy)  
 **Email**: [See GitHub Profile](https://github.com/Alexs1004)  
-**LinkedIn**: [To add if applicable]  
+**LinkedIn**: https://www.linkedin.com/in/alexandre-stutz/ 
 **Availability**: Immediate  
 **Mobility**: Romandy
 
