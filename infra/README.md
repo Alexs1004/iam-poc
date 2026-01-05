@@ -148,42 +148,6 @@ tags = {
 
 ---
 
-## 🗺️ Roadmap Infrastructure
-
-### ✅ Phase C1: Skeleton (Completed)
-- Providers configuration (azurerm ~>3)
-- Azure Storage backend
-- Variables + outputs structure
-- Docker containerization
-
-### ✅ Phase C2: Foundation (Completed)
-- Resource Group (imported existing `rg-iam-demo`)
-- Log Analytics Workspace (30d retention)
-- Service Principal authentication
-- Auto-detection `tenant_id`
-
-### 🔄 Phase C3: Network (In Progress)
-- VNet (10.0.0.0/16)
-- Subnet for Private Endpoints
-- Network Security Group (NSG)
-
-### 📋 Phase C4: Key Vault
-- Azure Key Vault with Private Endpoint
-- Network isolation (no public access)
-- RBAC policies
-
-### 📋 Phase C5: App Service
-- Azure App Service Plan (Linux)
-- Web App with Managed Identity
-- VNet integration
-
-### 📋 Phase C6: Monitoring
-- Diagnostic settings to Log Analytics
-- Alerts + dashboards
-- Cost monitoring
-
----
-
 ## 📂 Structure du Projet
 
 ```
