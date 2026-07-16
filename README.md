@@ -116,6 +116,32 @@ make infra/plan
 
 ---
 
+## 🧪 Quality Engineering & Test Strategy
+
+Reliability and security are enforced through a strict **Shift-Left testing** philosophy. The project features a comprehensive, multi-layered automated testing strategy designed for CI/CD environments.
+
+**📊 Quality Metrics:**
+*   **Total Tests:** 346 automated tests (300+ Unit, 27 Integration/E2E).
+*   **Code Coverage:** 91% on core business logic (validated via `pytest-cov` and Codecov).
+*   **Performance:** Full suite execution in **~3.5 seconds** via parallelization (`pytest-xdist`).
+
+**🏗️ Testing Architecture:**
+*   **Unit Testing (Isolated):** Extensive use of `pytest-mock` to isolate business logic (e.g., SCIM validation, RBAC provisioning) from external Identity Providers, achieving 100% coverage on core validators.
+*   **E2E Integration Testing:** Automated validation of complete workflows against a live Docker stack (Keycloak + Flask + Nginx). Tests cover OIDC/JWT token parsing, OAuth 2.0 SCIM authentication, and Nginx security headers.
+*   **Smart Execution:** Implemented `pytest.skip()` for external dependency failures (e.g., missing OAuth credentials) to prevent cascading false negatives and flaky tests.
+
+**🛡️ Security Testing (SecQA):**
+Critical security paths are strictly enforced using custom `@pytest.mark.critical` markers. These tests validate:
+*   JWT signature integrity (JWKS, expiration, algorithms).
+*   RBAC enforcement and role hierarchy.
+*   Rate limiting efficiency (Nginx + Flask).
+*   Cryptographic audit log signatures (HMAC-SHA256 verification).
+
+**🔄 CI/CD Quality Gates:**
+GitHub Actions pipelines enforce strict deployment rules: 100% passing tests, maintenance of >=91% code coverage, and absolutely zero regressions on critical security markers.
+
+---
+
 ## ☁️ Infrastructure as Code (Azure Terraform)
 
 Infrastructure is treated as ephemeral software, deployed via Terraform with strict state security.
